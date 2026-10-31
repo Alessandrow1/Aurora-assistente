@@ -372,3 +372,33 @@ button { color: inherit; }
   font-size: 10px;
 }
 .pet-voice-test:hover { background: rgba(151, 127, 255, .28); }
+
+
+/* Indicador explícito do estado do microfone no modo VTuber. */
+.voice-mode-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(226, 220, 248, .62);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.voice-mode-status i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(190, 184, 210, .55);
+  box-shadow: 0 0 0 2px rgba(190, 184, 210, .10);
+}
+.voice-mode-status.active {
+  color: #ffc0d0;
+}
+.voice-mode-status.active i {
+  background: #ff789d;
+  box-shadow: 0 0 0 3px rgba(255, 120, 157, .16);
+  animation: aurora-mic-pulse 1.35s ease-in-out infinite;
+}
+@keyframes aurora-mic-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .55; transform: scale(.82); }
+}
