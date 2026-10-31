@@ -185,7 +185,7 @@ export default function App() {
 
   const runQuickCommand = async (rawText: string): Promise<string | null> => {
     const text = rawText.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const searchMatch = text.match(/(?:pesquise|pesquisar|procure|buscar|busque)\s+(?:na internet|no google|por)?\\s*(.+)/i);
+    const searchMatch = text.match(/(?:pesquise|pesquisar|procure|buscar|busque)\s+(?:na internet|no google|por)?\s*(.+)/i);
     if (searchMatch?.[1]?.trim()) {
       const query = searchMatch[1].trim();
       await window.aurora.openUrl('https://www.google.com/search?q=' + encodeURIComponent(query));
@@ -538,8 +538,9 @@ export default function App() {
               <div className="modal-divider" />
               <div className="settings-bottom">
                 <div>
-                  <strong>Voz da Aurora</strong>
-                  <p>A voz padrão é a Leticia Neural, uma voz feminina mais jovem. O pitch foi aumentado em 42 Hz e a fala em 12% para um timbre mais agudo. A voz é sintetizada online e precisa de internet.</p>
+                  <strong>Voz de anime da Aurora</strong>
+                  <p>A voz padrão é a Leticia Neural, uma voz feminina jovem, com pitch +42 Hz e fala 12% mais rápida. A voz é sintetizada online e precisa de internet.</p>
+                  <button className="pet-voice-test" type="button" onClick={() => void speak('Oii! Eu sou a Aurora! Hehehe! Vai demorar muito para me dar uma missão? Estou ficando entediada!')}>▶ Testar minha voz</button>
                 </div>
                 <div>
                   <strong>Visão e privacidade</strong>
