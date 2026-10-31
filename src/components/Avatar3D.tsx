@@ -3,14 +3,21 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 
-type Props = { speaking: boolean; thinking: boolean; laughing: boolean };
+type AvatarEmotion = 'neutral' | 'happy' | 'sad' | 'surprised' | 'curious';
+type Props = {
+  speaking: boolean;
+  thinking: boolean;
+  laughing: boolean;
+  emotion: AvatarEmotion;
+  audioAnalyser: AnalyserNode | null;
+};
 
-/** Renderiza a personagem anime VRM da Aurora e anima suas expressões. */
-export default function Avatar3D({ speaking, thinking, laughing }: Props) {
+/** Renderiza a personagem anime VRM da Aurora, com lip-sync por amplitude e expressões suaves. */
+export default function Avatar3D({ speaking, thinking, laughing, emotion, audioAnalyser }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
-  const stateRef = useRef({ speaking, thinking, laughing });
+  const stateRef = useRef({ speaking, thinking, laughing, emotion, audioAnalyser });
   const [modelFailed, setModelFailed] = useState(false);
-  stateRef.current = { speaking, thinking, laughing };
+  stateRef.current = { speaking, thinking, laughing, emotion, audioAnalyser };
 
   useEffect(() => {
     const host = mountRef.current;
@@ -146,11 +153,52 @@ export default function Avatar3D({ speaking, thinking, laughing }: Props) {
     );
 
     const clock = new THREE.Clock();
+    let smoothedMouth = 0;
+    let audioSamples = new Uint8Array(512);
+    let happyValue = 0.12;
+    let sadValue = 0;
+    let surprisedValue = 0;
+    let relaxedValue = 0.08;
+
     const animate = () => {
       frame = requestAnimationFrame(animate);
       const delta = clock.getDelta();
       const time = clock.elapsedTime;
-      const { speaking: isSpeaking, thinking: isThinking, laughing: isLaughing } = stateRef.current;
+      const {
+        speaking: isSpeaking,
+        thinking: isThinking,
+        laughing: isLaughing,
+        emotion: currentEmotion,
+        audioAnalyser,
+      } = stateRef.current;
+
+      let mouthTarget = 0;
+      if (isSpeaking && audioAnalyser) {
+        if (audioSamples.length !== audioAnalyser.fftSize) {
+          audioSamples = new Uint8Array(audioAnalyser.fftSize);
+        }
+        audioAnalyser.getByteTimeDomainData(audioSamples);
+        let energy = 0;
+        for (let index = 0; index < audioSamples.length; index += 1) {
+          const sample = (audioSamples[index] - 128) / 128;
+          energy += sample * sample;
+        }
+        const rms = Math.sqrt(energy / Math.max(1, audioSamples.length));
+        mouthTarget = THREE.MathUtils.clamp((rms - 0.012) * 8.5, 0, 0.82);
+      } else if (isSpeaking) {
+        // Fallback animado caso o navegador não disponibilize Web Audio.
+        mouthTarget = 0.12 + Math.abs(Math.sin(time * 10.5)) * 0.2;
+      }
+      smoothedMouth += (mouthTarget - smoothedMouth) * (mouthTarget > smoothedMouth ? 0.42 : 0.20);
+
+      const happyTarget = isLaughing ? 0.94 : currentEmotion === 'happy' ? 0.58 : currentEmotion === 'curious' ? 0.16 : 0.08;
+      const sadTarget = currentEmotion === 'sad' ? 0.68 : 0;
+      const surprisedTarget = currentEmotion === 'surprised' ? 0.72 : 0;
+      const relaxedTarget = currentEmotion === 'neutral' ? 0.12 : 0.05;
+      happyValue = THREE.MathUtils.damp(happyValue, happyTarget, 7, delta);
+      sadValue = THREE.MathUtils.damp(sadValue, sadTarget, 7, delta);
+      surprisedValue = THREE.MathUtils.damp(surprisedValue, surprisedTarget, 7, delta);
+      relaxedValue = THREE.MathUtils.damp(relaxedValue, relaxedTarget, 7, delta);
 
       fallback.position.y = Math.sin(time * 1.2) * 0.035;
       halo.rotation.z = Math.sin(time * 0.2) * 0.12;
@@ -162,8 +210,12 @@ export default function Avatar3D({ speaking, thinking, laughing }: Props) {
         const talkGesture = isSpeaking ? 1 : 0;
         if (head) {
           head.rotation.y = Math.sin(time * 0.42) * 0.055 + Math.sin(time * 0.19) * 0.025;
-          head.rotation.x = (isThinking ? -0.10 : 0) - laughBounce * 0.035;
-          head.rotation.z = Math.sin(time * 0.62) * 0.022 + (isLaughing ? Math.sin(time * 7) * 0.025 : 0);
+          head.rotation.x = (isThinking ? -0.10 : 0)
+            - laughBounce * 0.035
+            - (currentEmotion === 'surprised' ? 0.055 : 0);
+          head.rotation.z = Math.sin(time * 0.62) * 0.022
+            + (isLaughing ? Math.sin(time * 7) * 0.025 : 0)
+            + (currentEmotion === 'curious' ? 0.035 : 0);
         }
         if (neck) neck.rotation.x = neckBaseX + Math.sin(time * 0.8) * 0.018 - (isThinking ? 0.035 : 0);
         if (spine) spine.rotation.y = spineBaseY + Math.sin(time * 0.52) * 0.018;
@@ -176,9 +228,12 @@ export default function Avatar3D({ speaking, thinking, laughing }: Props) {
         if (rightHand) rightHand.rotation.z = rightHandBaseZ + (isSpeaking ? Math.sin(time * 4.7) * 0.07 : Math.sin(time * 0.7) * 0.02);
         const blink = Math.sin(time * 0.72 + 0.4) > 0.994 ? 1 : 0;
         vrm.expressionManager?.setValue('blink', blink);
-        vrm.expressionManager?.setValue('aa', isSpeaking ? 0.16 + Math.abs(Math.sin(time * 9.5)) * 0.3 : 0);
-        vrm.expressionManager?.setValue('happy', isLaughing ? 0.82 : isThinking ? 0.08 : 0.16);
-        vrm.expressionManager?.setValue('relaxed', isLaughing ? 0.25 : 0.08);
+        // Abertura da boca acompanha o volume real do áudio, não apenas um timer.
+        vrm.expressionManager?.setValue('aa', smoothedMouth);
+        vrm.expressionManager?.setValue('happy', happyValue);
+        vrm.expressionManager?.setValue('sad', sadValue);
+        vrm.expressionManager?.setValue('surprised', surprisedValue);
+        vrm.expressionManager?.setValue('relaxed', relaxedValue);
         vrm.update(delta);
       }
       renderer.render(scene, camera);

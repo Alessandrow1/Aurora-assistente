@@ -260,6 +260,7 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
     .replace(/`([^`]+)`/g, '$1')
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .replace(/https?:\/\/\S+/g, '')
+    .replace(/\[\s*laughs?\s*\]/gi, ' hahaha ')
     .replace(/[#*_>|]/g, ' ')
     .replace(/\bkkkk+\b/gi, 'hahaha')
     .replace(/\bkkk\b/gi, 'ha ha ha')

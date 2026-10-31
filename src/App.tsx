@@ -14,6 +14,31 @@ type AppConfig = {
   model: string;
 };
 
+type AvatarEmotion = 'neutral' | 'happy' | 'sad' | 'surprised' | 'curious';
+
+function inferAvatarEmotion(userText: string, answer: string): AvatarEmotion {
+  const input = userText.toLocaleLowerCase('pt-BR');
+  const output = answer.toLocaleLowerCase('pt-BR');
+
+  if (/\b(cansad[oa]|trist[ea]|desanimad[oa]|preocupad[oa]|ansios[oa]|frustrad[oa]|com medo)\b/.test(input)
+      || /\b(sinto muito|lamento|imagino que seja difícil|estou aqui com você)\b/.test(output)) {
+    return 'sad';
+  }
+  if (/\[\s*laughs?\s*\]|\bkkkk{2,}\b|\b(?:ha){2,}\b|😂|🤣/i.test(answer)) {
+    return 'happy';
+  }
+  if (/\b(nossa|uau|caramba|sério|não acredito|que incrível|que surpresa)\b/i.test(output)) {
+    return 'surprised';
+  }
+  if (/\b(que bom|adorei|amei|legal|ótimo|perfeito|incrível|super bem|feliz|boa notícia)\b/i.test(output)) {
+    return 'happy';
+  }
+  if (/\b(interessante|quero saber|me conta|curioso|curiosa)\b/i.test(output) || /\?/.test(output)) {
+    return 'curious';
+  }
+  return 'neutral';
+}
+
 const greeting: Message = {
   role: 'assistant',
   content: 'Oi! Eu sou a Aurora. ✨ Minha inteligência roda no seu próprio computador, sem assinatura nem API paga. Instale o Ollama e baixe meu modelo local para conversarmos.',
@@ -38,6 +63,8 @@ export default function App() {
   const [thinking, setThinking] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [laughing, setLaughing] = useState(false);
+  const [emotion, setEmotion] = useState<AvatarEmotion>('neutral');
+  const [audioAnalyser, setAudioAnalyser] = useState<AnalyserNode | null>(null);
   const [listening, setListening] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(true);
@@ -51,7 +78,17 @@ export default function App() {
   const pendingVoiceRef = useRef<string[]>([]);
   const sendMessageRef = useRef<(rawText: string) => Promise<void>>(async () => undefined);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
   thinkingRef.current = thinking;
+
+  const resetAudioAnalysis = () => {
+    setAudioAnalyser(null);
+    const context = audioContextRef.current;
+    audioContextRef.current = null;
+    if (context && context.state !== 'closed') {
+      void context.close().catch(() => undefined);
+    }
+  };
 
   useEffect(() => {
     window.aurora.getConfig()
@@ -69,6 +106,11 @@ export default function App() {
         recognitionRestartRef.current = null;
       }
       audioRef.current?.pause();
+      const activeAudioContext = audioContextRef.current;
+      audioContextRef.current = null;
+      if (activeAudioContext && activeAudioContext.state !== 'closed') {
+        void activeAudioContext.close().catch(() => undefined);
+      }
       window.speechSynthesis?.cancel();
       recognitionRef.current?.abort?.();
     };
@@ -85,9 +127,12 @@ export default function App() {
   }, [laughing]);
 
   const speak = async (text: string) => {
-    if (/(?:\bkkkk+\b|\bhaha+\b|\bhehe+\b|\brsrs+\b|😂|🤣)/i.test(text)) setLaughing(true);
+    if (/(?:\[\s*laughs?\s*\]|\bkkkk+\b|\bhaha+\b|\bhehe+\b|\brsrs+\b|😂|🤣)/i.test(text)) {
+      setLaughing(true);
+    }
     audioRef.current?.pause();
     audioRef.current = null;
+    resetAudioAnalysis();
     window.speechSynthesis?.cancel();
     setSpeaking(true);
 
@@ -97,19 +142,49 @@ export default function App() {
 
       const audio = new Audio('data:audio/mpeg;base64,' + result.audioBase64);
       audioRef.current = audio;
+
+      // Liga o áudio ao Web Audio para medir seu volume e animar a boca em tempo real.
+      let context: AudioContext | null = null;
+      try {
+        context = new AudioContext();
+        if (context.state === 'suspended') await context.resume();
+        if (context.state === 'running') {
+          const source = context.createMediaElementSource(audio);
+          const analyser = context.createAnalyser();
+          analyser.fftSize = 512;
+          analyser.smoothingTimeConstant = 0.68;
+          source.connect(analyser);
+          analyser.connect(context.destination);
+          audioContextRef.current = context;
+          setAudioAnalyser(analyser);
+        } else {
+          await context.close();
+        }
+      } catch (analysisError) {
+        if (context && context.state !== 'closed') {
+          void context.close().catch(() => undefined);
+        }
+        console.warn('[Aurora lip-sync] Não foi possível analisar o áudio; usando movimento de boca de reserva.', analysisError);
+      }
+
       audio.onended = () => {
         setSpeaking(false);
+        setEmotion('neutral');
         audioRef.current = null;
+        resetAudioAnalysis();
       };
       audio.onerror = () => {
         setSpeaking(false);
+        setEmotion('neutral');
         audioRef.current = null;
+        resetAudioAnalysis();
         setNotice('O áudio neural não pôde ser reproduzido.');
       };
       await audio.play();
     } catch (error) {
       audioRef.current?.pause();
       audioRef.current = null;
+      resetAudioAnalysis();
 
       // Fallback local: mantém a Aurora falando mesmo quando o serviço neural falha.
       try {
@@ -123,13 +198,20 @@ export default function App() {
         if (portugueseVoice) utterance.voice = portugueseVoice;
         utterance.rate = 1;
         utterance.pitch = 1.04;
-        utterance.onend = () => setSpeaking(false);
-        utterance.onerror = () => setSpeaking(false);
+        utterance.onend = () => {
+          setSpeaking(false);
+          setEmotion('neutral');
+        };
+        utterance.onerror = () => {
+          setSpeaking(false);
+          setEmotion('neutral');
+        };
         setNotice('A voz neural está indisponível. Estou usando temporariamente a voz instalada no Windows.');
         synth.cancel();
         synth.speak(utterance);
       } catch (fallbackError) {
         setSpeaking(false);
+        setEmotion('neutral');
         const neuralDetail = error instanceof Error ? error.message : String(error);
         const fallbackDetail = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
         setNotice('Não consegui gerar áudio. Voz neural: ' + neuralDetail.slice(0, 150) + '. Voz do Windows: ' + fallbackDetail.slice(0, 100));
@@ -145,8 +227,10 @@ export default function App() {
     setNotice('');
     audioRef.current?.pause();
     audioRef.current = null;
+    resetAudioAnalysis();
     window.speechSynthesis?.cancel();
     setSpeaking(false);
+    setEmotion('curious');
 
     const history = messages
       .filter((message) => message.content !== greeting.content)
@@ -159,6 +243,8 @@ export default function App() {
     try {
       const quickReply = await runQuickCommand(text);
       if (quickReply) {
+        setEmotion(inferAvatarEmotion(text, quickReply));
+        if (/\[\s*laughs?\s*\]|\bkkkk+\b|\b(?:ha){2,}\b|😂|🤣/i.test(quickReply)) setLaughing(true);
         setMessages((current) => [...current, { role: 'assistant', content: quickReply }]);
         if (autoSpeak) void speak(quickReply);
         return;
@@ -180,7 +266,8 @@ export default function App() {
         });
       });
       let answer = response.text?.trim() || 'Não consegui responder agora.';
-      if (/(?:\bkkkk+\b|\bhaha+\b|\bhehe+\b|\brsrs+\b|😂|🤣)/i.test(text + ' ' + answer)) setLaughing(true);
+      setEmotion(inferAvatarEmotion(text, answer));
+      if (/(?:\[\s*laughs?\s*\]|\bkkkk+\b|\bhaha+\b|\bhehe+\b|\brsrs+\b|😂|🤣)/i.test(text + ' ' + answer)) setLaughing(true);
       const actionMatch = answer.match(/\[AURORA_ACTION\]\s*(\{[\s\S]*?\})\s*\[\/AURORA_ACTION\]/i);
       if (actionMatch) {
         try {
@@ -318,7 +405,8 @@ export default function App() {
         });
       });
       const answer = response.text?.trim() || 'Não consegui interpretar essa captura.';
-      if (/(?:\bkkkk+\b|\bhaha+\b|\bhehe+\b|\brsrs+\b|😂|🤣)/i.test(answer)) setLaughing(true);
+      setEmotion(inferAvatarEmotion('', answer));
+      if (/(?:\[\s*laughs?\s*\]|\bkkkk+\b|\bhaha+\b|\bhehe+\b|\brsrs+\b|😂|🤣)/i.test(answer)) setLaughing(true);
       setMessages((current) => {
         const updated = [...current];
         const last = updated[updated.length - 1];
@@ -418,6 +506,7 @@ export default function App() {
         // A fala reconhecida do usuário interrompe a voz atual da Aurora.
         audioRef.current?.pause();
         audioRef.current = null;
+        resetAudioAnalysis();
         window.speechSynthesis?.cancel();
         setSpeaking(false);
         setNotice('');
@@ -484,8 +573,11 @@ export default function App() {
   const clearConversation = () => {
     audioRef.current?.pause();
     audioRef.current = null;
+    resetAudioAnalysis();
     window.speechSynthesis?.cancel();
     setSpeaking(false);
+    setLaughing(false);
+    setEmotion('neutral');
     setMessages([greeting]);
     setNotice('Conversa limpa. Podemos começar de novo!');
   };
@@ -497,7 +589,7 @@ export default function App() {
   return (
     <main className="desktop-shell pet-shell">
       <div className="pet-avatar-wrap" title="Arraste a Aurora para mudar sua posição">
-        <Avatar3D speaking={speaking} thinking={thinking} laughing={laughing} />
+        <Avatar3D speaking={speaking} thinking={thinking} laughing={laughing} emotion={emotion} audioAnalyser={audioAnalyser} />
       </div>
 
       <div className="pet-status">
