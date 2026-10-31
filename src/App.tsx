@@ -39,7 +39,7 @@ export default function App() {
   const [listening, setListening] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(true);
   const [notice, setNotice] = useState('');
-  const [version, setVersion] = useState('0.2.3');
+  const [version, setVersion] = useState('0.3.0');
   const listRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
