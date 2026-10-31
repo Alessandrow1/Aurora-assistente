@@ -476,9 +476,12 @@ export default function App() {
 
           <form className="composer" onSubmit={onSubmit}>
             <input
+              autoFocus
+              type="text"
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              placeholder="Ex.: Aurora, abra a calculadora…"
+              onMouseDown={(event) => event.stopPropagation()}
+              placeholder="Digite sua mensagem aqui…"
               aria-label="Mensagem para Aurora"
               disabled={thinking}
             />
