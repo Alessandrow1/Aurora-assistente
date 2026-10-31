@@ -1,6 +1,6 @@
 {
   "name": "aurora-assistente",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "private": true,
   "description": "Aurora — assistente virtual 3D para Windows com IA local gratuita",
   "main": "electron/main.cjs",
