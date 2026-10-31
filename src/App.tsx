@@ -185,7 +185,13 @@ export default function App() {
 
   const runQuickCommand = async (rawText: string): Promise<string | null> => {
     const text = rawText.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const searchMatch = text.match(/(?:pesquise|pesquisar|procure|buscar|busque)\s+(?:na internet|no google|por)?\s*(.+)/i);
+    const youtubeQuery = text.match(/(?:pesquise|procure|busque)\\s+(?:no youtube|no youtube por)\\s+(.+)/i);
+    if (youtubeQuery?.[1]?.trim()) {
+      const query = youtubeQuery[1].trim();
+      await window.aurora.openUrl('https://www.youtube.com/results?search_query=' + encodeURIComponent(query));
+      return `Procurei “${query}” no YouTube. Espero que seja algo bom, hein. 😏`;
+    }
+    const searchMatch = text.match(/(?:pesquise|pesquisar|procure|buscar|busque)\\s+(?:na internet|no google|por)?\\s*(.+)/i);
     if (searchMatch?.[1]?.trim()) {
       const query = searchMatch[1].trim();
       await window.aurora.openUrl('https://www.google.com/search?q=' + encodeURIComponent(query));
@@ -225,11 +231,8 @@ export default function App() {
     }
 
     if (text.includes('youtube')) {
-      const query = text.match(/(?:pesquise|procure|busque)\\s+(?:no youtube|no youtube por)\\s+(.+)/i);
-      await window.aurora.openUrl(query?.[1]
-        ? 'https://www.youtube.com/results?search_query=' + encodeURIComponent(query[1])
-        : 'https://www.youtube.com');
-      return query?.[1] ? `Procurei “${query[1]}” no YouTube. Espero que seja algo bom, hein. 😏` : 'Abri o YouTube para você! ✨';
+      await window.aurora.openUrl('https://www.youtube.com');
+      return 'Abri o YouTube para você! ✨';
     }
     if (text.includes('google') || text.includes('navegador') || text.includes('chrome') || text.includes('edge')) {
       await window.aurora.openUrl('https://www.google.com');
