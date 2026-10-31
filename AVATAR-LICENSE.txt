@@ -1,0 +1,10 @@
+Aurora anime avatar asset
+
+The default avatar is downloaded by ATUALIZAR-AURORA.bat from:
+https://github.com/GY19A/jev-stage/blob/main/static/vrm/anime_girl.vrm
+
+The source repository identifies anime_girl.vrm as a VRoid Studio / pixiv base model
+under CC0 1.0 (see the “Assets and licensing” section of its README).
+
+This notice records the source and the license stated by that repository.
+The avatar is downloaded separately by the user; it is not embedded in this ZIP.

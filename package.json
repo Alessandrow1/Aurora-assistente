@@ -1,0 +1,59 @@
+{
+  "name": "aurora-assistente",
+  "version": "0.2.3",
+  "private": true,
+  "description": "Aurora — assistente virtual 3D para Windows com IA local gratuita",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "build": "tsc --noEmit && vite build",
+    "start": "electron .",
+    "dist": "npm run build && electron-builder --win nsis"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "three": "^0.171.0",
+    "node-edge-tts": "^1.2.12",
+    "@pixiv/three-vrm": "^3.5.5"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@types/three": "^0.171.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "electron": "^45.2.0",
+    "electron-builder": "^25.1.8",
+    "typescript": "~5.7.2",
+    "vite": "^6.0.5",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "com.aurora.assistent",
+    "productName": "Aurora",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "Aurora-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
