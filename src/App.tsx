@@ -113,7 +113,7 @@ export default function App() {
         return;
       }
 
-      const asksForComputerAction = /\\b(clique|clica|digite|escreva|pressione|aperte|selecione|marque|preencha|role)\\b/i.test(text);
+      const asksForComputerAction = /\b(clique|clica|digite|escreva|pressione|aperte|selecione|marque|preencha|role)\b/i.test(text);
       const capture = asksForComputerAction ? await window.aurora.captureScreen() : null;
       const computerPrompt = capture
         ? `${text}\\n\\nEstou fornecendo uma captura atual do desktop. Analise-a e, se puder cumprir exatamente o pedido, retorne um único bloco [AURORA_ACTION]{JSON}[/AURORA_ACTION] com coordenadas relativas à imagem ou texto/atalho solicitado. Se não conseguir identificar o alvo com clareza, não sugira ação.`
@@ -129,7 +129,7 @@ export default function App() {
         });
       });
       let answer = response.text?.trim() || 'Não consegui responder agora.';
-      const actionMatch = answer.match(/\\[AURORA_ACTION\\]\\s*(\\{[\\s\\S]*?\\})\\s*\\[\\/AURORA_ACTION\\]/i);
+      const actionMatch = answer.match(/\[AURORA_ACTION\]\s*(\{[\s\S]*?\})\s*\[\/AURORA_ACTION\]/i);
       if (actionMatch) {
         try {
           const candidate = JSON.parse(actionMatch[1]);
@@ -148,7 +148,7 @@ export default function App() {
           if (safeAction) {
             setPendingAction(safeAction);
             setChatOpen(true);
-            answer = answer.replace(actionMatch[0], '').trim() + '\\n\\nPosso executar essa ação? Confira e confirme na janelinha.';
+            answer = answer.replace(actionMatch[0], '').trim() + '\n\nPosso executar essa ação? Confira e confirme na janelinha.';
           }
         } catch {
           answer = answer.replace(actionMatch[0], '').trim();
