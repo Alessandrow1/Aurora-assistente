@@ -20,7 +20,13 @@ export default function Avatar3D({ speaking, thinking }: Props) {
     let frame = 0;
     let vrm: any = null;
     let head: THREE.Object3D | null = null;
+    let leftUpperArm: THREE.Object3D | null = null;
+    let rightUpperArm: THREE.Object3D | null = null;
+    let leftLowerArm: THREE.Object3D | null = null;
+    let rightLowerArm: THREE.Object3D | null = null;
     let baseY = 0;
+    let leftArmBase = 0;
+    let rightArmBase = 0;
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
@@ -91,6 +97,15 @@ export default function Avatar3D({ speaking, thinking }: Props) {
           scene.add(loaded.scene);
           vrm = loaded;
           head = loaded.humanoid?.getNormalizedBoneNode('head') ?? null;
+          leftUpperArm = loaded.humanoid?.getNormalizedBoneNode('leftUpperArm') ?? null;
+          rightUpperArm = loaded.humanoid?.getNormalizedBoneNode('rightUpperArm') ?? null;
+          leftLowerArm = loaded.humanoid?.getNormalizedBoneNode('leftLowerArm') ?? null;
+          rightLowerArm = loaded.humanoid?.getNormalizedBoneNode('rightLowerArm') ?? null;
+          // O modelo-base vem em T-pose. Abaixamos os braços para uma pose de descanso.
+          if (leftUpperArm) { leftArmBase = leftUpperArm.rotation.z; leftUpperArm.rotation.z = leftArmBase + 0.92; }
+          if (rightUpperArm) { rightArmBase = rightUpperArm.rotation.z; rightUpperArm.rotation.z = rightArmBase - 0.92; }
+          if (leftLowerArm) leftLowerArm.rotation.z += -0.12;
+          if (rightLowerArm) rightLowerArm.rotation.z += 0.12;
           fallback.visible = false;
           loaded.expressionManager?.setValue('happy', 0.12);
         } catch (error) {
@@ -122,6 +137,8 @@ export default function Avatar3D({ speaking, thinking }: Props) {
           head.rotation.y = Math.sin(time * 0.42) * 0.035;
           head.rotation.z = Math.sin(time * 0.62) * 0.012;
         }
+        if (leftUpperArm) leftUpperArm.rotation.z = leftArmBase + 0.92 + Math.sin(time * 0.85) * 0.018;
+        if (rightUpperArm) rightUpperArm.rotation.z = rightArmBase - 0.92 - Math.sin(time * 0.85) * 0.018;
         const blink = Math.sin(time * 0.72 + 0.4) > 0.994 ? 1 : 0;
         vrm.expressionManager?.setValue('blink', blink);
         vrm.expressionManager?.setValue('aa', isSpeaking ? 0.16 + Math.abs(Math.sin(time * 9.5)) * 0.3 : 0);
