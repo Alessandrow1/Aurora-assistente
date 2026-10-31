@@ -2,6 +2,10 @@ import { FormEvent, useEffect, useRef, useState } from 'react';
 import Avatar3D from './components/Avatar3D';
 
 type Message = { role: 'user' | 'assistant'; content: string };
+type PendingAction =
+  | { type: 'click'; x: number; y: number; imageWidth: number; imageHeight: number }
+  | { type: 'type'; text: string }
+  | { type: 'key'; key: string };
 type AppConfig = {
   ollamaAvailable: boolean;
   installedModels: string[];
@@ -27,6 +31,8 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [appsOpen, setAppsOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [actionRunning, setActionRunning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [thinking, setThinking] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -107,8 +113,14 @@ export default function App() {
         return;
       }
 
+      const asksForComputerAction = /\\b(clique|clica|digite|escreva|pressione|aperte|selecione|marque|preencha|role)\\b/i.test(text);
+      const capture = asksForComputerAction ? await window.aurora.captureScreen() : null;
+      const computerPrompt = capture
+        ? `${text}\\n\\nEstou fornecendo uma captura atual do desktop. Analise-a e, se puder cumprir exatamente o pedido, retorne um único bloco [AURORA_ACTION]{JSON}[/AURORA_ACTION] com coordenadas relativas à imagem ou texto/atalho solicitado. Se não conseguir identificar o alvo com clareza, não sugira ação.`
+        : text;
+
       setMessages((current) => [...current, { role: 'assistant', content: '' }]);
-      const response = await window.aurora.chat({ message: text, history }, (chunk) => {
+      const response = await window.aurora.chat({ message: computerPrompt, history, ...(capture ? { imageBase64: capture.imageBase64 } : {}) }, (chunk) => {
         setMessages((current) => {
           const updated = [...current];
           const last = updated[updated.length - 1];
@@ -116,7 +128,32 @@ export default function App() {
           return updated;
         });
       });
-      const answer = response.text?.trim() || 'Não consegui responder agora.';
+      let answer = response.text?.trim() || 'Não consegui responder agora.';
+      const actionMatch = answer.match(/\\[AURORA_ACTION\\]\\s*(\\{[\\s\\S]*?\\})\\s*\\[\\/AURORA_ACTION\\]/i);
+      if (actionMatch) {
+        try {
+          const candidate = JSON.parse(actionMatch[1]);
+          let safeAction: PendingAction | null = null;
+          if (candidate?.type === 'click' && capture &&
+              Number.isFinite(candidate.x) && Number.isFinite(candidate.y) &&
+              candidate.x >= 0 && candidate.y >= 0 &&
+              candidate.x < capture.width && candidate.y < capture.height) {
+            safeAction = { type: 'click', x: Math.round(candidate.x), y: Math.round(candidate.y), imageWidth: capture.width, imageHeight: capture.height };
+          } else if (candidate?.type === 'type' && typeof candidate.text === 'string' && candidate.text.length > 0 && candidate.text.length <= 1500) {
+            safeAction = { type: 'type', text: candidate.text };
+          } else if (candidate?.type === 'key' && typeof candidate.key === 'string' &&
+              ['ENTER','TAB','ESC','BACKSPACE','DELETE','UP','DOWN','LEFT','RIGHT','CTRL+A','CTRL+C','CTRL+V','CTRL+L','CTRL+S','CTRL+Z','CTRL+SHIFT+S','ALT+TAB'].includes(candidate.key.toUpperCase())) {
+            safeAction = { type: 'key', key: candidate.key.toUpperCase() };
+          }
+          if (safeAction) {
+            setPendingAction(safeAction);
+            setChatOpen(true);
+            answer = answer.replace(actionMatch[0], '').trim() + '\\n\\nPosso executar essa ação? Confira e confirme na janelinha.';
+          }
+        } catch {
+          answer = answer.replace(actionMatch[0], '').trim();
+        }
+      }
       setMessages((current) => {
         const updated = [...current];
         const last = updated[updated.length - 1];
@@ -217,6 +254,22 @@ export default function App() {
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
     void sendMessage(input);
+  };
+
+  const approvePendingAction = async () => {
+    if (!pendingAction || actionRunning) return;
+    setActionRunning(true);
+    try {
+      const result = await window.aurora.executeAction(pendingAction);
+      const confirmation = result.description || 'Ação executada.';
+      setMessages((current) => [...current, { role: 'assistant', content: `Prontinho! ${confirmation}. ✨` }]);
+      setNotice('Ação confirmada e executada.');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Não consegui executar essa ação.');
+    } finally {
+      setPendingAction(null);
+      setActionRunning(false);
+    }
   };
 
   const startListening = () => {
@@ -330,6 +383,26 @@ export default function App() {
             <button onClick={() => void window.aurora.openFolder('documents')}>📄 Documentos</button>
             <button onClick={() => void window.aurora.openFolder('desktop')}>🖥 Área de Trabalho</button>
             <button onClick={() => void window.aurora.openFolder('pictures')}>🖼 Imagens</button>
+          </div>
+        </section>
+      )}
+
+      {pendingAction && (
+        <section className="pet-action-confirm" role="alertdialog" aria-modal="true" aria-label="Confirmar ação no computador">
+          <div className="pet-panel-title">Aurora quer fazer uma ação</div>
+          <strong>
+            {pendingAction.type === 'click'
+              ? `Clicar na posição aproximada ${pendingAction.x}, ${pendingAction.y} da captura`
+              : pendingAction.type === 'type'
+                ? `Digitar: “${pendingAction.text.slice(0, 160)}${pendingAction.text.length > 160 ? '…' : ''}”`
+                : `Pressionar ${pendingAction.key}`}
+          </strong>
+          <p>Vou executar somente esta ação, na janela que estiver ativa. Você pode cancelar.</p>
+          <div className="pet-action-buttons">
+            <button className="pet-confirm-button" onClick={() => void approvePendingAction()} disabled={actionRunning}>
+              {actionRunning ? 'Executando…' : 'Confirmar ação'}
+            </button>
+            <button className="pet-cancel-button" onClick={() => setPendingAction(null)} disabled={actionRunning}>Cancelar</button>
           </div>
         </section>
       )}
