@@ -44,6 +44,21 @@ jobs:
             -Uri 'https://raw.githubusercontent.com/GY19A/jev-stage/main/static/vrm/anime_girl.vrm' `
             -OutFile 'public/models/aurora-anime.vrm'
 
+      - name: Package complete source ZIP
+        shell: pwsh
+        run: |
+          $excluded = @('.git', 'node_modules', 'dist', 'release', 'Aurora-assistente-source.zip')
+          $items = Get-ChildItem -Force | Where-Object { $_.Name -notin $excluded }
+          Compress-Archive -Path $items.FullName -DestinationPath 'Aurora-assistente-source.zip' -CompressionLevel Optimal -Force
+
+      - name: Upload source ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: Aurora-Source-Code
+          path: Aurora-assistente-source.zip
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Check Electron scripts
         run: node --check electron/main.cjs && node --check electron/preload.cjs
 
