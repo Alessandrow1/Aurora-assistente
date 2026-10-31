@@ -107,9 +107,23 @@ export default function App() {
         return;
       }
 
-      const response = await window.aurora.chat({ message: text, history });
+      setMessages((current) => [...current, { role: 'assistant', content: '' }]);
+      const response = await window.aurora.chat({ message: text, history }, (chunk) => {
+        setMessages((current) => {
+          const updated = [...current];
+          const last = updated[updated.length - 1];
+          if (last?.role === 'assistant') updated[updated.length - 1] = { ...last, content: last.content + chunk };
+          return updated;
+        });
+      });
       const answer = response.text?.trim() || 'Não consegui responder agora.';
-      setMessages((current) => [...current, { role: 'assistant', content: answer }]);
+      setMessages((current) => {
+        const updated = [...current];
+        const last = updated[updated.length - 1];
+        if (last?.role === 'assistant') updated[updated.length - 1] = { ...last, content: answer };
+        else updated.push({ role: 'assistant', content: answer });
+        return updated;
+      });
       if (autoSpeak) void speak(answer);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Ocorreu um erro ao conversar com a IA.');
@@ -170,13 +184,27 @@ export default function App() {
     try {
       const capture = await window.aurora.captureScreen();
       const history = messages.filter((message) => message.content !== greeting.content).slice(-6);
+      setMessages((current) => [...current, { role: 'assistant', content: '' }]);
       const response = await window.aurora.chat({
         message: `${prompt} A imagem tem ${capture.width} por ${capture.height} pixels.`,
         history,
         imageBase64: capture.imageBase64,
+      }, (chunk) => {
+        setMessages((current) => {
+          const updated = [...current];
+          const last = updated[updated.length - 1];
+          if (last?.role === 'assistant') updated[updated.length - 1] = { ...last, content: last.content + chunk };
+          return updated;
+        });
       });
       const answer = response.text?.trim() || 'Não consegui interpretar essa captura.';
-      setMessages((current) => [...current, { role: 'assistant', content: answer }]);
+      setMessages((current) => {
+        const updated = [...current];
+        const last = updated[updated.length - 1];
+        if (last?.role === 'assistant') updated[updated.length - 1] = { ...last, content: answer };
+        else updated.push({ role: 'assistant', content: answer });
+        return updated;
+      });
       setNotice('Captura analisada localmente pelo Ollama.');
       if (autoSpeak) void speak(answer);
     } catch (error) {
