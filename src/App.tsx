@@ -67,7 +67,7 @@ export default function App() {
 
   useEffect(() => {
     if (!laughing) return;
-    const timeout = window.setTimeout(() => setLaughing(false), 1900);
+    const timeout = window.setTimeout(() => setLaughing(false), 2600);
     return () => window.clearTimeout(timeout);
   }, [laughing]);
 
@@ -121,7 +121,7 @@ export default function App() {
         return;
       }
 
-      const asksForComputerAction = /\b(clique|clica|digite|escreva|pressione|aperte|selecione|marque|preencha|role|rolar|pagine|desça|suba|scroll|copie|cole|analise|analisa|olhe|olha|veja|observe|resolva|arrume|configure|explique|identifique)\b/i.test(text);
+      const asksForComputerAction = /\b(clique|clica|digite|escreva|pressione|aperte|selecione|marque|preencha|role|rolar|pagine|desça|suba|scroll|copie|cole|analise|analisa|olhe|olha|veja|observe|resolva|arrume|configure|configurar|explique|identifique|ajuda|ajude|corrija|conserte|feche|fechar|print|captura)\b/i.test(text);
       const capture = asksForComputerAction ? await window.aurora.captureScreen() : null;
       const computerPrompt = capture
         ? `${text}\n\nEstou fornecendo uma captura atual do desktop. Analise-a e, se puder cumprir exatamente o pedido, retorne um único bloco [AURORA_ACTION]{JSON}[/AURORA_ACTION] com coordenadas relativas à imagem ou texto/atalho solicitado. Tipos aceitos: click com x/y, scroll com x/y/delta (-1200 a 1200; positivo desce, negativo sobe), type com text, key com key. Use apenas uma ação por vez. Se não conseguir identificar o alvo com clareza, não sugira ação.`
