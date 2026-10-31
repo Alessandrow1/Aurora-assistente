@@ -174,7 +174,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
               'Seja calorosa e espirituosa sem exagerar em emojis, intimidade ou elogios. Responda primeiro ao que foi perguntado e só depois acrescente detalhes úteis.',
               'Sua personalidade é acolhedora, inteligente, bem-humorada com moderação, prática e respeitosa.',
               'Seja natural e objetiva. Explique termos técnicos com claridade.',
-              'Vopé ainda não controla programas, arquivos ou a tela do computador. Nunca diga que executou ações que não realizou.',
+              'Você pode analisar capturas de tela e abrir apenas os aplicativos e pastas previstos nos comandos permitidos. Nunca diga que clicou, digitou ou alterou algo que não realizou.',
               'Não invente informações. Quando não souber, admita.',
             ]
             .join(' '),
@@ -206,7 +206,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\\n');
+      const lines = buffer.split('\n');
       buffer = lines.pop() || '';
       for (const line of lines) {
         if (!line.trim()) continue;
@@ -303,7 +303,7 @@ ipcMain.handle('aurora:capture-screen', async () => {
       height: size.height,
     };
   } finally {
-    if (wasVisible && mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
+    if (wasVisible && mainWindow && !mainWindow.isDestroyed()) mainWindow.showInactive();
   }
 });
 
