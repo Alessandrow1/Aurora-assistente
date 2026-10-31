@@ -268,22 +268,38 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
     .replace(/\brsrs+\b/gi, 'he he he')
     .replace(/\s+/g, ' ')
     .trim();
+  if (!cleanText) throw new Error('O texto ficou vazio depois de remover a formatação.');
+
   const audioPath = path.join(app.getPath('temp'), `aurora-leticia-${process.pid}-${Date.now()}.mp3`);
   const tts = new EdgeTTS({
     voice: 'pt-BR-LeticiaNeural',
     lang: 'pt-BR',
     outputFormat: 'audio-24khz-96kbitrate-mono-mp3',
-    rate: '+12%',
-    pitch: '+42Hz',
-    timeout: 30000,
+    rate: '+8%',
+    // O node-edge-tts documenta pitch percentual; evitamos o formato em Hz
+    // para não enviar uma configuração de prosódia incompatível ao serviço.
+    pitch: '+18%',
+    timeout: 60000,
   });
 
   try {
     await tts.ttsPromise(cleanText, audioPath);
+    const audioInfo = await fsp.stat(audioPath);
+    if (!audioInfo.isFile() || audioInfo.size < 100) {
+      throw new Error('O serviço terminou sem gerar um arquivo MP3 válido.');
+    }
     const audio = await fsp.readFile(audioPath);
     return { audioBase64: audio.toString('base64'), voice: 'pt-BR-LeticiaNeural' };
   } catch (error) {
-    throw new Error('Não consegui gerar a voz neural. Confira sua conexão com a internet e tente novamente.');
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error('[Aurora TTS] Falha ao gerar áudio:', error);
+    if (/timeout|timed out/i.test(detail)) {
+      throw new Error('A voz neural demorou mais de 60 segundos para responder. Confira a internet e tente novamente.');
+    }
+    if (/voice|unsupported|speaker/i.test(detail)) {
+      throw new Error(`O serviço recusou a voz pt-BR-LeticiaNeural. Detalhe: ${detail.slice(0, 220)}`);
+    }
+    throw new Error(`Falha na geração da voz neural. Detalhe técnico: ${detail.slice(0, 300)}`);
   } finally {
     await fsp.rm(audioPath, { force: true }).catch(() => undefined);
   }
