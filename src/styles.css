@@ -249,6 +249,28 @@ button { color: inherit; }
   font-size: 9px;
   text-align: center;
 }
+/* A janela é transparente e a personagem pode ser arrastada, mas a conversa
+   precisa continuar recebendo cliques e foco normalmente. */
+.pet-shell { -webkit-app-region: no-drag; }
+.pet-avatar-wrap { -webkit-app-region: drag; }
+.pet-chat-card,
+.pet-chat-card * {
+  -webkit-app-region: no-drag !important;
+  pointer-events: auto;
+}
+.pet-chat-card .composer,
+.pet-chat-card .composer input {
+  position: relative;
+  z-index: 14;
+  -webkit-app-region: no-drag !important;
+  pointer-events: auto !important;
+}
+.pet-chat-card .composer input {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
 .pet-chat-card {
   position: absolute;
   z-index: 12;
