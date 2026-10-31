@@ -382,12 +382,12 @@ export default function App() {
 
       <div className="pet-status">
         <span className={'status-dot ' + (connected ? 'online' : '')} />
-        {thinking ? 'Pensando…' : speaking ? 'Falando…' : connected ? 'Aurora está aqui' : 'Configure minha IA'}
+        {thinking ? 'Pensando…' : laughing ? 'Rindo…' : speaking ? 'Falando…' : connected ? 'Aurora está aqui' : 'Configure minha IA'}
         <span className="pet-version">v{version}</span>
       </div>
 
       <div className="pet-bubble" title={lastAssistantMessage}>
-        {thinking ? 'Hmm… deixa eu pensar um pouquinho!' : speaking ? 'Estou falando com você 💗' : lastAssistantMessage}
+        {thinking ? 'Hmm… deixa eu pensar um pouquinho!' : laughing ? 'Hahaha! Essa foi boa! 🤭' : speaking ? 'Estou falando com você 💗' : lastAssistantMessage}
       </div>
 
       <div className="pet-toolbar">
