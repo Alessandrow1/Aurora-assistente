@@ -9,7 +9,11 @@ declare global {
       getConfig: () => Promise<AuroraStatus & { model: string }>;
       checkOllama: () => Promise<AuroraStatus>;
       saveSettings: (payload: { model: string }) => Promise<{ model: string }>;
-      chat: (payload: { message: string; history: AuroraMessage[] }) => Promise<{ text: string }>;
+      chat: (payload: { message: string; history: AuroraMessage[]; imageBase64?: string }) => Promise<{ text: string }>;
+      captureScreen: () => Promise<{ imageBase64: string; width: number; height: number }>;
+      openApp: (appId: string) => Promise<{ success: boolean; label: string }>;
+      openFolder: (folderId: string) => Promise<{ success: boolean; label: string }>;
+      openUrl: (url: string) => Promise<{ success: boolean }>;
       speak: (text: string) => Promise<{ audioBase64: string; voice: string }>;
       minimize: () => void;
       close: () => void;
