@@ -161,7 +161,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
       signal: AbortSignal.timeout(180000),
       body: JSON.stringify({
         model: settings.model,
-        stream: false,
+        stream: true,
         think: false,
         keep_alive: '10m',
         messages: [
@@ -195,8 +195,49 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
     throw new Error(`O Ollama retornou um erro (${response.status}). ${detail.slice(0, 240)}`);
   }
 
-  const data = await response.json();
-  return { text: data.message?.content?.trim() || 'Não consegui formular uma resposta desta vez.' };
+  const requestId = typeof payload.requestId === 'string' ? payload.requestId : '';
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('Não consegui iniciar a resposta em fluxo.');
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let answer = '';
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        let chunk;
+        try { chunk = JSON.parse(line); } catch { continue; }
+        const token = chunk.message?.content || '';
+        if (token) {
+          answer += token;
+          if (requestId && mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('aurora:chat-chunk', { requestId, content: token });
+          }
+        }
+      }
+    }
+    buffer += decoder.decode();
+    if (buffer.trim()) {
+      try {
+        const finalChunk = JSON.parse(buffer);
+        const token = finalChunk.message?.content || '';
+        if (token) {
+          answer += token;
+          if (requestId && mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('aurora:chat-chunk', { requestId, content: token });
+          }
+        }
+      } catch { /* O último fragmento pode estar vazio ou incompleto. */ }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return { text: answer.trim() || 'Não consegui formular uma resposta desta vez.' };
 });
 
 ipcMain.handle('aurora:speak', async (_event, rawText) => {
