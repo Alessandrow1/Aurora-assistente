@@ -1,10 +1,19 @@
 const { contextBridge, ipcRenderer } = require('electron');
+const { randomUUID } = require('node:crypto');
 
 contextBridge.exposeInMainWorld('aurora', {
   getConfig: () => ipcRenderer.invoke('aurora:get-config'),
   checkOllama: () => ipcRenderer.invoke('aurora:check-ollama'),
   saveSettings: (payload) => ipcRenderer.invoke('aurora:save-settings', payload),
-  chat: (payload) => ipcRenderer.invoke('aurora:chat', payload),
+  chat: (payload, onChunk) => {
+    const requestId = randomUUID();
+    const listener = (_event, data) => {
+      if (data?.requestId === requestId && typeof data.content === 'string') onChunk?.(data.content);
+    };
+    ipcRenderer.on('aurora:chat-chunk', listener);
+    return ipcRenderer.invoke('aurora:chat', { ...payload, requestId })
+      .finally(() => ipcRenderer.removeListener('aurora:chat-chunk', listener));
+  },
   speak: (text) => ipcRenderer.invoke('aurora:speak', text),
   captureScreen: () => ipcRenderer.invoke('aurora:capture-screen'),
   openApp: (appId) => ipcRenderer.invoke('aurora:open-app', appId),
