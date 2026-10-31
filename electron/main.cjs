@@ -11,6 +11,7 @@ const DEFAULT_MODEL = 'qwen3.5:2b';
 const ALLOWED_MODELS = new Set(['qwen3.5:2b', 'qwen3.5:4b', 'qwen3.5:9b']);
 
 let mainWindow;
+let capturedForegroundHandle = 0;
 const settingsPath = () => path.join(app.getPath('userData'), 'aurora-settings.json');
 
 function readSettings() {
@@ -289,6 +290,20 @@ ipcMain.handle('aurora:capture-screen', async () => {
   try {
     if (wasVisible) mainWindow.hide();
     await new Promise((resolve) => setTimeout(resolve, 180));
+    try {
+      const focusScript = `
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class AuroraForeground {
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+}
+'@
+[AuroraForeground]::GetForegroundWindow().ToInt64()
+`;
+      const focusResult = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', focusScript], { timeout: 8000, windowsHide: true });
+      capturedForegroundHandle = Number.parseInt(String(focusResult.stdout).trim(), 10) || 0;
+    } catch { capturedForegroundHandle = 0; }
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
       thumbnailSize: { width: 1600, height: 900 },
@@ -331,7 +346,10 @@ const SAFE_KEYS = {
 ipcMain.handle('aurora:execute-action', async (_event, payload = {}) => {
   if (process.platform !== 'win32') throw new Error('O controle do mouse e teclado está disponível nesta versão para Windows.');
   const actionType = payload.type;
-
+  const wasVisible = Boolean(mainWindow?.isVisible());
+  if (wasVisible) mainWindow.hide();
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  try {
   if (actionType === 'click') {
     const imageWidth = Number(payload.imageWidth);
     const imageHeight = Number(payload.imageHeight);
@@ -383,6 +401,7 @@ public struct AuroraInputUnion { [FieldOffset(0)] public AuroraMouseInput mi; [F
 public struct AuroraInput { public UInt32 type; public AuroraInputUnion U; }
 public static class AuroraTyping {
   [DllImport("user32.dll", SetLastError=true)] static extern UInt32 SendInput(UInt32 nInputs, AuroraInput[] pInputs, Int32 cbSize);
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
   public static void TypeText(string value) {
     foreach (char ch in value) {
       var pair = new AuroraInput[2];
@@ -393,6 +412,7 @@ public static class AuroraTyping {
   }
 }
 '@
+if (${capturedForegroundHandle} -gt 0) { [void][AuroraTyping]::SetForegroundWindow([IntPtr]::new([long]${capturedForegroundHandle})); Start-Sleep -Milliseconds 160 }
 $text = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}'))
 [AuroraTyping]::TypeText($text)
 `;
@@ -404,12 +424,21 @@ $text = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${en
     const keyName = typeof payload.key === 'string' ? payload.key.toUpperCase() : '';
     const sendKey = SAFE_KEYS[keyName];
     if (!sendKey) throw new Error('Essa tecla de atalho não está na lista permitida.');
-    const script = `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${sendKey}')`;
+    const script = `Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class AuroraKeyFocus { [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd); }
+'@;
+if (${capturedForegroundHandle} -gt 0) { [void][AuroraKeyFocus]::SetForegroundWindow([IntPtr]::new([long]${capturedForegroundHandle})); Start-Sleep -Milliseconds 160 }
+Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${sendKey}')`;
     await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { timeout: 10000, windowsHide: true });
     return { success: true, description: `Tecla ${keyName} pressionada` };
   }
 
   throw new Error('Ação não reconhecida. Só aceito clique, digitação e atalhos permitidos.');
+  } finally {
+    if (wasVisible && mainWindow && !mainWindow.isDestroyed()) mainWindow.showInactive();
+  }
 });
 
 ipcMain.handle('aurora:open-app', async (_event, appId) => {
