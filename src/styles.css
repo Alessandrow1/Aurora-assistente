@@ -334,3 +334,19 @@ button { color: inherit; }
 .pet-confirm-button { background: linear-gradient(100deg, #9f8aff, #6f59d9); }
 .pet-cancel-button { background: rgba(255,255,255,.1); }
 .pet-action-buttons button:disabled { opacity: .5; cursor: default; }
+
+
+.pet-voice-test {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 8px;
+  padding: 7px 11px;
+  border: 1px solid rgba(190, 174, 255, .22);
+  border-radius: 9px;
+  color: #eee8ff;
+  background: rgba(151, 127, 255, .16);
+  cursor: pointer;
+  font-size: 10px;
+}
+.pet-voice-test:hover { background: rgba(151, 127, 255, .28); }
