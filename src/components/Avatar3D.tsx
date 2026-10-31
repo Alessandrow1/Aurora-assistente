@@ -102,8 +102,8 @@ export default function Avatar3D({ speaking, thinking }: Props) {
           leftLowerArm = loaded.humanoid?.getNormalizedBoneNode('leftLowerArm') ?? null;
           rightLowerArm = loaded.humanoid?.getNormalizedBoneNode('rightLowerArm') ?? null;
           // O modelo-base vem em T-pose. Abaixamos os braços para uma pose de descanso.
-          if (leftUpperArm) { leftArmBase = leftUpperArm.rotation.z; leftUpperArm.rotation.z = leftArmBase + 0.92; }
-          if (rightUpperArm) { rightArmBase = rightUpperArm.rotation.z; rightUpperArm.rotation.z = rightArmBase - 0.92; }
+          if (leftUpperArm) { leftArmBase = leftUpperArm.rotation.z; leftUpperArm.rotation.z = leftArmBase + 1.25; }
+          if (rightUpperArm) { rightArmBase = rightUpperArm.rotation.z; rightUpperArm.rotation.z = rightArmBase - 1.25; }
           if (leftLowerArm) leftLowerArm.rotation.z += -0.12;
           if (rightLowerArm) rightLowerArm.rotation.z += 0.12;
           fallback.visible = false;
@@ -137,8 +137,8 @@ export default function Avatar3D({ speaking, thinking }: Props) {
           head.rotation.y = Math.sin(time * 0.42) * 0.035;
           head.rotation.z = Math.sin(time * 0.62) * 0.012;
         }
-        if (leftUpperArm) leftUpperArm.rotation.z = leftArmBase + 0.92 + Math.sin(time * 0.85) * 0.018;
-        if (rightUpperArm) rightUpperArm.rotation.z = rightArmBase - 0.92 - Math.sin(time * 0.85) * 0.018;
+        if (leftUpperArm) leftUpperArm.rotation.z = leftArmBase + 1.25 + Math.sin(time * 0.85) * 0.018;
+        if (rightUpperArm) rightUpperArm.rotation.z = rightArmBase - 1.25 - Math.sin(time * 0.85) * 0.018;
         const blink = Math.sin(time * 0.72 + 0.4) > 0.994 ? 1 : 0;
         vrm.expressionManager?.setValue('blink', blink);
         vrm.expressionManager?.setValue('aa', isSpeaking ? 0.16 + Math.abs(Math.sin(time * 9.5)) * 0.3 : 0);
