@@ -4,6 +4,7 @@ import Avatar3D from './components/Avatar3D';
 type Message = { role: 'user' | 'assistant'; content: string };
 type PendingAction =
   | { type: 'click'; x: number; y: number; imageWidth: number; imageHeight: number }
+  | { type: 'scroll'; x: number; y: number; delta: number; imageWidth: number; imageHeight: number }
   | { type: 'type'; text: string }
   | { type: 'key'; key: string };
 type AppConfig = {
@@ -120,10 +121,10 @@ export default function App() {
         return;
       }
 
-      const asksForComputerAction = /\b(clique|clica|digite|escreva|pressione|aperte|selecione|marque|preencha|role)\b/i.test(text);
+      const asksForComputerAction = /\b(clique|clica|digite|escreva|pressione|aperte|selecione|marque|preencha|role|rolar|pagine|desça|suba|scroll|copie|cole)\b/i.test(text);
       const capture = asksForComputerAction ? await window.aurora.captureScreen() : null;
       const computerPrompt = capture
-        ? `${text}\n\nEstou fornecendo uma captura atual do desktop. Analise-a e, se puder cumprir exatamente o pedido, retorne um único bloco [AURORA_ACTION]{JSON}[/AURORA_ACTION] com coordenadas relativas à imagem ou texto/atalho solicitado. Se não conseguir identificar o alvo com clareza, não sugira ação.`
+        ? `${text}\n\nEstou fornecendo uma captura atual do desktop. Analise-a e, se puder cumprir exatamente o pedido, retorne um único bloco [AURORA_ACTION]{JSON}[/AURORA_ACTION] com coordenadas relativas à imagem ou texto/atalho solicitado. Tipos aceitos: click com x/y, scroll com x/y/delta (-1200 a 1200; positivo desce, negativo sobe), type com text, key com key. Use apenas uma ação por vez. Se não conseguir identificar o alvo com clareza, não sugira ação.`
         : text;
 
       setMessages((current) => [...current, { role: 'assistant', content: '' }]);
@@ -146,10 +147,15 @@ export default function App() {
               candidate.x >= 0 && candidate.y >= 0 &&
               candidate.x < capture.width && candidate.y < capture.height) {
             safeAction = { type: 'click', x: Math.round(candidate.x), y: Math.round(candidate.y), imageWidth: capture.width, imageHeight: capture.height };
+          } else if (candidate?.type === 'scroll' && capture &&
+              Number.isFinite(candidate.x) && Number.isFinite(candidate.y) && Number.isFinite(candidate.delta) &&
+              candidate.x >= 0 && candidate.y >= 0 && candidate.x < capture.width && candidate.y < capture.height &&
+              candidate.delta !== 0 && Math.abs(candidate.delta) <= 1200) {
+            safeAction = { type: 'scroll', x: Math.round(candidate.x), y: Math.round(candidate.y), delta: Math.round(candidate.delta), imageWidth: capture.width, imageHeight: capture.height };
           } else if (candidate?.type === 'type' && typeof candidate.text === 'string' && candidate.text.length > 0 && candidate.text.length <= 1500) {
             safeAction = { type: 'type', text: candidate.text };
           } else if (candidate?.type === 'key' && typeof candidate.key === 'string' &&
-              ['ENTER','TAB','ESC','BACKSPACE','DELETE','UP','DOWN','LEFT','RIGHT','CTRL+A','CTRL+C','CTRL+V','CTRL+L','CTRL+S','CTRL+Z','CTRL+SHIFT+S','ALT+TAB'].includes(candidate.key.toUpperCase())) {
+              ['ENTER','TAB','ESC','BACKSPACE','SPACE','DELETE','UP','DOWN','LEFT','RIGHT','HOME','END','PAGEUP','PAGEDOWN','F5','CTRL+A','CTRL+C','CTRL+V','CTRL+L','CTRL+S','CTRL+Z','CTRL+F','CTRL+W','CTRL+T','CTRL+R','CTRL+SHIFT+S','ALT+TAB','ALT+F4','ALT+LEFT','ALT+RIGHT'].includes(candidate.key.toUpperCase())) {
             safeAction = { type: 'key', key: candidate.key.toUpperCase() };
           }
           if (safeAction) {
@@ -179,6 +185,12 @@ export default function App() {
 
   const runQuickCommand = async (rawText: string): Promise<string | null> => {
     const text = rawText.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const searchMatch = text.match(/(?:pesquise|pesquisar|procure|buscar|busque)\\s+(?:na internet|no google|por)?\\s*(.+)/i);
+    if (searchMatch?.[1]?.trim()) {
+      const query = searchMatch[1].trim();
+      await window.aurora.openUrl('https://www.google.com/search?q=' + encodeURIComponent(query));
+      return `Pesquisei por “${query}” no Google. Até que enfim uma pergunta interessante. 😏`;
+    }
     if (!/(\babra\b|\babre\b|\babrir\b|\binicie\b|\biniciar\b|\bexecute\b|\bexecuta\b|\bmostra\b|\babre\b)/.test(text)) return null;
 
     const apps = [
@@ -187,12 +199,17 @@ export default function App() {
       { id: 'explorer', names: ['explorador de arquivos', 'explorador', 'meus arquivos'], label: 'Explorador de Arquivos' },
       { id: 'paint', names: ['paint'], label: 'Paint' },
       { id: 'taskmgr', names: ['gerenciador de tarefas'], label: 'Gerenciador de Tarefas' },
+      { id: 'snippingtool', names: ['ferramenta de captura', 'captura de tela', 'recorte'], label: 'Ferramenta de Captura' },
+      { id: 'settings', names: ['configuracoes do windows', 'configuracoes'], label: 'Configurações do Windows' },
+      { id: 'camera', names: ['camera do windows', 'camera'], label: 'Câmera do Windows' },
     ];
     const folders = [
       { id: 'downloads', names: ['downloads', 'pasta de downloads'], label: 'Downloads' },
       { id: 'documents', names: ['documentos', 'meus documentos'], label: 'Documentos' },
       { id: 'desktop', names: ['area de trabalho', 'desktop'], label: 'Área de Trabalho' },
       { id: 'pictures', names: ['imagens', 'fotos', 'imagens do pc'], label: 'Imagens' },
+      { id: 'music', names: ['musicas', 'pasta de musica'], label: 'Música' },
+      { id: 'videos', names: ['videos', 'pasta de videos'], label: 'Vídeos' },
     ];
 
     const appMatch = apps.find((item) => item.names.some((name) => text.includes(name)));
@@ -383,6 +400,9 @@ export default function App() {
             <button onClick={() => void window.aurora.openApp('explorer')}>📁 Explorador</button>
             <button onClick={() => void window.aurora.openApp('paint')}>🎨 Paint</button>
             <button onClick={() => void window.aurora.openApp('taskmgr')}>📊 Gerenciador</button>
+            <button onClick={() => void window.aurora.openApp('snippingtool')}>✂ Captura</button>
+            <button onClick={() => void window.aurora.openApp('settings')}>⚙ Configurações</button>
+            <button onClick={() => void window.aurora.openApp('camera')}>📷 Câmera</button>
             <button onClick={() => void window.aurora.openUrl('https://www.google.com')}>🌐 Google</button>
           </div>
           <div className="pet-panel-title folder-title">Pastas</div>
@@ -391,6 +411,8 @@ export default function App() {
             <button onClick={() => void window.aurora.openFolder('documents')}>📄 Documentos</button>
             <button onClick={() => void window.aurora.openFolder('desktop')}>🖥 Área de Trabalho</button>
             <button onClick={() => void window.aurora.openFolder('pictures')}>🖼 Imagens</button>
+            <button onClick={() => void window.aurora.openFolder('music')}>🎵 Música</button>
+            <button onClick={() => void window.aurora.openFolder('videos')}>🎬 Vídeos</button>
           </div>
         </section>
       )}
@@ -401,7 +423,9 @@ export default function App() {
           <strong>
             {pendingAction.type === 'click'
               ? `Clicar na posição aproximada ${pendingAction.x}, ${pendingAction.y} da captura`
-              : pendingAction.type === 'type'
+              : pendingAction.type === 'scroll'
+                ? `Rolar ${pendingAction.delta > 0 ? 'para baixo' : 'para cima'} na posição ${pendingAction.x}, ${pendingAction.y}`
+                : pendingAction.type === 'type'
                 ? `Digitar: “${pendingAction.text.slice(0, 160)}${pendingAction.text.length > 160 ? '…' : ''}”`
                 : `Pressionar ${pendingAction.key}`}
           </strong>
