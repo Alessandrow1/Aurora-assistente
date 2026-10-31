@@ -22,7 +22,7 @@ if errorlevel 1 (
 if not exist public\models mkdir public\models
 if not exist public\models\aurora-anime.vrm (
   echo.
-  echo Baixando a personagem anime gratuita da Aurora (aprox. 18 MB)...
+  echo Baixando a personagem anime gratuita da Aurora - cerca de 18 MB...
   curl.exe -L --fail --retry 3 "https://raw.githubusercontent.com/GY19A/jev-stage/main/static/vrm/anime_girl.vrm" -o "public\models\aurora-anime.vrm"
   if errorlevel 1 (
     del /q "public\models\aurora-anime.vrm" >nul 2>nul
