@@ -191,7 +191,7 @@ export default function App() {
       await window.aurora.openUrl('https://www.youtube.com/results?search_query=' + encodeURIComponent(query));
       return `Procurei “${query}” no YouTube. Espero que seja algo bom, hein. 😏`;
     }
-    const searchMatch = text.match(/(?:pesquise|pesquisar|procure|buscar|busque)\\s+(?:na internet|no google|por)?\\s*(.+)/i);
+    const searchMatch = text.match(/(?:pesquise|pesquisar|procure|buscar|busque)\s+(?:na internet|no google|por)?\s*(.+)/i);
     if (searchMatch?.[1]?.trim()) {
       const query = searchMatch[1].trim();
       await window.aurora.openUrl('https://www.google.com/search?q=' + encodeURIComponent(query));
@@ -265,7 +265,7 @@ export default function App() {
         });
       });
       const answer = response.text?.trim() || 'Não consegui interpretar essa captura.';
-      if (/(?:\\bkkkk+\\b|\\bhaha+\\b|😂|🤣)/i.test(answer)) setLaughing(true);
+      if (/(?:\bkkkk+\b|\bhaha+\b|😂|🤣)/i.test(answer)) setLaughing(true);
       setMessages((current) => {
         const updated = [...current];
         const last = updated[updated.length - 1];
