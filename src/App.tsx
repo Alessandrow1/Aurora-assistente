@@ -25,6 +25,8 @@ export default function App() {
   });
   const [model, setModel] = useState('qwen3.5:2b');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [appsOpen, setAppsOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [thinking, setThinking] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -91,19 +93,94 @@ export default function App() {
 
     const history = messages
       .filter((message) => message.content !== greeting.content)
-      .slice(-12);
+      .slice(-6);
 
     setMessages((current) => [...current, { role: 'user', content: text }]);
     setInput('');
     setThinking(true);
 
     try {
+      const quickReply = await runQuickCommand(text);
+      if (quickReply) {
+        setMessages((current) => [...current, { role: 'assistant', content: quickReply }]);
+        if (autoSpeak) void speak(quickReply);
+        return;
+      }
+
       const response = await window.aurora.chat({ message: text, history });
       const answer = response.text?.trim() || 'Não consegui responder agora.';
       setMessages((current) => [...current, { role: 'assistant', content: answer }]);
       if (autoSpeak) void speak(answer);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Ocorreu um erro ao conversar com a IA.');
+    } finally {
+      setThinking(false);
+    }
+  };
+
+
+  const runQuickCommand = async (rawText: string): Promise<string | null> => {
+    const text = rawText.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');
+    if (!/(\\babra\\b|\\babre\\b|\\babrir\\b|\\binicie\\b|\\biniciar\\b|\\bexecute\\b|\\bexecuta\\b|\\bmostra\\b|\\babra\\b)/.test(text)) return null;
+
+    const apps = [
+      { id: 'calculator', names: ['calculadora'], label: 'Calculadora' },
+      { id: 'notepad', names: ['bloco de notas', 'notepad'], label: 'Bloco de Notas' },
+      { id: 'explorer', names: ['explorador de arquivos', 'explorador', 'meus arquivos'], label: 'Explorador de Arquivos' },
+      { id: 'paint', names: ['paint'], label: 'Paint' },
+      { id: 'taskmgr', names: ['gerenciador de tarefas'], label: 'Gerenciador de Tarefas' },
+    ];
+    const folders = [
+      { id: 'downloads', names: ['downloads', 'pasta de downloads'], label: 'Downloads' },
+      { id: 'documents', names: ['documentos', 'meus documentos'], label: 'Documentos' },
+      { id: 'desktop', names: ['area de trabalho', 'desktop'], label: 'Área de Trabalho' },
+      { id: 'pictures', names: ['imagens', 'fotos', 'imagens do pc'], label: 'Imagens' },
+    ];
+
+    const appMatch = apps.find((item) => item.names.some((name) => text.includes(name)));
+    if (appMatch) {
+      await window.aurora.openApp(appMatch.id);
+      return `Abri o ${appMatch.label} para você! ✨`;
+    }
+
+    const folderMatch = folders.find((item) => item.names.some((name) => text.includes(name)));
+    if (folderMatch) {
+      await window.aurora.openFolder(folderMatch.id);
+      return `Aqui está sua pasta ${folderMatch.label}. ✨`;
+    }
+
+    if (text.includes('youtube')) {
+      await window.aurora.openUrl('https://www.youtube.com');
+      return 'Abri o YouTube para você! ✨';
+    }
+    if (text.includes('google') || text.includes('navegador')) {
+      await window.aurora.openUrl('https://www.google.com');
+      return 'Abri o Google no navegador! ✨';
+    }
+    return null;
+  };
+
+  const analyzeScreen = async () => {
+    const prompt = 'Analise a captura da minha tela. Descreva o que está visível e me ajude com o que eu estiver fazendo. Se houver erro, identifique a mensagem e sugira como resolver. Não afirme que clicou ou alterou nada: apenas observe e oriente.';
+    setChatOpen(true);
+    setAppsOpen(false);
+    setNotice('Capturando a tela para análise local…');
+    setMessages((current) => [...current, { role: 'user', content: 'Aurora, veja minha tela e me diga o que está acontecendo.' }]);
+    setThinking(true);
+    try {
+      const capture = await window.aurora.captureScreen();
+      const history = messages.filter((message) => message.content !== greeting.content).slice(-6);
+      const response = await window.aurora.chat({
+        message: `${prompt} A imagem tem ${capture.width} por ${capture.height} pixels.`,
+        history,
+        imageBase64: capture.imageBase64,
+      });
+      const answer = response.text?.trim() || 'Não consegui interpretar essa captura.';
+      setMessages((current) => [...current, { role: 'assistant', content: answer }]);
+      setNotice('Captura analisada localmente pelo Ollama.');
+      if (autoSpeak) void speak(answer);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Não consegui analisar a tela.');
     } finally {
       setThinking(false);
     }
@@ -181,98 +258,110 @@ export default function App() {
 
   const connected = config.ollamaAvailable && config.modelInstalled;
 
+  const lastAssistantMessage = [...messages].reverse().find((message) => message.role === 'assistant')?.content || 'Oi! Clique em conversar para falar comigo.';
+
   return (
-    <main className="desktop-shell">
-      <div className="window-grip" aria-hidden="true" />
-      <header className="topbar">
-        <div className="brand-lockup">
-          <div className="brand-orb"><span>✦</span></div>
-          <div>
-            <div className="brand-name">Aurora</div>
-            <div className="brand-state">
-              <span className={'status-dot ' + (connected ? 'online' : '')} />
-              {connected ? 'IA local conectada' : 'IA local não configurada'}
-            </div>
-          </div>
-        </div>
-        <div className="window-actions">
-          <button className="icon-button" title="Configurações" onClick={() => setSettingsOpen(true)}>⚙</button>
-          <button className="icon-button" title="Minimizar" onClick={() => window.aurora.minimize()}>—</button>
-          <button className="icon-button close-button" title="Fechar" onClick={() => window.aurora.close()}>×</button>
-        </div>
-      </header>
-
-      <section className="hero">
-        <div className="hero-glow" />
-        <div className="floating-badge"><span className="sparkle">✦</span> SUA COMPANHEIRA DIGITAL</div>
+    <main className="desktop-shell pet-shell">
+      <div className="pet-avatar-wrap" title="Arraste a Aurora para mudar sua posição">
         <Avatar3D speaking={speaking} thinking={thinking} />
-        <div className="speech-status">
-          {thinking
-            ? <><span className="typing-dots"><i /><i /><i /></span> Estou pensando…</>
-            : speaking
-              ? <><span className="sound-bars"><i /><i /><i /><i /></span> Falando com você</>
-              : listening
-                ? <><span className="record-dot" /> Estou ouvindo…</>
-                : 'Oi! Que bom ter você por aqui.'}
-        </div>
-      </section>
+      </div>
 
-      <section className="chat-card">
-        <div className="chat-heading">
-          <div>
-            <span className="chat-title">Nossa conversa</span>
-            <span className="chat-subtitle">Pode falar comigo à vontade</span>
+      <div className="pet-status">
+        <span className={'status-dot ' + (connected ? 'online' : '')} />
+        {thinking ? 'Pensando…' : speaking ? 'Falando…' : connected ? 'Aurora está aqui' : 'Configure minha IA'}
+        <span className="pet-version">v{version}</span>
+      </div>
+
+      <div className="pet-bubble" title={lastAssistantMessage}>
+        {thinking ? 'Hmm… deixa eu pensar um pouquinho!' : speaking ? 'Estou falando com você 💗' : lastAssistantMessage}
+      </div>
+
+      <div className="pet-toolbar">
+        <button className={'pet-action ' + (chatOpen ? 'selected' : '')} onClick={() => { setChatOpen(!chatOpen); setAppsOpen(false); }} title="Conversar com Aurora">💬</button>
+        <button className="pet-action" onClick={() => void analyzeScreen()} title="Analisar o que está na tela">👁</button>
+        <button className={'pet-action ' + (appsOpen ? 'selected' : '')} onClick={() => { setAppsOpen(!appsOpen); setChatOpen(false); }} title="Abrir aplicativos e pastas">▦</button>
+        <button className="pet-action" onClick={() => setSettingsOpen(true)} title="Configurações">⚙</button>
+        <button className="pet-action" onClick={() => window.aurora.minimize()} title="Minimizar">—</button>
+        <button className="pet-action pet-close" onClick={() => window.aurora.close()} title="Fechar Aurora">×</button>
+      </div>
+
+      {appsOpen && (
+        <section className="pet-apps-menu">
+          <div className="pet-panel-title">O que vamos abrir?</div>
+          <div className="pet-app-grid">
+            <button onClick={() => void window.aurora.openApp('calculator')}>🧮 Calculadora</button>
+            <button onClick={() => void window.aurora.openApp('notepad')}>📝 Bloco de Notas</button>
+            <button onClick={() => void window.aurora.openApp('explorer')}>📁 Explorador</button>
+            <button onClick={() => void window.aurora.openApp('paint')}>🎨 Paint</button>
+            <button onClick={() => void window.aurora.openApp('taskmgr')}>📊 Gerenciador</button>
+            <button onClick={() => void window.aurora.openUrl('https://www.google.com')}>🌐 Google</button>
           </div>
-          <button className="text-button" onClick={clearConversation} title="Limpar conversa">Limpar</button>
-        </div>
+          <div className="pet-panel-title folder-title">Pastas</div>
+          <div className="pet-app-grid">
+            <button onClick={() => void window.aurora.openFolder('downloads')}>⬇ Downloads</button>
+            <button onClick={() => void window.aurora.openFolder('documents')}>📄 Documentos</button>
+            <button onClick={() => void window.aurora.openFolder('desktop')}>🖥 Área de Trabalho</button>
+            <button onClick={() => void window.aurora.openFolder('pictures')}>🖼 Imagens</button>
+          </div>
+        </section>
+      )}
 
-        <div className="messages" ref={listRef}>
-          {messages.map((message, index) => (
-            <div className={'message-row ' + message.role} key={index + '-' + message.role}>
-              {message.role === 'assistant' && <div className="message-avatar">✦</div>}
-              <div className="message-bubble">{message.content}</div>
+      {chatOpen && (
+        <section className="chat-card pet-chat-card">
+          <div className="chat-heading">
+            <div>
+              <span className="chat-title">Conversa com Aurora</span>
+              <span className="chat-subtitle">Pode pedir para eu abrir programas e pastas</span>
             </div>
-          ))}
-          {thinking && (
-            <div className="message-row assistant">
-              <div className="message-avatar">✦</div>
-              <div className="message-bubble thinking-bubble"><i /><i /><i /></div>
-            </div>
-          )}
-        </div>
+            <button className="text-button" onClick={clearConversation} title="Limpar conversa">Limpar</button>
+          </div>
 
-        {notice && <div className="notice" role="status">{notice}</div>}
+          <div className="messages" ref={listRef}>
+            {messages.map((message, index) => (
+              <div className={'message-row ' + message.role} key={index + '-' + message.role}>
+                {message.role === 'assistant' && <div className="message-avatar">✦</div>}
+                <div className="message-bubble">{message.content}</div>
+              </div>
+            ))}
+            {thinking && (
+              <div className="message-row assistant">
+                <div className="message-avatar">✦</div>
+                <div className="message-bubble thinking-bubble"><i /><i /><i /></div>
+              </div>
+            )}
+          </div>
 
-        <form className="composer" onSubmit={onSubmit}>
-          <input
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            placeholder="Escreva para a Aurora…"
-            aria-label="Mensagem para Aurora"
-            disabled={thinking}
-          />
-          <button
-            className={'mic-button ' + (listening ? 'listening' : '')}
-            type="button"
-            onClick={startListening}
-            title="Ativar microfone. O reconhecimento pode exigir internet."
-            disabled={thinking || listening}
-          >⌁</button>
-          <button className="send-button" type="submit" disabled={!input.trim() || thinking} title="Enviar mensagem">➤</button>
-        </form>
+          {notice && <div className="notice" role="status">{notice}</div>}
 
-        <div className="chat-footer">
-          <label className="speak-toggle">
-            <input type="checkbox" checked={autoSpeak} onChange={(event) => setAutoSpeak(event.target.checked)} />
-            <span>Voz natural · Francisca</span>
-          </label>
-          <span>Enter para enviar</span>
-        </div>
-      </section>
+          <form className="composer" onSubmit={onSubmit}>
+            <input
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              placeholder="Ex.: Aurora, abra a calculadora…"
+              aria-label="Mensagem para Aurora"
+              disabled={thinking}
+            />
+            <button
+              className={'mic-button ' + (listening ? 'listening' : '')}
+              type="button"
+              onClick={startListening}
+              title="Ativar microfone"
+              disabled={thinking || listening}
+            >⌁</button>
+            <button className="send-button" type="submit" disabled={!input.trim() || thinking} title="Enviar mensagem">➤</button>
+          </form>
 
-      <footer className="bottom-note">
-        <span>✧</span> Aurora está evoluindo com você <span className="version">v{version}</span>
-      </footer>
+          <div className="chat-footer">
+            <label className="speak-toggle">
+              <input type="checkbox" checked={autoSpeak} onChange={(event) => setAutoSpeak(event.target.checked)} />
+              <span>Voz anime · Thalita</span>
+            </label>
+            <button className="text-button" onClick={() => void analyzeScreen()} title="Capturar e analisar a tela">Analisar tela</button>
+          </div>
+        </section>
+      )}
+
+      {notice && !chatOpen && <div className="pet-notice">{notice}</div>}
 
       {settingsOpen && (
         <div
@@ -286,7 +375,7 @@ export default function App() {
             <div className="modal-header">
               <div>
                 <div className="eyebrow">PERSONALIZE SUA EXPERIÊNCIA</div>
-                <h2 id="settings-title">Configurações</h2>
+                <h2 id="settings-title">Configurações da Aurora</h2>
               </div>
               <button className="icon-button modal-close" onClick={() => setSettingsOpen(false)} aria-label="Fechar">×</button>
             </div>
@@ -294,16 +383,15 @@ export default function App() {
             <form onSubmit={saveSettings} className="settings-form">
               <div className="secure-note">
                 <span>✓</span>
-                <span>Sem mensalidade, sem chave de API e sem cobrança por mensagem. A IA roda localmente pelo Ollama.</span>
+                <span>Sem API paga: o chat e a análise de tela usam o Ollama local no computador.</span>
               </div>
-
               <label className="field-label" htmlFor="model">Modelo local</label>
               <select id="model" className="settings-input" value={model} onChange={(event) => setModel(event.target.value)}>
-                <option value="qwen3.5:2b">Qwen 3.5 2B — mais leve</option>
+                <option value="qwen3.5:2b">Qwen 3.5 2B — mais leve, também entende imagens</option>
                 <option value="qwen3.5:4b">Qwen 3.5 4B — melhor qualidade, exige mais memória</option>
                 <option value="qwen3.5:9b">Qwen 3.5 9B — mais pesado, PC mais forte</option>
               </select>
-              <p className="field-help">O modelo precisa ser baixado uma vez. Depois, as conversas podem funcionar sem internet. Modelos maiores exigem mais memória.</p>
+              <p className="field-help">Modelos maiores podem demorar mais para responder. Para começar, mantenha o 2B.</p>
 
               <div className="secure-note">
                 <span>{config.ollamaAvailable ? '✓' : '!'}</span>
@@ -314,22 +402,26 @@ export default function App() {
                 </span>
               </div>
 
+              <div className="modal-divider" />
+              <div className="settings-bottom">
+                <div>
+                  <strong>Voz da Aurora</strong>
+                  <p>Troquei a Francisca pela Thalita Neural e aumentei o tom para ficar mais agudo e delicado. A voz é sintetizada online e precisa de internet.</p>
+                </div>
+                <div>
+                  <strong>Visão e privacidade</strong>
+                  <p>A tela só é capturada quando você toca no botão de olho ou pede para analisar a tela. A imagem vai para o Ollama local no seu PC; não é enviada a uma API na nuvem.</p>
+                </div>
+                <div>
+                  <strong>Comandos disponíveis nesta versão</strong>
+                  <p>Você pode pedir para abrir a Calculadora, Bloco de Notas, Explorador, Paint, Gerenciador de Tarefas, Google e pastas conhecidas. A Aurora não executa comandos arbitrários do Windows.</p>
+                </div>
+              </div>
+
               <button className="save-button" type="submit" disabled={saving}>
                 {saving ? 'Salvando…' : 'Salvar modelo'}
               </button>
             </form>
-
-            <div className="modal-divider" />
-            <div className="settings-bottom">
-              <div>
-                <strong>Como ativar a inteligência</strong>
-                <p>Feche a Aurora e execute INSTALAR-IA-GRATUITA.bat dentro da pasta do projeto. Ele instala o Ollama (se necessário) e baixa o Qwen 3.5 2B. Para usar modelos maiores, execute ollama pull qwen3.5:4b ou ollama pull qwen3.5:9b no terminal.</p>
-              </div>
-              <div>
-                <strong>Privacidade e voz</strong>
-                <p>O texto do chat é processado no próprio PC pelo Ollama. A fala usa a voz neural Francisca do serviço online do Microsoft Edge e precisa de internet. O microfone usa o reconhecimento de voz do Chromium, que também pode depender de internet.</p>
-              </div>
-            </div>
           </section>
         </div>
       )}
