@@ -8,3 +8,7 @@ release/
 
 # Downloaded avatar model (downloaded by ATUALIZAR-AURORA.bat)
 public/models/*.vrm
+# Third-party Live2D avatar assets and local SDK files - keep out of GitHub
+public/models/booth-6xb/
+public/Core/
+vendor/live2d/
