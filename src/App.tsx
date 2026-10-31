@@ -185,7 +185,7 @@ export default function App() {
 
   const runQuickCommand = async (rawText: string): Promise<string | null> => {
     const text = rawText.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const searchMatch = text.match(/(?:pesquise|pesquisar|procure|buscar|busque)\\s+(?:na internet|no google|por)?\\s*(.+)/i);
+    const searchMatch = text.match(/(?:pesquise|pesquisar|procure|buscar|busque)\s+(?:na internet|no google|por)?\\s*(.+)/i);
     if (searchMatch?.[1]?.trim()) {
       const query = searchMatch[1].trim();
       await window.aurora.openUrl('https://www.google.com/search?q=' + encodeURIComponent(query));
