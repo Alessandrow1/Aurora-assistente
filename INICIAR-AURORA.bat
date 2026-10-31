@@ -44,7 +44,7 @@ if not exist node_modules\@pixiv\three-vrm (
 )
 if not exist public\models\aurora-anime.vrm (
   if not exist public\models mkdir public\models
-  echo Baixando o modelo 3D anime gratuito da Aurora (aprox. 18 MB)...
+  echo Baixando o modelo 3D anime gratuito da Aurora - cerca de 18 MB...
   curl.exe -L --fail --retry 3 "https://raw.githubusercontent.com/GY19A/jev-stage/main/static/vrm/anime_girl.vrm" -o "public\models\aurora-anime.vrm"
   if errorlevel 1 (
     del /q "public\models\aurora-anime.vrm" >nul 2>nul
