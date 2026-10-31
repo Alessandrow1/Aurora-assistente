@@ -66,8 +66,7 @@ function createWindow() {
   const distIndexPath = path.join(__dirname, '..', 'dist', 'index.html');
   // Em desenvolvimento, o Vite serve a interface em localhost. Na versão
   // empacotada, o Electron carrega o arquivo gerado em dist/index.html.
-  const devUrl = process.env.VITE_DEV_SERVER_URL
-    || (!app.isPackaged && !fs.existsSync(distIndexPath) ? 'http://127.0.0.1:5173' : null);
+  const devUrl = process.env.VITE_DEV_SERVER_URL || (!app.isPackaged ? 'http://127.0.0.1:5173' : null);
 
   if (devUrl) {
     mainWindow.loadURL(devUrl);
