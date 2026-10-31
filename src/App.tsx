@@ -72,7 +72,7 @@ export default function App() {
   }, [laughing]);
 
   const speak = async (text: string) => {
-    if (/(?:\\bkkkk+\\b|\\bhaha+\\b|\\bhehe+\\b|\\brsrs+\\b|😂|🤣)/i.test(text)) setLaughing(true);
+    if (/(?:\bkkkk+\b|\bhaha+\b|\bhehe+\b|\brsrs+\b|😂|🤣)/i.test(text)) setLaughing(true);
     try {
       audioRef.current?.pause();
       audioRef.current = null;
@@ -138,6 +138,7 @@ export default function App() {
         });
       });
       let answer = response.text?.trim() || 'Não consegui responder agora.';
+      if (/(?:\bkkkk+\b|\bhaha+\b|\bhehe+\b|\brsrs+\b|😂|🤣)/i.test(text + ' ' + answer)) setLaughing(true);
       const actionMatch = answer.match(/\[AURORA_ACTION\]\s*(\{[\s\S]*?\})\s*\[\/AURORA_ACTION\]/i);
       if (actionMatch) {
         try {
