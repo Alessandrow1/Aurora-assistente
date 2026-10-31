@@ -72,6 +72,7 @@ export default function App() {
   }, [laughing]);
 
   const speak = async (text: string) => {
+    if (/(?:\\bkkkk+\\b|\\bhaha+\\b|\\bhehe+\\b|\\brsrs+\\b|😂|🤣)/i.test(text)) setLaughing(true);
     try {
       audioRef.current?.pause();
       audioRef.current = null;
@@ -265,7 +266,7 @@ export default function App() {
         });
       });
       const answer = response.text?.trim() || 'Não consegui interpretar essa captura.';
-      if (/(?:\bkkkk+\b|\bhaha+\b|😂|🤣)/i.test(answer)) setLaughing(true);
+      if (/(?:\bkkkk+\b|\bhaha+\b|\bhehe+\b|\brsrs+\b|😂|🤣)/i.test(answer)) setLaughing(true);
       setMessages((current) => {
         const updated = [...current];
         const last = updated[updated.length - 1];
