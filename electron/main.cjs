@@ -360,8 +360,8 @@ ipcMain.handle('aurora:execute-action', async (_event, payload = {}) => {
       throw new Error('A posição do clique não é válida.');
     }
     const display = screen.getPrimaryDisplay();
-    const screenX = Math.round((x / imageWidth) * display.size.width);
-    const screenY = Math.round((y / imageHeight) * display.size.height);
+    const screenX = Math.round((x / imageWidth) * display.size.width * (display.scaleFactor || 1));
+    const screenY = Math.round((y / imageHeight) * display.size.height * (display.scaleFactor || 1));
     const script = `
 Add-Type -TypeDefinition @'
 using System;
