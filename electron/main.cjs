@@ -1,7 +1,8 @@
-const { app, BrowserWindow, ipcMain, session } = require('electron');
+const { app, BrowserWindow, ipcMain, session, desktopCapturer, shell, screen } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
+const { spawn } = require('node:child_process');
 
 const OLLAMA_URL = 'http://127.0.0.1:11434';
 const DEFAULT_MODEL = 'qwen3.5:2b';
@@ -37,17 +38,22 @@ async function getOllamaModels() {
 }
 
 function createWindow() {
+  const area = screen.getPrimaryDisplay().workArea;
+  const petWidth = 380;
+  const petHeight = Math.min(720, Math.max(560, area.height - 32));
   mainWindow = new BrowserWindow({
-    width: 430,
-    height: 900,
-    minWidth: 390,
-    minHeight: 700,
-    maxWidth: 560,
-    maxHeight: 1100,
+    width: petWidth,
+    height: petHeight,
+    x: Math.max(area.x, area.x + area.width - petWidth - 12),
+    y: Math.max(area.y, area.y + area.height - petHeight - 12),
+    minWidth: petWidth,
+    minHeight: petHeight,
+    maxWidth: petWidth,
+    maxHeight: petHeight,
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
-    resizable: true,
+    resizable: false,
     alwaysOnTop: true,
     skipTaskbar: false,
     show: false,
@@ -139,9 +145,13 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   const history = Array.isArray(payload.history)
     ? payload.history
         .filter((item) => item && ['user', 'assistant'].includes(item.role) && typeof item.content === 'string')
-        .slice(-12)
-        .map((item) => ({ role: item.role, content: item.content.slice(0, 4000) }))
+        .slice(-6)
+        .map((item) => ({ role: item.role, content: item.content.slice(0, 1400) }))
     : [];
+
+  const imageBase64 = typeof payload.imageBase64 === 'string' && payload.imageBase64.length <= 18000000
+    ? payload.imageBase64.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, '')
+    : '';
 
   let response;
   try {
@@ -153,6 +163,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
         model: settings.model,
         stream: false,
         think: false,
+        keep_alive: '10m',
         messages: [
           {
             role: 'system',
@@ -169,9 +180,9 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
             .join(' '),
           },
           ...history,
-          { role: 'user', content: message },
+          { role: 'user', content: message, ...(imageBase64 ? { images: [imageBase64] } : {}) },
         ],
-        options: { temperature: 0.7, num_predict: 700, num_ctx: 8192 },
+        options: { temperature: 0.65, num_predict: 300, num_ctx: 4096 },
       }),
     });
   } catch (error) {
@@ -209,23 +220,89 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
     .trim();
   const audioPath = path.join(app.getPath('temp'), `aurora-francisca-${process.pid}-${Date.now()}.mp3`);
   const tts = new EdgeTTS({
-    voice: 'pt-BR-FranciscaNeural',
+    voice: 'pt-BR-ThalitaNeural',
     lang: 'pt-BR',
     outputFormat: 'audio-24khz-96kbitrate-mono-mp3',
-    rate: '-4%',
-    pitch: '+0Hz',
+    rate: '+5%',
+    pitch: '+18Hz',
     timeout: 30000,
   });
 
   try {
     await tts.ttsPromise(cleanText, audioPath);
     const audio = await fsp.readFile(audioPath);
-    return { audioBase64: audio.toString('base64'), voice: 'pt-BR-FranciscaNeural' };
+    return { audioBase64: audio.toString('base64'), voice: 'pt-BR-ThalitaNeural' };
   } catch (error) {
     throw new Error('Não consegui gerar a voz neural. Confira sua conexão com a internet e tente novamente.');
   } finally {
     await fsp.rm(audioPath, { force: true }).catch(() => undefined);
   }
+});
+
+
+ipcMain.handle('aurora:capture-screen', async () => {
+  const wasVisible = Boolean(mainWindow?.isVisible());
+  try {
+    if (wasVisible) mainWindow.hide();
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: 1600, height: 900 },
+      fetchWindowIcons: false,
+    });
+    const source = sources[0];
+    if (!source || source.thumbnail.isEmpty()) {
+      throw new Error('Não consegui capturar a tela. Verifique se há um monitor ativo.');
+    }
+    const image = source.thumbnail.resize({ width: 1280, quality: 'good' });
+    const size = image.getSize();
+    return {
+      imageBase64: image.toJPEG(78).toString('base64'),
+      width: size.width,
+      height: size.height,
+    };
+  } finally {
+    if (wasVisible && mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
+  }
+});
+
+const SAFE_APPS = {
+  calculator: { command: 'calc.exe', label: 'Calculadora' },
+  notepad: { command: 'notepad.exe', label: 'Bloco de Notas' },
+  explorer: { command: 'explorer.exe', label: 'Explorador de Arquivos' },
+  paint: { command: 'mspaint.exe', label: 'Paint' },
+  taskmgr: { command: 'taskmgr.exe', label: 'Gerenciador de Tarefas' },
+};
+
+ipcMain.handle('aurora:open-app', async (_event, appId) => {
+  const appInfo = SAFE_APPS[appId];
+  if (!appInfo) throw new Error('Esse aplicativo ainda não está na lista de comandos permitidos.');
+  const child = spawn(appInfo.command, [], { detached: true, stdio: 'ignore', windowsHide: false });
+  child.unref();
+  return { success: true, label: appInfo.label };
+});
+
+ipcMain.handle('aurora:open-folder', async (_event, folderId) => {
+  const allowedPaths = {
+    desktop: app.getPath('desktop'),
+    documents: app.getPath('documents'),
+    downloads: path.join(app.getPath('home'), 'Downloads'),
+    pictures: app.getPath('pictures'),
+  };
+  const target = allowedPaths[folderId];
+  if (!target) throw new Error('Essa pasta não está na lista de locais permitidos.');
+  const error = await shell.openPath(target);
+  if (error) throw new Error(error);
+  return { success: true, label: folderId };
+});
+
+ipcMain.handle('aurora:open-url', async (_event, rawUrl) => {
+  if (typeof rawUrl !== 'string') throw new Error('Endereço inválido.');
+  let parsed;
+  try { parsed = new URL(rawUrl); } catch { throw new Error('Endereço inválido.'); }
+  if (!['https:', 'http:'].includes(parsed.protocol)) throw new Error('Por segurança, só posso abrir endereços HTTP ou HTTPS.');
+  await shell.openExternal(parsed.toString());
+  return { success: true };
 });
 
 ipcMain.on('aurora:minimize', () => mainWindow?.minimize());
