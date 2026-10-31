@@ -10,7 +10,8 @@ declare global {
       checkOllama: () => Promise<AuroraStatus>;
       saveSettings: (payload: { model: string }) => Promise<{ model: string }>;
       chat: (payload: { message: string; history: AuroraMessage[]; imageBase64?: string }, onChunk?: (content: string) => void) => Promise<{ text: string }>;
-      captureScreen: () => Promise<{ imageBase64: string; width: number; height: number }>;
+      captureScreen: () => Promise<{ imageBase64: string; width: number; height: number; screenWidth: number; screenHeight: number }>;
+      executeAction: (action: { type: 'click'; x: number; y: number; imageWidth: number; imageHeight: number } | { type: 'type'; text: string } | { type: 'key'; key: string }) => Promise<{ success: boolean; description: string }>; 
       openApp: (appId: string) => Promise<{ success: boolean; label: string }>;
       openFolder: (folderId: string) => Promise<{ success: boolean; label: string }>;
       openUrl: (url: string) => Promise<{ success: boolean }>;
