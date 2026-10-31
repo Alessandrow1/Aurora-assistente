@@ -263,7 +263,7 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
     .replace(/[#*_>|]/g, ' ')
     .replace(/\bkkkk+\b/gi, 'hahaha')
     .replace(/\bkkk\b/gi, 'ha ha ha')
-    .replace(/\b lol \b/gi, ' hahaha ')
+    .replace(/\blol\b/gi, 'hahaha')
     .replace(/\s+/g, ' ')
     .trim();
   const audioPath = path.join(app.getPath('temp'), `aurora-leticia-${process.pid}-${Date.now()}.mp3`);
