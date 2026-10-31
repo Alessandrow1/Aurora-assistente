@@ -14,6 +14,10 @@ on:
       - '*.bat'
       - '.github/workflows/build-windows.yml'
 
+concurrency:
+  group: aurora-windows-installer-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
