@@ -275,11 +275,11 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
     voice: 'pt-BR-LeticiaNeural',
     lang: 'pt-BR',
     outputFormat: 'audio-24khz-96kbitrate-mono-mp3',
-    rate: '+8%',
-    // O node-edge-tts documenta pitch percentual; evitamos o formato em Hz
-    // para não enviar uma configuração de prosódia incompatível ao serviço.
-    pitch: '+18%',
-    timeout: 60000,
+    // Mantemos a prosódia neutra para reduzir rejeições de SSML no serviço.
+    rate: '+0%',
+    pitch: '+0%',
+    // O fallback local entra em ação se o serviço remoto demorar.
+    timeout: 25000,
   });
 
   try {
