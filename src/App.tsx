@@ -41,7 +41,7 @@ export default function App() {
   const [listening, setListening] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(true);
   const [notice, setNotice] = useState('');
-  const [version, setVersion] = useState('0.3.0');
+  const [version, setVersion] = useState('0.4.0');
   const listRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -554,7 +554,7 @@ export default function App() {
                 </div>
                 <div>
                   <strong>Comandos disponíveis nesta versão</strong>
-                  <p>Você pode pedir para abrir a Calculadora, Bloco de Notas, Explorador, Paint, Gerenciador de Tarefas, Google e pastas conhecidas. A Aurora não executa comandos arbitrários do Windows.</p>
+                  <p>Você pode pedir para abrir Calculadora, Bloco de Notas, Explorador, Paint, Gerenciador de Tarefas, Ferramenta de Captura, Configurações, Câmera, sites, pesquisas na internet e pastas conhecidas. Também posso analisar sua tela e sugerir cliques, rolagem, digitação e atalhos; ações no PC sempre precisam de confirmação.</p>
                 </div>
               </div>
 
