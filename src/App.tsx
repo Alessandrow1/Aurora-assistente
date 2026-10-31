@@ -484,6 +484,7 @@ export default function App() {
   const clearConversation = () => {
     audioRef.current?.pause();
     audioRef.current = null;
+    window.speechSynthesis?.cancel();
     setSpeaking(false);
     setMessages([greeting]);
     setNotice('Conversa limpa. Podemos começar de novo!');
@@ -621,7 +622,7 @@ export default function App() {
             </span>
             <label className="speak-toggle">
               <input type="checkbox" checked={autoSpeak} onChange={(event) => setAutoSpeak(event.target.checked)} />
-              <span>Voz anime · Leticia</span>
+              <span>Fala automática</span>
             </label>
             <button className="text-button" onClick={() => void analyzeScreen()} title="Capturar e analisar a tela">Analisar tela</button>
           </div>
