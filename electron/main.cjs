@@ -336,6 +336,9 @@ const SAFE_APPS = {
   explorer: { command: 'explorer.exe', label: 'Explorador de Arquivos' },
   paint: { command: 'mspaint.exe', label: 'Paint' },
   taskmgr: { command: 'taskmgr.exe', label: 'Gerenciador de Tarefas' },
+  snippingtool: { command: 'SnippingTool.exe', label: 'Ferramenta de Captura' },
+  settings: { url: 'ms-settings:', label: 'Configurações do Windows' },
+  camera: { url: 'microsoft.windows.camera:', label: 'Câmera do Windows' },
 };
 
 
