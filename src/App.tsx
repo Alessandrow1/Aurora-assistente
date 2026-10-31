@@ -116,7 +116,7 @@ export default function App() {
       const asksForComputerAction = /\b(clique|clica|digite|escreva|pressione|aperte|selecione|marque|preencha|role)\b/i.test(text);
       const capture = asksForComputerAction ? await window.aurora.captureScreen() : null;
       const computerPrompt = capture
-        ? `${text}\\n\\nEstou fornecendo uma captura atual do desktop. Analise-a e, se puder cumprir exatamente o pedido, retorne um único bloco [AURORA_ACTION]{JSON}[/AURORA_ACTION] com coordenadas relativas à imagem ou texto/atalho solicitado. Se não conseguir identificar o alvo com clareza, não sugira ação.`
+        ? `${text}\n\nEstou fornecendo uma captura atual do desktop. Analise-a e, se puder cumprir exatamente o pedido, retorne um único bloco [AURORA_ACTION]{JSON}[/AURORA_ACTION] com coordenadas relativas à imagem ou texto/atalho solicitado. Se não conseguir identificar o alvo com clareza, não sugira ação.`
         : text;
 
       setMessages((current) => [...current, { role: 'assistant', content: '' }]);
