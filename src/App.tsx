@@ -39,12 +39,19 @@ export default function App() {
   const [speaking, setSpeaking] = useState(false);
   const [laughing, setLaughing] = useState(false);
   const [listening, setListening] = useState(false);
+  const [voiceMode, setVoiceMode] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(true);
   const [notice, setNotice] = useState('');
   const [version, setVersion] = useState('0.4.0');
   const listRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
+  const recognitionRestartRef = useRef<number | null>(null);
+  const voiceModeRef = useRef(false);
+  const thinkingRef = useRef(false);
+  const pendingVoiceRef = useRef<string[]>([]);
+  const sendMessageRef = useRef<(rawText: string) => Promise<void>>(async () => undefined);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  thinkingRef.current = thinking;
 
   useEffect(() => {
     window.aurora.getConfig()
@@ -56,7 +63,13 @@ export default function App() {
     window.aurora.version().then(setVersion).catch(() => undefined);
 
     return () => {
+      voiceModeRef.current = false;
+      if (recognitionRestartRef.current !== null) {
+        window.clearTimeout(recognitionRestartRef.current);
+        recognitionRestartRef.current = null;
+      }
       audioRef.current?.pause();
+      window.speechSynthesis?.cancel();
       recognitionRef.current?.abort?.();
     };
   }, []);
@@ -73,12 +86,15 @@ export default function App() {
 
   const speak = async (text: string) => {
     if (/(?:\bkkkk+\b|\bhaha+\b|\bhehe+\b|\brsrs+\b|😂|🤣)/i.test(text)) setLaughing(true);
+    audioRef.current?.pause();
+    audioRef.current = null;
+    window.speechSynthesis?.cancel();
+    setSpeaking(true);
+
     try {
-      audioRef.current?.pause();
-      audioRef.current = null;
-      setSpeaking(true);
       const result = await window.aurora.speak(text);
       if (!result?.audioBase64) throw new Error('A voz neural não retornou áudio.');
+
       const audio = new Audio('data:audio/mpeg;base64,' + result.audioBase64);
       audioRef.current = audio;
       audio.onended = () => {
@@ -88,22 +104,48 @@ export default function App() {
       audio.onerror = () => {
         setSpeaking(false);
         audioRef.current = null;
-        setNotice('O áudio não pôde ser reproduzido.');
+        setNotice('O áudio neural não pôde ser reproduzido.');
       };
       await audio.play();
     } catch (error) {
-      setSpeaking(false);
-      setNotice(error instanceof Error ? error.message : 'Não consegui iniciar a voz neural.');
+      audioRef.current?.pause();
+      audioRef.current = null;
+
+      // Fallback local: mantém a Aurora falando mesmo quando o serviço neural falha.
+      try {
+        if (!('speechSynthesis' in window)) throw error;
+        const synth = window.speechSynthesis;
+        const utterance = new SpeechSynthesisUtterance(text);
+        const voices = synth.getVoices();
+        const portugueseVoice = voices.find((voice) => /^pt-BR$/i.test(voice.lang))
+          || voices.find((voice) => /^pt(-|_)/i.test(voice.lang));
+        utterance.lang = 'pt-BR';
+        if (portugueseVoice) utterance.voice = portugueseVoice;
+        utterance.rate = 1;
+        utterance.pitch = 1.04;
+        utterance.onend = () => setSpeaking(false);
+        utterance.onerror = () => setSpeaking(false);
+        setNotice('A voz neural está indisponível. Estou usando temporariamente a voz instalada no Windows.');
+        synth.cancel();
+        synth.speak(utterance);
+      } catch (fallbackError) {
+        setSpeaking(false);
+        const neuralDetail = error instanceof Error ? error.message : String(error);
+        const fallbackDetail = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+        setNotice('Não consegui gerar áudio. Voz neural: ' + neuralDetail.slice(0, 150) + '. Voz do Windows: ' + fallbackDetail.slice(0, 100));
+      }
     }
   };
 
   const sendMessage = async (rawText: string) => {
     const text = rawText.trim();
-    if (!text || thinking) return;
+    if (!text || thinkingRef.current) return;
 
+    thinkingRef.current = true;
     setNotice('');
     audioRef.current?.pause();
     audioRef.current = null;
+    window.speechSynthesis?.cancel();
     setSpeaking(false);
 
     const history = messages
@@ -180,10 +222,19 @@ export default function App() {
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Ocorreu um erro ao conversar com a IA.');
     } finally {
+      thinkingRef.current = false;
       setThinking(false);
     }
   };
 
+  sendMessageRef.current = sendMessage;
+
+  useEffect(() => {
+    if (!thinking && pendingVoiceRef.current.length > 0) {
+      const nextTranscript = pendingVoiceRef.current.shift();
+      if (nextTranscript) void sendMessageRef.current(nextTranscript);
+    }
+  }, [thinking]);
 
   const runQuickCommand = async (rawText: string): Promise<string | null> => {
     const text = rawText.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -305,41 +356,109 @@ export default function App() {
     }
   };
 
+  const stopVoiceMode = () => {
+    voiceModeRef.current = false;
+    setVoiceMode(false);
+    if (recognitionRestartRef.current !== null) {
+      window.clearTimeout(recognitionRestartRef.current);
+      recognitionRestartRef.current = null;
+    }
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
+    recognition?.abort?.();
+    setListening(false);
+    setNotice('Conversa por voz desativada. O microfone foi liberado.');
+  };
+
   const startListening = () => {
-    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!Recognition) {
-      setNotice('O reconhecimento de voz não está disponível. Você ainda pode digitar e ouvir minhas respostas.');
+    if (voiceModeRef.current) {
+      stopVoiceMode();
       return;
     }
 
-    try {
-      recognitionRef.current?.abort?.();
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition) {
+      setNotice('O reconhecimento contínuo não está disponível nesta instalação do Electron.');
+      return;
+    }
+
+    voiceModeRef.current = true;
+    setVoiceMode(true);
+    setNotice('Conversa contínua ativada. O microfone ficará ligado até você tocar novamente no botão.');
+
+    let startRecognitionSession: () => void;
+    const scheduleRestart = (delay = 850) => {
+      if (!voiceModeRef.current || recognitionRestartRef.current !== null) return;
+      recognitionRestartRef.current = window.setTimeout(() => {
+        recognitionRestartRef.current = null;
+        startRecognitionSession();
+      }, delay);
+    };
+
+    startRecognitionSession = () => {
+      if (!voiceModeRef.current) return;
       const recognition = new Recognition();
       recognition.lang = 'pt-BR';
       recognition.interimResults = false;
-      recognition.continuous = false;
-      recognition.onstart = () => {
-        setListening(true);
-        setNotice('Estou ouvindo…');
-      };
+      recognition.continuous = true;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => setListening(true);
       recognition.onresult = (event: any) => {
-        const transcript = event.results?.[0]?.[0]?.transcript || '';
+        if (!voiceModeRef.current) return;
+        const phrases: string[] = [];
+        for (let index = event.resultIndex ?? 0; index < event.results.length; index += 1) {
+          const result = event.results[index];
+          const phrase = result?.[0]?.transcript?.trim();
+          if (result?.isFinal && phrase) phrases.push(phrase);
+        }
+        const transcript = phrases.join(' ').replace(/\s+/g, ' ').trim();
+        if (!transcript) return;
+
+        // A fala reconhecida do usuário interrompe a voz atual da Aurora.
+        audioRef.current?.pause();
+        audioRef.current = null;
+        window.speechSynthesis?.cancel();
+        setSpeaking(false);
         setNotice('');
-        void sendMessage(transcript);
+
+        if (thinkingRef.current) {
+          pendingVoiceRef.current.push(transcript);
+          setNotice('Recebi sua fala. Vou responder assim que terminar a resposta atual.');
+        } else {
+          void sendMessageRef.current(transcript);
+        }
       };
       recognition.onerror = (event: any) => {
-        setNotice(event.error === 'not-allowed'
-          ? 'O acesso ao microfone foi bloqueado. Libere a permissão no Windows.'
-          : 'Não consegui entender o áudio. Tente novamente ou digite sua mensagem.');
         setListening(false);
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          voiceModeRef.current = false;
+          setVoiceMode(false);
+          setNotice('O acesso ao microfone foi bloqueado. Libere a permissão de microfone no Windows.');
+        } else if (event.error === 'audio-capture') {
+          voiceModeRef.current = false;
+          setVoiceMode(false);
+          setNotice('Não encontrei um microfone ativo. Confira o dispositivo de entrada do Windows.');
+        } else if (event.error && !['no-speech', 'aborted', 'network'].includes(event.error)) {
+          setNotice('O reconhecimento de voz encontrou um erro: ' + event.error);
+        }
       };
-      recognition.onend = () => setListening(false);
+      recognition.onend = () => {
+        setListening(false);
+        if (recognitionRef.current === recognition) recognitionRef.current = null;
+        if (voiceModeRef.current) scheduleRestart();
+      };
+
       recognitionRef.current = recognition;
-      recognition.start();
-    } catch {
-      setListening(false);
-      setNotice('Não consegui iniciar o microfone.');
-    }
+      try {
+        recognition.start();
+      } catch {
+        if (recognitionRef.current === recognition) recognitionRef.current = null;
+        scheduleRestart(1400);
+      }
+    };
+
+    startRecognitionSession();
   };
 
   const saveSettings = async (event: FormEvent) => {
@@ -452,7 +571,7 @@ export default function App() {
           <div className="chat-heading">
             <div>
               <span className="chat-title">Conversa com Aurora</span>
-              <span className="chat-subtitle">Pode pedir para eu abrir programas e pastas</span>
+              <span className="chat-subtitle">{voiceMode ? 'Conversa contínua ativa · pode falar naturalmente' : 'Pode pedir para eu abrir programas e pastas'}</span>
             </div>
             <button className="text-button" onClick={clearConversation} title="Limpar conversa">Limpar</button>
           </div>
@@ -486,16 +605,20 @@ export default function App() {
               disabled={thinking}
             />
             <button
-              className={'mic-button ' + (listening ? 'listening' : '')}
+              className={'mic-button ' + (voiceMode ? 'listening' : '')}
               type="button"
               onClick={startListening}
-              title="Ativar microfone"
-              disabled={thinking || listening}
-            >⌁</button>
+              title={voiceMode ? 'Desativar conversa contínua' : 'Ativar conversa contínua'}
+              aria-label={voiceMode ? 'Desativar conversa contínua' : 'Ativar conversa contínua'}
+              aria-pressed={voiceMode}
+            >{voiceMode ? '■' : '⌁'}</button>
             <button className="send-button" type="submit" disabled={!input.trim() || thinking} title="Enviar mensagem">➤</button>
           </form>
 
           <div className="chat-footer">
+            <span className={'voice-mode-status ' + (voiceMode ? 'active' : '')}>
+              <i /> {voiceMode ? (listening ? 'Microfone ativo' : 'Reconectando microfone…') : 'Microfone desligado'}
+            </span>
             <label className="speak-toggle">
               <input type="checkbox" checked={autoSpeak} onChange={(event) => setAutoSpeak(event.target.checked)} />
               <span>Voz anime · Leticia</span>
