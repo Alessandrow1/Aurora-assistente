@@ -185,7 +185,7 @@ export default function App() {
 
   const runQuickCommand = async (rawText: string): Promise<string | null> => {
     const text = rawText.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const youtubeQuery = text.match(/(?:pesquise|procure|busque)\\s+(?:no youtube|no youtube por)\\s+(.+)/i);
+    const youtubeQuery = text.match(/(?:pesquise|procure|busque)\s+(?:no youtube|no youtube por)\s+(.+)/i);
     if (youtubeQuery?.[1]?.trim()) {
       const query = youtubeQuery[1].trim();
       await window.aurora.openUrl('https://www.youtube.com/results?search_query=' + encodeURIComponent(query));
