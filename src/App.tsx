@@ -121,7 +121,7 @@ export default function App() {
         return;
       }
 
-      const asksForComputerAction = /\b(clique|clica|digite|escreva|pressione|aperte|selecione|marque|preencha|role|rolar|pagine|desça|suba|scroll|copie|cole)\b/i.test(text);
+      const asksForComputerAction = /\b(clique|clica|digite|escreva|pressione|aperte|selecione|marque|preencha|role|rolar|pagine|desça|suba|scroll|copie|cole|analise|analisa|olhe|olha|veja|observe|resolva|arrume|configure|explique|identifique)\b/i.test(text);
       const capture = asksForComputerAction ? await window.aurora.captureScreen() : null;
       const computerPrompt = capture
         ? `${text}\n\nEstou fornecendo uma captura atual do desktop. Analise-a e, se puder cumprir exatamente o pedido, retorne um único bloco [AURORA_ACTION]{JSON}[/AURORA_ACTION] com coordenadas relativas à imagem ou texto/atalho solicitado. Tipos aceitos: click com x/y, scroll com x/y/delta (-1200 a 1200; positivo desce, negativo sobe), type com text, key com key. Use apenas uma ação por vez. Se não conseguir identificar o alvo com clareza, não sugira ação.`
@@ -225,12 +225,15 @@ export default function App() {
     }
 
     if (text.includes('youtube')) {
-      await window.aurora.openUrl('https://www.youtube.com');
-      return 'Abri o YouTube para você! ✨';
+      const query = text.match(/(?:pesquise|procure|busque)\\s+(?:no youtube|no youtube por)\\s+(.+)/i);
+      await window.aurora.openUrl(query?.[1]
+        ? 'https://www.youtube.com/results?search_query=' + encodeURIComponent(query[1])
+        : 'https://www.youtube.com');
+      return query?.[1] ? `Procurei “${query[1]}” no YouTube. Espero que seja algo bom, hein. 😏` : 'Abri o YouTube para você! ✨';
     }
-    if (text.includes('google') || text.includes('navegador')) {
+    if (text.includes('google') || text.includes('navegador') || text.includes('chrome') || text.includes('edge')) {
       await window.aurora.openUrl('https://www.google.com');
-      return 'Abri o Google no navegador! ✨';
+      return 'Abri seu navegador com o Google. Não me agradeça toda hora. 😌';
     }
     return null;
   };
