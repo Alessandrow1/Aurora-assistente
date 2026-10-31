@@ -120,8 +120,8 @@ export default function App() {
 
 
   const runQuickCommand = async (rawText: string): Promise<string | null> => {
-    const text = rawText.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');
-    if (!/(\\babra\\b|\\babre\\b|\\babrir\\b|\\binicie\\b|\\biniciar\\b|\\bexecute\\b|\\bexecuta\\b|\\bmostra\\b|\\babra\\b)/.test(text)) return null;
+    const text = rawText.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (!/(\babra\b|\babre\b|\babrir\b|\binicie\b|\biniciar\b|\bexecute\b|\bexecuta\b|\bmostra\b|\babre\b)/.test(text)) return null;
 
     const apps = [
       { id: 'calculator', names: ['calculadora'], label: 'Calculadora' },
