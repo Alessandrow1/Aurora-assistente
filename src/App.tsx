@@ -397,7 +397,7 @@ export default function App() {
                 ? `Digitar: “${pendingAction.text.slice(0, 160)}${pendingAction.text.length > 160 ? '…' : ''}”`
                 : `Pressionar ${pendingAction.key}`}
           </strong>
-          <p>Vou executar somente esta ação, na janela que estiver ativa. Você pode cancelar.</p>
+          <p>Vou executar somente esta ação na janela que estava ativa quando fiz a captura. Você pode cancelar.</p>
           <div className="pet-action-buttons">
             <button className="pet-confirm-button" onClick={() => void approvePendingAction()} disabled={actionRunning}>
               {actionRunning ? 'Executando…' : 'Confirmar ação'}
