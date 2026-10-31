@@ -340,10 +340,12 @@ const SAFE_APPS = {
 
 
 const SAFE_KEYS = {
-  ENTER: '{ENTER}', TAB: '{TAB}', ESC: '{ESC}', BACKSPACE: '{BACKSPACE}',
+  ENTER: '{ENTER}', TAB: '{TAB}', ESC: '{ESC}', BACKSPACE: '{BACKSPACE}', SPACE: ' ',
   DELETE: '{DELETE}', UP: '{UP}', DOWN: '{DOWN}', LEFT: '{LEFT}', RIGHT: '{RIGHT}',
+  HOME: '{HOME}', END: '{END}', PAGEUP: '{PGUP}', PAGEDOWN: '{PGDN}', F5: '{F5}',
   'CTRL+A': '^a', 'CTRL+C': '^c', 'CTRL+V': '^v', 'CTRL+L': '^l',
-  'CTRL+S': '^s', 'CTRL+Z': '^z', 'CTRL+SHIFT+S': '^+s', 'ALT+TAB': '%{TAB}',
+  'CTRL+S': '^s', 'CTRL+Z': '^z', 'CTRL+F': '^f', 'CTRL+W': '^w', 'CTRL+T': '^t', 'CTRL+R': '^r',
+  'CTRL+SHIFT+S': '^+s', 'ALT+TAB': '%{TAB}', 'ALT+F4': '%{F4}', 'ALT+LEFT': '%{LEFT}', 'ALT+RIGHT': '%{RIGHT}',
 };
 
 ipcMain.handle('aurora:execute-action', async (_event, payload = {}) => {
@@ -384,6 +386,39 @@ public static class AuroraMouse {
 `;
     await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { timeout: 10000, windowsHide: true });
     return { success: true, description: `Clique na posição ${screenX}, ${screenY}` };
+  }
+
+
+  if (actionType === 'scroll') {
+    const imageWidth = Number(payload.imageWidth);
+    const imageHeight = Number(payload.imageHeight);
+    const x = Number(payload.x);
+    const y = Number(payload.y);
+    const delta = Math.max(-1200, Math.min(1200, Math.round(Number(payload.delta))));
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(delta) ||
+        imageWidth < 1 || imageHeight < 1 || x < 0 || y < 0 || x >= imageWidth || y >= imageHeight || delta === 0) {
+      throw new Error('A rolagem não tem posição ou distância válida.');
+    }
+    const display = screen.getPrimaryDisplay();
+    const screenX = Math.round((x / imageWidth) * display.size.width * (display.scaleFactor || 1));
+    const screenY = Math.round((y / imageHeight) * display.size.height * (display.scaleFactor || 1));
+    const script = `
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class AuroraScroll {
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
+  [DllImport("user32.dll")] public static extern void mouse_event(int flags, int dx, int dy, int data, int extraInfo);
+  public static void Scroll(int x, int y, int amount) {
+    SetCursorPos(x, y);
+    mouse_event(0x0800, 0, 0, amount, 0);
+  }
+}
+'@
+[AuroraScroll]::Scroll(${screenX}, ${screenY}, ${delta})
+`;
+    await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { timeout: 10000, windowsHide: true });
+    return { success: true, description: `Rolagem de ${delta > 0 ? 'baixo' : 'cima'} na posição ${screenX}, ${screenY}` };
   }
 
   if (actionType === 'type') {
@@ -447,8 +482,12 @@ Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::Se
 ipcMain.handle('aurora:open-app', async (_event, appId) => {
   const appInfo = SAFE_APPS[appId];
   if (!appInfo) throw new Error('Esse aplicativo ainda não está na lista de comandos permitidos.');
-  const child = spawn(appInfo.command, [], { detached: true, stdio: 'ignore', windowsHide: false });
-  child.unref();
+  if (appInfo.url) {
+    await shell.openExternal(appInfo.url);
+  } else {
+    const child = spawn(appInfo.command, [], { detached: true, stdio: 'ignore', windowsHide: false });
+    child.unref();
+  }
   return { success: true, label: appInfo.label };
 });
 
@@ -458,6 +497,8 @@ ipcMain.handle('aurora:open-folder', async (_event, folderId) => {
     documents: app.getPath('documents'),
     downloads: path.join(app.getPath('home'), 'Downloads'),
     pictures: app.getPath('pictures'),
+    music: app.getPath('music'),
+    videos: app.getPath('videos'),
   };
   const target = allowedPaths[folderId];
   if (!target) throw new Error('Essa pasta não está na lista de locais permitidos.');
