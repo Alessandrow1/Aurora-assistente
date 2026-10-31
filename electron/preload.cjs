@@ -1,12 +1,11 @@
 const { contextBridge, ipcRenderer } = require('electron');
-const { randomUUID } = require('node:crypto');
 
 contextBridge.exposeInMainWorld('aurora', {
   getConfig: () => ipcRenderer.invoke('aurora:get-config'),
   checkOllama: () => ipcRenderer.invoke('aurora:check-ollama'),
   saveSettings: (payload) => ipcRenderer.invoke('aurora:save-settings', payload),
   chat: (payload, onChunk) => {
-    const requestId = randomUUID();
+    const requestId = Date.now().toString(36) + Math.random().toString(36).slice(2);
     const listener = (_event, data) => {
       if (data?.requestId === requestId && typeof data.content === 'string') onChunk?.(data.content);
     };
