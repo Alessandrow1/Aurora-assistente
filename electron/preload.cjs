@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('aurora', {
   openApp: (appId) => ipcRenderer.invoke('aurora:open-app', appId),
   openFolder: (folderId) => ipcRenderer.invoke('aurora:open-folder', folderId),
   openUrl: (url) => ipcRenderer.invoke('aurora:open-url', url),
+  executeAction: (action) => ipcRenderer.invoke('aurora:execute-action', action),
   minimize: () => ipcRenderer.send('aurora:minimize'),
   close: () => ipcRenderer.send('aurora:close'),
   version: () => ipcRenderer.invoke('aurora:version'),
