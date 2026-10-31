@@ -2,7 +2,9 @@ const { app, BrowserWindow, ipcMain, session, desktopCapturer, shell, screen } =
 const path = require('node:path');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
-const { spawn } = require('node:child_process');
+const { spawn, execFile } = require('node:child_process');
+const { promisify } = require('node:util');
+const execFileAsync = promisify(execFile);
 
 const OLLAMA_URL = 'http://127.0.0.1:11434';
 const DEFAULT_MODEL = 'qwen3.5:2b';
@@ -301,6 +303,8 @@ ipcMain.handle('aurora:capture-screen', async () => {
       imageBase64: image.toJPEG(78).toString('base64'),
       width: size.width,
       height: size.height,
+      screenWidth: screen.getPrimaryDisplay().size.width,
+      screenHeight: screen.getPrimaryDisplay().size.height,
     };
   } finally {
     if (wasVisible && mainWindow && !mainWindow.isDestroyed()) mainWindow.showInactive();
@@ -314,6 +318,98 @@ const SAFE_APPS = {
   paint: { command: 'mspaint.exe', label: 'Paint' },
   taskmgr: { command: 'taskmgr.exe', label: 'Gerenciador de Tarefas' },
 };
+
+
+const SAFE_KEYS = {
+  ENTER: '{ENTER}', TAB: '{TAB}', ESC: '{ESC}', BACKSPACE: '{BACKSPACE}',
+  DELETE: '{DELETE}', UP: '{UP}', DOWN: '{DOWN}', LEFT: '{LEFT}', RIGHT: '{RIGHT}',
+  'CTRL+A': '^a', 'CTRL+C': '^c', 'CTRL+V': '^v', 'CTRL+L': '^l',
+  'CTRL+S': '^s', 'CTRL+Z': '^z', 'CTRL+SHIFT+S': '^+s', 'ALT+TAB': '%{TAB}',
+};
+
+ipcMain.handle('aurora:execute-action', async (_event, payload = {}) => {
+  if (process.platform !== 'win32') throw new Error('O controle do mouse e teclado está disponível nesta versão para Windows.');
+  const actionType = payload.type;
+
+  if (actionType === 'click') {
+    const imageWidth = Number(payload.imageWidth);
+    const imageHeight = Number(payload.imageHeight);
+    const x = Number(payload.x);
+    const y = Number(payload.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || imageWidth < 1 || imageHeight < 1 ||
+        x < 0 || y < 0 || x >= imageWidth || y >= imageHeight) {
+      throw new Error('A posição do clique não é válida.');
+    }
+    const display = screen.getPrimaryDisplay();
+    const screenX = Math.round((x / imageWidth) * display.size.width);
+    const screenY = Math.round((y / imageHeight) * display.size.height);
+    const script = `
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class AuroraMouse {
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
+  [DllImport("user32.dll")] public static extern void mouse_event(int flags, int dx, int dy, int data, int extraInfo);
+  public static void Click(int x, int y) {
+    SetCursorPos(x, y);
+    System.Threading.Thread.Sleep(90);
+    mouse_event(0x0002, 0, 0, 0, 0);
+    mouse_event(0x0004, 0, 0, 0, 0);
+  }
+}
+'@
+[AuroraMouse]::Click(${screenX}, ${screenY})
+`;
+    await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { timeout: 10000, windowsHide: true });
+    return { success: true, description: `Clique na posição ${screenX}, ${screenY}` };
+  }
+
+  if (actionType === 'type') {
+    const text = typeof payload.text === 'string' ? payload.text : '';
+    if (!text || text.length > 1500) throw new Error('O texto precisa ter entre 1 e 1.500 caracteres.');
+    const encoded = Buffer.from(text, 'utf8').toString('base64');
+    const script = `
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+[StructLayout(LayoutKind.Sequential)]
+public struct AuroraKeyboardInput { public UInt16 wVk; public UInt16 wScan; public UInt32 dwFlags; public UInt32 time; public IntPtr dwExtraInfo; }
+[StructLayout(LayoutKind.Sequential)]
+public struct AuroraMouseInput { public Int32 dx; public Int32 dy; public UInt32 mouseData; public UInt32 dwFlags; public UInt32 time; public IntPtr dwExtraInfo; }
+[StructLayout(LayoutKind.Explicit)]
+public struct AuroraInputUnion { [FieldOffset(0)] public AuroraMouseInput mi; [FieldOffset(0)] public AuroraKeyboardInput ki; }
+[StructLayout(LayoutKind.Sequential)]
+public struct AuroraInput { public UInt32 type; public AuroraInputUnion U; }
+public static class AuroraTyping {
+  [DllImport("user32.dll", SetLastError=true)] static extern UInt32 SendInput(UInt32 nInputs, AuroraInput[] pInputs, Int32 cbSize);
+  public static void TypeText(string value) {
+    foreach (char ch in value) {
+      var pair = new AuroraInput[2];
+      pair[0].type = 1; pair[0].U.ki.wScan = ch; pair[0].U.ki.dwFlags = 0x0004;
+      pair[1].type = 1; pair[1].U.ki.wScan = ch; pair[1].U.ki.dwFlags = 0x0004 | 0x0002;
+      SendInput(2, pair, Marshal.SizeOf(typeof(AuroraInput)));
+    }
+  }
+}
+'@
+$text = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}'))
+[AuroraTyping]::TypeText($text)
+`;
+    await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { timeout: 15000, windowsHide: true });
+    return { success: true, description: 'Texto digitado na janela ativa' };
+  }
+
+  if (actionType === 'key') {
+    const keyName = typeof payload.key === 'string' ? payload.key.toUpperCase() : '';
+    const sendKey = SAFE_KEYS[keyName];
+    if (!sendKey) throw new Error('Essa tecla de atalho não está na lista permitida.');
+    const script = `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${sendKey}')`;
+    await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { timeout: 10000, windowsHide: true });
+    return { success: true, description: `Tecla ${keyName} pressionada` };
+  }
+
+  throw new Error('Ação não reconhecida. Só aceito clique, digitação e atalhos permitidos.');
+});
 
 ipcMain.handle('aurora:open-app', async (_event, appId) => {
   const appInfo = SAFE_APPS[appId];
