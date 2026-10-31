@@ -261,22 +261,25 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .replace(/https?:\/\/\S+/g, '')
     .replace(/[#*_>|]/g, ' ')
+    .replace(/\bkkkk+\b/gi, 'hahaha')
+    .replace(/\bkkk\b/gi, 'ha ha ha')
+    .replace(/\b lol \b/gi, ' hahaha ')
     .replace(/\s+/g, ' ')
     .trim();
-  const audioPath = path.join(app.getPath('temp'), `aurora-francisca-${process.pid}-${Date.now()}.mp3`);
+  const audioPath = path.join(app.getPath('temp'), `aurora-leticia-${process.pid}-${Date.now()}.mp3`);
   const tts = new EdgeTTS({
-    voice: 'pt-BR-ThalitaNeural',
+    voice: 'pt-BR-LeticiaNeural',
     lang: 'pt-BR',
     outputFormat: 'audio-24khz-96kbitrate-mono-mp3',
-    rate: '+5%',
-    pitch: '+18Hz',
+    rate: '+12%',
+    pitch: '+42Hz',
     timeout: 30000,
   });
 
   try {
     await tts.ttsPromise(cleanText, audioPath);
     const audio = await fsp.readFile(audioPath);
-    return { audioBase64: audio.toString('base64'), voice: 'pt-BR-ThalitaNeural' };
+    return { audioBase64: audio.toString('base64'), voice: 'pt-BR-LeticiaNeural' };
   } catch (error) {
     throw new Error('Não consegui gerar a voz neural. Confira sua conexão com a internet e tente novamente.');
   } finally {
