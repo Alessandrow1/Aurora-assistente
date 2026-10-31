@@ -36,6 +36,7 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [thinking, setThinking] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [laughing, setLaughing] = useState(false);
   const [listening, setListening] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(true);
   const [notice, setNotice] = useState('');
@@ -62,6 +63,12 @@ export default function App() {
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [messages, thinking]);
+
+  useEffect(() => {
+    if (!laughing) return;
+    const timeout = window.setTimeout(() => setLaughing(false), 1900);
+    return () => window.clearTimeout(timeout);
+  }, [laughing]);
 
   const speak = async (text: string) => {
     try {
@@ -235,6 +242,7 @@ export default function App() {
         });
       });
       const answer = response.text?.trim() || 'Não consegui interpretar essa captura.';
+      if (/(?:\\bkkkk+\\b|\\bhaha+\\b|😂|🤣)/i.test(answer)) setLaughing(true);
       setMessages((current) => {
         const updated = [...current];
         const last = updated[updated.length - 1];
@@ -344,7 +352,7 @@ export default function App() {
   return (
     <main className="desktop-shell pet-shell">
       <div className="pet-avatar-wrap" title="Arraste a Aurora para mudar sua posição">
-        <Avatar3D speaking={speaking} thinking={thinking} />
+        <Avatar3D speaking={speaking} thinking={thinking} laughing={laughing} />
       </div>
 
       <div className="pet-status">
@@ -455,7 +463,7 @@ export default function App() {
           <div className="chat-footer">
             <label className="speak-toggle">
               <input type="checkbox" checked={autoSpeak} onChange={(event) => setAutoSpeak(event.target.checked)} />
-              <span>Voz anime · Thalita</span>
+              <span>Voz anime · Leticia</span>
             </label>
             <button className="text-button" onClick={() => void analyzeScreen()} title="Capturar e analisar a tela">Analisar tela</button>
           </div>
@@ -507,7 +515,7 @@ export default function App() {
               <div className="settings-bottom">
                 <div>
                   <strong>Voz da Aurora</strong>
-                  <p>Troquei a Francisca pela Thalita Neural e aumentei o tom para ficar mais agudo e delicado. A voz é sintetizada online e precisa de internet.</p>
+                  <p>A voz padrão é a Leticia Neural, uma voz feminina mais jovem. O pitch foi aumentado em 42 Hz e a fala em 12% para um timbre mais agudo. A voz é sintetizada online e precisa de internet.</p>
                 </div>
                 <div>
                   <strong>Visão e privacidade</strong>
