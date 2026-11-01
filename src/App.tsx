@@ -245,6 +245,8 @@ export default function App() {
       };
       await audio.play();
     } catch (error) {
+      // Cancela qualquer retomada agendada antes de iniciar a voz de reserva.
+      pauseVoiceRecognitionForSpeech();
       audioRef.current?.pause();
       audioRef.current = null;
       resetAudioAnalysis();
