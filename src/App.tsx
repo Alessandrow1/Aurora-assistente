@@ -1180,7 +1180,24 @@ export default function App() {
       </div>
 
       {memoryHubOpen && (
-        <MemoryHub onOpenConversation={openSavedConversation} onNewConversation={startNewConversation} />
+        <MemoryHub
+          onOpenConversation={openSavedConversation}
+          onNewConversation={startNewConversation}
+          onAnalyzeAvatar={async () => {
+            const live2d = await import('./live2d/Live2DHost');
+            const image = await live2d.captureLive2DSnapshot();
+            const result = await window.aurora.chat({
+              message: 'Observe a imagem anexada, que é a representação visual oficial do seu próprio avatar Live2D. Descreva somente características permanentes que estejam claramente visíveis: cabelo, olhos, rosto, roupas, acessórios, cores e estilo. Não descreva emoção momentânea como característica física. Não invente detalhes ocultos ou ilegíveis. Responda em português brasileiro, em um parágrafo curto, como uma ficha visual para sua própria identidade. Não afirme ter consciência ou sentimentos subjetivos.',
+              history: [],
+              voiceMode: false,
+              studyMode: false,
+              imageBase64: image,
+            });
+            const description = result.text?.trim() || '';
+            if (description.length < 30) throw new Error('A descrição gerada ficou curta demais. Tente novamente com o avatar visível.');
+            return description.slice(0, 2400);
+          }}
+        />
       )}
 
       {appsOpen && (
