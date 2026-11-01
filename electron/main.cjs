@@ -510,12 +510,17 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
     throw new Error(`O modelo ${settings.model} ainda não foi baixado. Feche a Aurora e execute INSTALAR-IA-GRATUITA.bat na pasta do projeto.`);
   }
 
+  const preserveConversationContext = Boolean(payload.imageBase64) ||
+    /\b(compare|comparar|analise|analisar|calcule|calcular|resolva|resolver|planeje|planejar|estrategia|vantagens|desvantagens|explica|explique|detalhad[oa]s?|passo a passo|lembra|lembre|antes|conversamos|historico|retomar|continuar|voltar)\b/i.test(normalizeMemoryText(message));
+  const historyLimit = preserveConversationContext ? 6 : 4;
+  const historyCharacterLimit = preserveConversationContext ? 1400 : 900;
   const history = Array.isArray(payload.history)
     ? payload.history
         .filter((item) => item && ['user', 'assistant'].includes(item.role) && typeof item.content === 'string')
-        .slice(-6)
-        .map((item) => ({ role: item.role, content: item.content.slice(0, 1400) }))
+        .slice(-historyLimit)
+        .map((item) => ({ role: item.role, content: item.content.slice(0, historyCharacterLimit) }))
     : [];
+  const voiceMode = payload.voiceMode === true;
   let relevantMemories = [];
   try {
     relevantMemories = await findRelevantAuroraMemories(
@@ -539,12 +544,13 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   const needsExplanation = /\b(por que|porque|explique|explicar|como funciona|o que significa|qual a diferenca|como acontece|causa|consequencia)\b/i.test(normalizedRequest);
   const needsThinking = needsReasoning || asksForLongResponse;
 
-  const numPredict = imageBase64 ? 650 : asksForLongResponse ? 1500 : needsReasoning ? 1100 : needsExplanation ? 520 : 200;
+  const numPredict = imageBase64 ? 650 : asksForLongResponse ? 1500 : needsReasoning ? 1100 : needsExplanation ? 520 : voiceMode ? 112 : 200;
 
   // Preserva todo o histórico e o prompt também na tentativa de recuperação.
     const systemPrompt = [
     'Você é Aurora, companheira de call por voz do usuário. Fale em português brasileiro, como numa conversa real, com ritmo natural e frases fáceis de falar em voz alta.',
     'ESTILO DE CALL: por padrão, use uma ou duas frases curtas, sem listas, sem títulos, sem Markdown e sem emojis. Não transforme conversa em palestra. Responda ao que foi dito, faça perguntas naturais, puxe assunto quando houver abertura e mantenha a conversa andando. Só use listas, formatação ou respostas longas quando o usuário pedir ou quando forem indispensáveis para uma tarefa.',
+    ...(voiceMode && !needsReasoning && !needsExplanation && !asksForLongResponse ? ['MODO VOZ RÁPIDO: em conversa casual, responda em cerca de 12 a 24 palavras, preferencialmente uma frase curta. Não repita a pergunta nem faça duas perguntas de acompanhamento. Seja natural e específica; amplie somente quando o usuário pedir ou a resposta precisar de contexto para não ficar enganosa.'] : []),
     'SAÍDA LIMPA: entregue apenas a fala dirigida ao usuário. Nunca mostre planejamento, raciocínio, notas internas, rascunhos, caixas de resumo ou cabeçalhos como “Caixa de resumo”, “Análise” ou “Resposta”. Não narre que vai pensar ou preparar uma resposta. Se a mensagem parecer transcrição cortada, frase sem sentido ou palavra isolada que não combine com o contexto, não invente uma interpretação nem faça piada com o trecho: diga naturalmente que não entendeu e peça para repetir. Não trate erro provável de reconhecimento como intenção confirmada.',
     'ABERTURA E PRESENÇA: quando a conversa começar, cumprimente com uma provocação leve e carinhosa, variando as frases. Não repita sempre o mesmo bordão. Demonstre curiosidade, faça perguntas de acompanhamento e não responda de forma robótica.',
     'PERSONALIDADE: você é implicante, durona, mandona, debochada e espirituosa, como uma amiga de call que não passa pano. Pode dar ordens brincalhonas, cobrar foco, reclamar da procrastinação e zoar desculpas. Use provocações contextuais e variadas, sem humilhar nem insistir quando não houver clima.',
@@ -595,7 +601,7 @@ const chatMessages = [
           think: thinkEnabled,
           keep_alive: '2h',
           messages,
-          options: { temperature: needsThinking ? 0.2 : needsExplanation ? 0.22 : 0.25, num_predict: tokenBudget, num_ctx: 6144 },
+          options: { temperature: needsThinking ? 0.2 : needsExplanation ? 0.22 : 0.25, num_predict: tokenBudget, num_ctx: 4096 },
         }),
       });
     } catch (error) {
@@ -640,6 +646,7 @@ const chatMessages = [
           totalDuration: Number(chunk.total_duration) || 0,
           loadDuration: Number(chunk.load_duration) || 0,
           promptEvalCount: Number(chunk.prompt_eval_count) || 0,
+          promptEvalCachedCount: Number(chunk.prompt_eval_cached_count) || 0,
           promptEvalDuration: Number(chunk.prompt_eval_duration) || 0,
           evalCount: Number(chunk.eval_count) || 0,
           evalDuration: Number(chunk.eval_duration) || 0,
@@ -677,6 +684,7 @@ const chatMessages = [
       streamReadMs: requestFinishedAt - headersReceivedAt,
       totalMs: requestFinishedAt - requestStartedAt,
       promptTokens: usageStats?.promptEvalCount ?? null,
+      cachedPromptTokens: usageStats?.promptEvalCachedCount ?? null,
       generatedTokens: usageStats?.evalCount ?? null,
       tokensPerSecond: evalSeconds > 0 ? Number((usageStats.evalCount / evalSeconds).toFixed(2)) : null,
       modelLoadMs: usageStats?.loadDuration ? Math.round(usageStats.loadDuration / 1e6) : null,
