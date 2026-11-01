@@ -150,6 +150,16 @@ export default function App() {
   };
 
   useEffect(() => {
+    return window.aurora.onSpeechRecognitionStatus((status) => {
+      if (status.state === 'loading' || status.state === 'downloading' || status.state === 'error') {
+        setNotice(status.message);
+      } else if (status.state === 'ready') {
+        setNotice(status.message);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
     window.aurora.getConfig()
       .then((data) => {
         setConfig(data);
@@ -329,6 +339,7 @@ export default function App() {
             const result = await window.aurora.transcribeAudio(pcm16k);
             const transcript = result?.text?.trim() || '';
 
+            if (!voiceModeRef.current) return;
             if (!transcript) {
               setNotice('Nao consegui entender essa fala. Fale um pouco mais perto do microfone.');
               resumeVoiceRecognitionAfterSpeech(800);
@@ -367,13 +378,13 @@ export default function App() {
           const now = Date.now();
 
           // Detecta fala pelo volume; 1,15 s de silencio encerra a frase automaticamente.
-          if (rms >= 0.014) {
+          if (rms >= 0.012) {
             if (session.firstSpeechAt === null) session.firstSpeechAt = now;
             session.lastSpeechAt = now;
             if (now - session.firstSpeechAt >= 250) session.speechDetected = true;
           }
 
-          if (session.speechDetected && now - session.lastSpeechAt >= 1150) {
+          if (session.speechDetected && now - session.lastSpeechAt >= 1400) {
             stopVoiceCaptureRef.current?.(true);
           } else if (now - session.startedAt >= 25000) {
             stopVoiceCaptureRef.current?.(true);
