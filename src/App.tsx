@@ -97,7 +97,6 @@ export default function App() {
   const stopVoiceCaptureRef = useRef<((transcribe: boolean) => void) | null>(null);
   const voiceModeRef = useRef(false);
   const thinkingRef = useRef(false);
-  const pendingVoiceRef = useRef<string[]>([]);
   const sendMessageRef = useRef<(rawText: string) => Promise<void>>(async () => undefined);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -235,6 +234,8 @@ export default function App() {
       return;
     }
 
+    let pendingStream: MediaStream | null = null;
+    let pendingAudioContext: AudioContext | null = null;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -245,18 +246,25 @@ export default function App() {
         },
       });
 
+      pendingStream = stream;
       if (!voiceModeRef.current || recognitionPausedRef.current) {
         stream.getTracks().forEach((track) => track.stop());
+        pendingStream = null;
         return;
       }
 
       const audioContext = new AudioContext();
+      pendingAudioContext = audioContext;
       if (audioContext.state === 'suspended') await audioContext.resume();
       const source = audioContext.createMediaStreamSource(stream);
       const analyser = audioContext.createAnalyser();
       analyser.fftSize = 1024;
       analyser.smoothingTimeConstant = 0.35;
       source.connect(analyser);
+      const silentGain = audioContext.createGain();
+      silentGain.gain.value = 0;
+      analyser.connect(silentGain);
+      silentGain.connect(audioContext.destination);
 
       const preferredMime = 'audio/webm;codecs=opus';
       const recorder = MediaRecorder.isTypeSupported(preferredMime)
@@ -361,6 +369,8 @@ export default function App() {
       };
 
       voiceCaptureRef.current = session;
+      pendingStream = null;
+      pendingAudioContext = null;
       recorder.start(250);
       setListening(true);
       setNotice('');
@@ -395,6 +405,10 @@ export default function App() {
         }
       }, 100);
     } catch (error) {
+      if (pendingStream) pendingStream.getTracks().forEach((track) => track.stop());
+      if (pendingAudioContext && pendingAudioContext.state !== 'closed') {
+        await pendingAudioContext.close().catch(() => undefined);
+      }
       stopVoiceMode();
       const message = error instanceof Error ? error.message : String(error);
       if (/notallowed|permission|denied/i.test(message)) {
@@ -619,13 +633,6 @@ export default function App() {
   };
 
   sendMessageRef.current = sendMessage;
-
-  useEffect(() => {
-    if (!thinking && pendingVoiceRef.current.length > 0) {
-      const nextTranscript = pendingVoiceRef.current.shift();
-      if (nextTranscript) void sendMessageRef.current(nextTranscript);
-    }
-  }, [thinking]);
 
   const runQuickCommand = async (rawText: string): Promise<string | null> => {
     const text = rawText.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
