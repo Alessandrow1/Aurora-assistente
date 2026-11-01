@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useRef, useState } from 'react';
 import Avatar3D from './components/Avatar3D';
 import MemoryHub from './components/MemoryHub';
 
-type Message = { role: 'user' | 'assistant'; content: string };
+type Message = { role: 'user' | 'assistant'; content: string; imageId?: string; imageUrl?: string };
 
 type VoiceCaptureSession = {
   stream: MediaStream;
@@ -65,6 +65,23 @@ function inferAvatarEmotion(userText: string, answer: string): AvatarEmotion {
   if (/\b(que bom|adorei|amei|legal|otimo|perfeito|incrivel|feliz|boa noticia|parabens)\b|\u{1F604}|\u{1F60A}|\u{1F60D}/iu.test(output)) return 'happy';
   if (/\b(interessante|quero saber|me conta|curioso|curiosa)\b|\?/.test(output)) return 'curious';
   return 'neutral';
+}
+
+function extractImageGenerationPrompt(rawText: string): string | null {
+  const normalized = rawText.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const action = /\b(?:gere|gerar|gera|crie|criar|cria|desenhe|desenhar|desenha|faca|fazer|faz|produza|produzir|produz)\b/.exec(normalized);
+  if (!action) return null;
+  const drawingAction = /\b(?:desenhe|desenhar|desenha)\b/.test(normalized);
+  const hasImageNoun = /\b(?:imagem|ilustracao|desenho|arte|foto|retrato)\b/.test(normalized);
+  if (!hasImageNoun && !drawingAction) return null;
+
+  const prompt = rawText
+    .replace(/^\s*(?:aurora[\s,]+)?/i, '')
+    .replace(/\b(?:gere|gerar|gera|crie|criar|cria|desenhe|desenhar|desenha|faca|fazer|faz|produza|produzir|produz)\b/i, '')
+    .replace(/^\s*(?:(?:uma?|um|o|a)\s+)?(?:imagem|ilustra[cç][aã]o|desenho|arte|foto|retrato)\s*(?:(?:de|do|da|dos|das|com|mostrando|representando)\s+)?/i, '')
+    .replace(/^\s*(?:por favor|pra mim|para mim)\s*/i, '')
+    .trim();
+  return prompt.length >= 3 ? prompt.slice(0, 1200) : null;
 }
 
 const greeting: Message = {
@@ -163,6 +180,12 @@ export default function App() {
   };
 
   useEffect(() => {
+    return window.aurora.onImageStatus((status) => {
+      if (status.message) setNotice(status.message);
+    });
+  }, []);
+
+  useEffect(() => {
     return window.aurora.onSpeechRecognitionStatus((status) => {
       if (status.state === 'loading' || status.state === 'downloading' || status.state === 'error') {
         setNotice(status.message);
@@ -231,7 +254,16 @@ export default function App() {
           if (active && loaded.found) {
             setConversationId(loaded.conversation.id);
             setConversationTitle(loaded.conversation.title);
-            setMessages([greeting, ...loaded.conversation.messages]);
+            const restoredMessages = await Promise.all(loaded.conversation.messages.map(async (message) => {
+              if (!message.imageId) return message;
+              try {
+                const image = await window.aurora.loadGeneratedImage(message.imageId);
+                return image.found && image.dataUrl ? { ...message, imageUrl: image.dataUrl } : message;
+              } catch {
+                return message;
+              }
+            }));
+            if (active) setMessages([greeting, ...restoredMessages]);
           }
         } else {
           const created = await window.aurora.createConversation();
@@ -717,6 +749,34 @@ export default function App() {
     setThinking(true);
 
     try {
+      const imagePrompt = extractImageGenerationPrompt(text);
+      if (imagePrompt) {
+        setChatOpen(true);
+        setMemoryHubOpen(false);
+        setAppsOpen(false);
+        setNotice('Gerando imagem localmente pelo ComfyUI…');
+        const generated = await window.aurora.generateImage({ prompt: imagePrompt });
+        const imageReply = 'Prontinho! Criei sua imagem e deixei ela salva na minha galeria local.';
+        setEmotion('happy');
+        setMessages((current) => [...current, {
+          role: 'assistant',
+          content: imageReply,
+          imageId: generated.id,
+          imageUrl: generated.dataUrl,
+        }]);
+        setNotice('Imagem criada e salva na galeria local da Aurora.');
+        if (autoSpeak) {
+          void speak(imageReply).catch((error) => {
+            console.warn('[Aurora Image] Não consegui falar a confirmação da imagem:', error);
+          }).finally(() => {
+            if (voiceModeRef.current) resumeVoiceRecognitionAfterSpeech(500);
+          });
+        } else if (voiceModeRef.current) {
+          resumeVoiceRecognitionAfterSpeech(500);
+        }
+        return;
+      }
+
       const normalizedUserRequest = text.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       const selfVisualRequest = /\b(como voce e|como e seu avatar|qual e sua aparencia|descreva sua aparencia|fale sobre sua aparencia|como voce aparece|como voce se parece|olha pra voce|olhe para voce|olha para voce|veja seu avatar|se veja|se olhe|esta sorrindo|esta fazendo qual expressao|qual expressao voce esta|como esta sua expressao|o que voce esta vestindo|o que voce esta usando|como e seu cabelo|como e seu rosto)\b/.test(normalizedUserRequest);
       const quickReply = selfVisualRequest ? null : await runQuickCommand(text);
@@ -1241,7 +1301,17 @@ export default function App() {
             {messages.map((message, index) => (
               <div className={'message-row ' + message.role} key={index + '-' + message.role}>
                 {message.role === 'assistant' && <div className="message-avatar">✦</div>}
-                <div className="message-bubble">{message.content}</div>
+                <div className="message-bubble">
+                  {message.content}
+                  {message.imageUrl && (
+                    <div className="generated-image-block">
+                      <img className="generated-image-preview" src={message.imageUrl} alt="Imagem criada pela Aurora" />
+                      <button type="button" className="generated-image-open" onClick={() => void window.aurora.openGeneratedImages()}>
+                        Abrir pasta de imagens
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
             {thinking && (
@@ -1280,7 +1350,14 @@ export default function App() {
               disabled={thinking}
             />
             <button
-              className={'mic-button ' + (voiceMode ? 'listening' : '')}
+              className="image-button"
+              type="button"
+              onClick={() => setInput((current) => current.trim() ? current.trim() + ' — gere uma imagem de ' : 'Aurora, gere uma imagem de ')}
+              title="Criar imagem com o ComfyUI local"
+              aria-label="Criar imagem"
+            >▧</button>
+            <button
+              className={'mic-button ' + (voiceMode ? 'listening' : '')
               type="button"
               onClick={startListening}
               title={voiceMode ? 'Desativar conversa por voz offline' : 'Ativar conversa por voz offline'}
