@@ -33,7 +33,6 @@ contextBridge.exposeInMainWorld('aurora', {
   openApp: (appId) => ipcRenderer.invoke('aurora:open-app', appId),
   openFolder: (folderId) => ipcRenderer.invoke('aurora:open-folder', folderId),
   openUrl: (url) => ipcRenderer.invoke('aurora:open-url', url),
-  executeAction: (action) => ipcRenderer.invoke('aurora:execute-action', action),
   setMousePassthrough: (ignore) => ipcRenderer.send('aurora:set-mouse-passthrough', Boolean(ignore)),
   onCursorPosition: (callback) => {
     const listener = (_event, position) => callback(position);
