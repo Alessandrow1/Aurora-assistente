@@ -4,7 +4,7 @@ A Aurora usa o **ComfyUI local** como motor de geração. O Qwen e a conversa co
 
 ## Preparação única
 
-1. Instale e inicie o ComfyUI para Windows.
+1. Instale o ComfyUI Desktop para Windows pelo site oficial: https://www.comfy.org/download. A documentação oficial recomenda o aplicativo Desktop para quem está começando.
 2. Baixe um checkpoint compatível com Stable Diffusion, como SD 1.5 ou SDXL, e coloque o arquivo .safetensors ou .ckpt em ComfyUI/models/checkpoints.
 3. Inicie o servidor padrão do ComfyUI em http://127.0.0.1:8188. Mantenha o ComfyUI aberto enquanto a Aurora gerar imagens.
 
