@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-type AuroraMessage = { role: 'user' | 'assistant'; content: string };
+type AuroraMessage = { role: 'user' | 'assistant'; content: string; imageId?: string };
 type AuroraStatus = { ollamaAvailable: boolean; installedModels: string[]; modelInstalled: boolean };
 
 declare global {
@@ -25,6 +25,11 @@ declare global {
       saveIdentityProfile: (profile: { name: string; avatar: string; appearanceDescription: string; personality: string }) => Promise<{ name: string; avatar: string; appearanceDescription: string; personality: string }>;
       getEmbeddingStatus: () => Promise<{ checkedAt?: number; installed: boolean; model: string }>;
       installEmbeddingModel: () => Promise<{ installed: boolean; indexed: number; documents: number; conversations: number }>;
+      getImageGeneratorStatus: () => Promise<{ available: boolean; checkpointAvailable: boolean; checkpoints: string[]; checkpointCount: number; message: string }>;
+      generateImage: (payload: { prompt: string }) => Promise<{ id: string; dataUrl: string; prompt: string; checkpoint: string }>;
+      loadGeneratedImage: (id: string) => Promise<{ found: boolean; dataUrl?: string }>;
+      openGeneratedImages: () => Promise<{ success: boolean }>;
+      onImageStatus: (callback: (status: { state: string; message?: string }) => void) => () => void;
       onEmbeddingStatus: (callback: (status: { state: string; message?: string; percent?: number | null; completed?: number; total?: number }) => void) => () => void;
       getElevenLabsStatus: () => Promise<{ configured: boolean; storageAvailable: boolean; voiceId: string; modelId: string }>;
       saveElevenLabsKey: (apiKey: string) => Promise<{ configured: boolean }>;
