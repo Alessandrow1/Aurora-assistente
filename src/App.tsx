@@ -51,7 +51,71 @@ export default function App() {
   const pendingVoiceRef = useRef<string[]>([]);
   const sendMessageRef = useRef<(rawText: string) => Promise<void>>(async () => undefined);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const mouthOpenRef = useRef<number | null>(0);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const mouthAnalyserRef = useRef<AnalyserNode | null>(null);
+  const mouthSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const mouthFrameRef = useRef<number | null>(null);
   thinkingRef.current = thinking;
+
+  const stopMouthTracking = () => {
+    if (mouthFrameRef.current !== null) {
+      window.cancelAnimationFrame(mouthFrameRef.current);
+      mouthFrameRef.current = null;
+    }
+    mouthSourceRef.current?.disconnect();
+    mouthAnalyserRef.current?.disconnect();
+    mouthSourceRef.current = null;
+    mouthAnalyserRef.current = null;
+    mouthOpenRef.current = 0;
+  };
+
+  const startMouthTracking = (audio: HTMLAudioElement) => {
+    stopMouthTracking();
+    if (typeof window.AudioContext === 'undefined') {
+      // The avatar uses its gentle procedural mouth movement as a fallback.
+      mouthOpenRef.current = null;
+      return;
+    }
+
+    try {
+      const context = audioContextRef.current ?? new window.AudioContext();
+      audioContextRef.current = context;
+      void context.resume().catch(() => undefined);
+
+      const source = context.createMediaElementSource(audio);
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.72;
+      source.connect(analyser);
+      analyser.connect(context.destination);
+      mouthSourceRef.current = source;
+      mouthAnalyserRef.current = analyser;
+
+      const samples = new Uint8Array(analyser.fftSize);
+      const animateMouth = () => {
+        if (mouthAnalyserRef.current !== analyser) return;
+        analyser.getByteTimeDomainData(samples);
+
+        let energy = 0;
+        for (let index = 0; index < samples.length; index += 1) {
+          const sample = (samples[index] - 128) / 128;
+          energy += sample * sample;
+        }
+        const rms = Math.sqrt(energy / samples.length);
+        // Ignore low-level background noise and turn speech energy into a subtle jaw opening.
+        mouthOpenRef.current = Math.max(0, Math.min(0.9, (rms - 0.012) * 9.5));
+        mouthFrameRef.current = window.requestAnimationFrame(animateMouth);
+      };
+
+      animateMouth();
+    } catch (error) {
+      console.warn('[Aurora] Não consegui iniciar a leitura do áudio para sincronizar a boca.', error);
+      stopMouthTracking();
+      // Keep a visual fallback if Web Audio is unavailable for this playback.
+      mouthOpenRef.current = null;
+    }
+  };
 
   useEffect(() => {
     window.aurora.getConfig()
@@ -69,6 +133,8 @@ export default function App() {
         recognitionRestartRef.current = null;
       }
       audioRef.current?.pause();
+      stopMouthTracking();
+      void audioContextRef.current?.close().catch(() => undefined);
       window.speechSynthesis?.cancel();
       recognitionRef.current?.abort?.();
     };
@@ -88,6 +154,9 @@ export default function App() {
     if (/(?:\bkkkk+\b|\bhaha+\b|\bhehe+\b|\brsrs+\b|😂|🤣)/i.test(text)) setLaughing(true);
     audioRef.current?.pause();
     audioRef.current = null;
+    stopMouthTracking();
+    // null selects the procedural fallback while neural audio is being prepared.
+    mouthOpenRef.current = null;
     window.speechSynthesis?.cancel();
     setSpeaking(true);
 
@@ -98,18 +167,24 @@ export default function App() {
       const audio = new Audio('data:audio/mpeg;base64,' + result.audioBase64);
       audioRef.current = audio;
       audio.onended = () => {
+        stopMouthTracking();
         setSpeaking(false);
         audioRef.current = null;
       };
       audio.onerror = () => {
+        stopMouthTracking();
         setSpeaking(false);
         audioRef.current = null;
         setNotice('O áudio neural não pôde ser reproduzido.');
       };
+      startMouthTracking(audio);
       await audio.play();
     } catch (error) {
       audioRef.current?.pause();
       audioRef.current = null;
+      stopMouthTracking();
+      // null tells the avatar to use procedural mouth movement for Windows speech synthesis.
+      mouthOpenRef.current = null;
 
       // Fallback local: mantém a Aurora falando mesmo quando o serviço neural falha.
       try {
@@ -123,12 +198,19 @@ export default function App() {
         if (portugueseVoice) utterance.voice = portugueseVoice;
         utterance.rate = 1;
         utterance.pitch = 1.04;
-        utterance.onend = () => setSpeaking(false);
-        utterance.onerror = () => setSpeaking(false);
+        utterance.onend = () => {
+          mouthOpenRef.current = 0;
+          setSpeaking(false);
+        };
+        utterance.onerror = () => {
+          mouthOpenRef.current = 0;
+          setSpeaking(false);
+        };
         setNotice('A voz neural está indisponível. Estou usando temporariamente a voz instalada no Windows.');
         synth.cancel();
         synth.speak(utterance);
       } catch (fallbackError) {
+        mouthOpenRef.current = 0;
         setSpeaking(false);
         const neuralDetail = error instanceof Error ? error.message : String(error);
         const fallbackDetail = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
@@ -145,6 +227,7 @@ export default function App() {
     setNotice('');
     audioRef.current?.pause();
     audioRef.current = null;
+    stopMouthTracking();
     window.speechSynthesis?.cancel();
     setSpeaking(false);
 
@@ -484,6 +567,7 @@ export default function App() {
   const clearConversation = () => {
     audioRef.current?.pause();
     audioRef.current = null;
+    stopMouthTracking();
     window.speechSynthesis?.cancel();
     setSpeaking(false);
     setMessages([greeting]);
@@ -497,7 +581,7 @@ export default function App() {
   return (
     <main className="desktop-shell pet-shell">
       <div className="pet-avatar-wrap" title="Arraste a Aurora para mudar sua posição">
-        <Avatar3D speaking={speaking} thinking={thinking} laughing={laughing} />
+        <Avatar3D speaking={speaking} thinking={thinking} laughing={laughing} mouthOpenRef={mouthOpenRef} />
       </div>
 
       <div className="pet-status">
