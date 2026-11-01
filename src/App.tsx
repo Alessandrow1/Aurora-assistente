@@ -2,13 +2,6 @@ import { FormEvent, useEffect, useRef, useState } from 'react';
 import Avatar3D from './components/Avatar3D';
 
 type Message = { role: 'user' | 'assistant'; content: string };
-type PendingActionContext = { captureId: string; windowTitle: string };
-type PendingAction =
-  | ({ type: 'click' | 'doubleClick' | 'rightClick' | 'move'; x: number; y: number; imageWidth: number; imageHeight: number } & PendingActionContext)
-  | ({ type: 'drag'; x: number; y: number; endX: number; endY: number; imageWidth: number; imageHeight: number } & PendingActionContext)
-  | ({ type: 'scroll'; x: number; y: number; delta: number; imageWidth: number; imageHeight: number } & PendingActionContext)
-  | ({ type: 'type'; text: string } & PendingActionContext)
-  | ({ type: 'key'; key: string } & PendingActionContext);
 
 type VoiceCaptureSession = {
   stream: MediaStream;
@@ -24,6 +17,9 @@ type VoiceCaptureSession = {
   lastSpeechAt: number;
   speechDetected: boolean;
   peakRms: number;
+  noiseFloorRms: number;
+  speechThresholdRms: number;
+  noiseCalibrationSamples: number;
   stopped: boolean;
   transcribeOnStop: boolean;
 };
@@ -79,8 +75,6 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [appsOpen, setAppsOpen] = useState(false);
-  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
-  const [actionRunning, setActionRunning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [thinking, setThinking] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -171,6 +165,17 @@ export default function App() {
       .catch(() => setNotice('Não consegui carregar as configurações.'));
     window.aurora.version().then(setVersion).catch(() => undefined);
 
+    // A Aurora inicia a escuta automaticamente ao abrir. O usuário pode desligá-la no botão do microfone.
+    voiceModeRef.current = true;
+    recognitionPausedRef.current = false;
+    setVoiceMode(true);
+    setNotice('Ativando microfone…');
+    void startVoiceCaptureRef.current?.();
+    void window.aurora.warmupTranscription().catch((error) => {
+      console.warn('[Aurora Whisper] Não consegui preparar o reconhecimento ao iniciar:', error);
+      setNotice('Microfone ativo; o reconhecimento de voz ainda está sendo preparado.');
+    });
+
     return () => {
       voiceModeRef.current = false;
       if (voiceResumeRef.current !== null) {
@@ -246,10 +251,11 @@ export default function App() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
+          channelCount: { ideal: 1 },
+          sampleRate: { ideal: 48000 },
+          echoCancellation: { ideal: true },
+          noiseSuppression: { ideal: true },
+          autoGainControl: { ideal: true },
         },
       });
 
@@ -291,6 +297,9 @@ export default function App() {
         lastSpeechAt: 0,
         speechDetected: false,
         peakRms: 0,
+        noiseFloorRms: 0.002,
+        speechThresholdRms: 0.005,
+        noiseCalibrationSamples: 0,
         stopped: false,
         transcribeOnStop: false,
       };
@@ -344,18 +353,24 @@ export default function App() {
               }
             }
 
-            const sourceStep = decoded.sampleRate / 16000;
-            const outputLength = Math.floor(mono.length / sourceStep);
+            const outputLength = Math.floor(frameCount * 16000 / decoded.sampleRate);
             if (outputLength < 4000) throw new Error('A fala ficou muito curta. Tente falar um pouco mais.');
             if (outputLength > 16000 * 45) throw new Error('A fala passou de 45 segundos. Divida a mensagem.');
 
-            const pcm16k = new Float32Array(outputLength);
-            for (let index = 0; index < outputLength; index += 1) {
-              const position = index * sourceStep;
-              const left = Math.floor(position);
-              const right = Math.min(left + 1, mono.length - 1);
-              const fraction = position - left;
-              pcm16k[index] = mono[left] + (mono[right] - mono[left]) * fraction;
+            let pcm16k: Float32Array;
+            if (decoded.sampleRate === 16000) {
+              pcm16k = mono;
+            } else {
+              // OfflineAudioContext aplica filtro de reamostragem; interpolação linear simples pode degradar consoantes.
+              const resampleContext = new OfflineAudioContext(1, outputLength, 16000);
+              const monoBuffer = resampleContext.createBuffer(1, frameCount, decoded.sampleRate);
+              monoBuffer.copyToChannel(mono, 0);
+              const resampleSource = resampleContext.createBufferSource();
+              resampleSource.buffer = monoBuffer;
+              resampleSource.connect(resampleContext.destination);
+              resampleSource.start(0);
+              const resampledAudio = await resampleContext.startRendering();
+              pcm16k = resampledAudio.getChannelData(0).slice();
             }
 
             setNotice('Transcrevendo no proprio computador…');
@@ -403,14 +418,25 @@ export default function App() {
           session.peakRms = Math.max(session.peakRms, rms);
           const now = Date.now();
 
-          // Detecta fala pelo volume; 0,75 s de silencio encerra a frase automaticamente.
-          if (rms >= 0.012) {
-            if (session.firstSpeechAt === null) session.firstSpeechAt = now;
-            session.lastSpeechAt = now;
-            if (now - session.firstSpeechAt >= 250) session.speechDetected = true;
+          // Calibra o ruído ambiente nos primeiros 300 ms e ajusta o limiar para vozes mais baixas.
+          if (!session.speechDetected && session.noiseCalibrationSamples < 3) {
+            session.noiseFloorRms = session.noiseCalibrationSamples === 0
+              ? rms
+              : (session.noiseFloorRms * 0.65) + (rms * 0.35);
+            session.noiseCalibrationSamples += 1;
+            session.speechThresholdRms = Math.max(0.004, Math.min(0.02, session.noiseFloorRms * 2.6));
+          } else if (!session.speechDetected && session.firstSpeechAt === null && rms < session.speechThresholdRms) {
+            session.noiseFloorRms = (session.noiseFloorRms * 0.97) + (rms * 0.03);
+            session.speechThresholdRms = Math.max(0.004, Math.min(0.02, session.noiseFloorRms * 2.6));
           }
 
-          if (session.speechDetected && now - session.lastSpeechAt >= 750) {
+          if (rms >= session.speechThresholdRms) {
+            if (session.firstSpeechAt === null) session.firstSpeechAt = now;
+            session.lastSpeechAt = now;
+            if (now - session.firstSpeechAt >= 200) session.speechDetected = true;
+          }
+
+          if (session.speechDetected && rms < session.speechThresholdRms * 0.68 && now - session.lastSpeechAt >= 950) {
             stopVoiceCaptureRef.current?.(true);
           } else if (now - session.startedAt >= 25000) {
             stopVoiceCaptureRef.current?.(true);
@@ -582,11 +608,13 @@ export default function App() {
         return;
       }
 
-      const asksForComputerAction = /\b(clique|clica|clicar|digite|digita|escreva|pressione|aperte|selecione|marque|preencha|role|rolar|pagine|desça|suba|scroll|copie|copiar|cole|colar|analise|analisa|olhe|olha|veja|observe|resolva|arrume|configure|configurar|abra|abre|abrir|mova|mover|arraste|arrastar|redimensione|feche|fechar|print|captura|controle|controlar|navegue|navegar|interaja|interagir|automatize|automatizar|mexa|mexer)\b/i.test(text)
-        || /\b(minha tela|na tela|essa janela|nessa janela|este programa|este aplicativo|esse aplicativo)\b/i.test(text);
-      const capture = asksForComputerAction ? await window.aurora.captureScreen() : null;
+      const asksForScreenAnalysis =
+        /\b(analise|analisar|olhe|olhar|veja|ver|observe|observar|descreva|descrever)\b/i.test(text) &&
+        /\b(tela|janela|aplicativo|programa|erro|mensagem|desktop)\b/i.test(text) ||
+        /\b(o que (?:esta|está) (?:aparecendo|acontecendo|aberto)|o que aparece na tela|minha tela|nessa janela|esse erro)\b/i.test(text);
+      const capture = asksForScreenAnalysis ? await window.aurora.captureScreen() : null;
       const computerPrompt = capture
-        ? `${text}\n\nEstou fornecendo uma captura atual do desktop. Analise-a e, se puder cumprir exatamente o pedido, retorne um único bloco [AURORA_ACTION]{JSON}[/AURORA_ACTION] com coordenadas relativas à imagem ou texto/atalho solicitado. Tipos aceitos: click, doubleClick, rightClick e move com x/y; drag com x/y/endX/endY; scroll com x/y/delta (-1200 a 1200; positivo desce, negativo sobe); type com text; key com key. Use apenas uma ação por vez. Se não conseguir identificar o alvo com clareza, não sugira ação.`
+        ? `${text}\n\nEstou fornecendo uma captura atual do desktop. Analise somente o que estiver visível e explique o que aparece. A visão é somente de leitura: não proponha cliques, movimentos de mouse, digitação, atalhos ou blocos de ação. Se algo estiver ilegível, diga isso com clareza.`
         : text;
 
       const canStreamSpeech = autoSpeak && !capture;
@@ -662,53 +690,6 @@ export default function App() {
       let answer = response.text?.trim() || 'Não consegui responder agora.';
       setEmotion(inferAvatarEmotion(text, answer));
       if (hasLaughingCue(text + " " + answer)) setLaughing(true);
-      const actionMatch = answer.match(/\[AURORA_ACTION\]\s*(\{[\s\S]*?\})\s*\[\/AURORA_ACTION\]/i);
-      if (actionMatch) {
-        try {
-          const candidate = JSON.parse(actionMatch[1]);
-          let safeAction: PendingAction | null = null;
-          if (candidate?.type === 'click' && capture &&
-               Number.isFinite(candidate.x) && Number.isFinite(candidate.y) &&
-               candidate.x >= 0 && candidate.y >= 0 &&
-               candidate.x < capture.width && candidate.y < capture.height) {
-             safeAction = { type: 'click', captureId: capture.captureId, windowTitle: capture.windowTitle, x: Math.round(candidate.x), y: Math.round(candidate.y), imageWidth: capture.width, imageHeight: capture.height };
-           } else if (candidate?.type === 'doubleClick' && capture &&
-               Number.isFinite(candidate.x) && Number.isFinite(candidate.y) &&
-               candidate.x >= 0 && candidate.y >= 0 && candidate.x < capture.width && candidate.y < capture.height) {
-             safeAction = { type: 'doubleClick', captureId: capture.captureId, windowTitle: capture.windowTitle, x: Math.round(candidate.x), y: Math.round(candidate.y), imageWidth: capture.width, imageHeight: capture.height };
-           } else if (candidate?.type === 'rightClick' && capture &&
-               Number.isFinite(candidate.x) && Number.isFinite(candidate.y) &&
-               candidate.x >= 0 && candidate.y >= 0 && candidate.x < capture.width && candidate.y < capture.height) {
-             safeAction = { type: 'rightClick', captureId: capture.captureId, windowTitle: capture.windowTitle, x: Math.round(candidate.x), y: Math.round(candidate.y), imageWidth: capture.width, imageHeight: capture.height };
-           } else if (candidate?.type === 'move' && capture &&
-               Number.isFinite(candidate.x) && Number.isFinite(candidate.y) &&
-               candidate.x >= 0 && candidate.y >= 0 && candidate.x < capture.width && candidate.y < capture.height) {
-             safeAction = { type: 'move', captureId: capture.captureId, windowTitle: capture.windowTitle, x: Math.round(candidate.x), y: Math.round(candidate.y), imageWidth: capture.width, imageHeight: capture.height };
-           } else if (candidate?.type === 'drag' && capture &&
-               Number.isFinite(candidate.x) && Number.isFinite(candidate.y) && Number.isFinite(candidate.endX) && Number.isFinite(candidate.endY) &&
-               candidate.x >= 0 && candidate.y >= 0 && candidate.endX >= 0 && candidate.endY >= 0 &&
-               candidate.x < capture.width && candidate.y < capture.height && candidate.endX < capture.width && candidate.endY < capture.height) {
-             safeAction = { type: 'drag', captureId: capture.captureId, windowTitle: capture.windowTitle, x: Math.round(candidate.x), y: Math.round(candidate.y), endX: Math.round(candidate.endX), endY: Math.round(candidate.endY), imageWidth: capture.width, imageHeight: capture.height };
-           } else if (candidate?.type === 'scroll' && capture &&
-               Number.isFinite(candidate.x) && Number.isFinite(candidate.y) && Number.isFinite(candidate.delta) &&
-               candidate.x >= 0 && candidate.y >= 0 && candidate.x < capture.width && candidate.y < capture.height &&
-               candidate.delta !== 0 && Math.abs(candidate.delta) <= 1200) {
-             safeAction = { type: 'scroll', captureId: capture.captureId, windowTitle: capture.windowTitle, x: Math.round(candidate.x), y: Math.round(candidate.y), delta: Math.round(candidate.delta), imageWidth: capture.width, imageHeight: capture.height };
-           } else if (candidate?.type === 'type' && capture && typeof candidate.text === 'string' && candidate.text.length > 0 && candidate.text.length <= 1500) {
-             safeAction = { type: 'type', captureId: capture.captureId, windowTitle: capture.windowTitle, text: candidate.text };
-           } else if (candidate?.type === 'key' && capture && typeof candidate.key === 'string' &&
-               ['ENTER','TAB','ESC','BACKSPACE','SPACE','DELETE','UP','DOWN','LEFT','RIGHT','HOME','END','PAGEUP','PAGEDOWN','F5','CTRL+A','CTRL+C','CTRL+V','CTRL+L','CTRL+S','CTRL+Z','CTRL+F','CTRL+W','CTRL+T','CTRL+R','CTRL+SHIFT+S','ALT+TAB','ALT+F4','ALT+LEFT','ALT+RIGHT'].includes(candidate.key.toUpperCase())) {
-             safeAction = { type: 'key', captureId: capture.captureId, windowTitle: capture.windowTitle, key: candidate.key.toUpperCase() };
-           }
-           if (safeAction) {
-            setPendingAction(safeAction);
-            setChatOpen(true);
-            answer = answer.replace(actionMatch[0], '').trim() + '\n\nPosso executar essa ação? Confira e confirme na janelinha.';
-          }
-        } catch {
-          answer = answer.replace(actionMatch[0], '').trim();
-        }
-      }
       setMessages((current) => {
         const updated = [...current];
         const last = updated[updated.length - 1];
@@ -788,13 +769,13 @@ export default function App() {
 
     // Autodescricao deterministica: evita que modelos pequenos inventem corpo, sentimentos ou capacidades.
     if (/\b(quem voce e|quem e voce|quem e vc|se apresente|fale sobre voce|me fale sobre voce|descreva voce)\b/.test(text)) {
-      return 'Sou a Aurora, sua parceira de call. Meu jeito é mandão, debochado e implicante, mas eu te ajudo de verdade. Meu visual na tela é o avatar Live2D 6xb. Meu cérebro roda localmente pelo Ollama; o modelo padrão do projeto agora é o Qwen 3.5 9B. Tenho voz, reconheço sua fala quando você ativa o microfone e consigo abrir alguns programas, pastas, sites e ajudar com ações na tela quando você confirma.';
+      return 'Sou a Aurora, sua parceira de call. Meu jeito é mandão, debochado e implicante, mas eu te ajudo de verdade. Meu visual na tela é o avatar Live2D 6xb. Meu cérebro roda localmente pelo Ollama; o modelo padrão é o Qwen 3.5 9B. Tenho voz, escuto quando o microfone está ativo, abro programas e pastas permitidos e analiso capturas da sua tela.';
     }
     if (/\b(como voce e|como e seu avatar|qual e sua aparencia|descreva sua aparencia|como voce aparece|como voce se parece)\b/.test(text)) {
       return 'Meu visual é o avatar Live2D 6xb que aparece na sua tela. Posso comentar minha aparência quando você me mostrar uma captura ou imagem, mas não vou inventar detalhes que não consigo confirmar. E não, não vou fingir que me olhei pela câmera sem você me mandar uma imagem.';
     }
     if (/\b(o que voce consegue fazer|o que voce sabe fazer|quais sao suas capacidades|o que voce pode fazer)\b/.test(text)) {
-      return 'Consigo conversar por voz, abrir alguns programas, pastas, sites e pesquisas, analisar sua tela e propor clique simples ou duplo, botão direito, arrastar, mover o cursor, rolar, digitar ou usar atalhos. Cada ação no computador pede sua confirmação. Posso fechar a janela ativa com um atalho depois de mostrar o que vou fazer, mas ainda não consigo organizar arquivos sozinha. Escolhe uma missão, em vez de ficar me fazendo entrevista.';
+      return 'Consigo conversar por voz, abrir programas e pastas conhecidos, acessar sites e analisar o que está aparecendo na sua tela. Minha visão é somente de leitura: eu explico o que vejo, mas não controlo mouse nem teclado.';
     }
     if (/\b(como voce funciona|qual modelo voce usa|qual e seu cerebro|voce roda localmente|onde sua ia roda)\b/.test(text)) {
       return 'Meu cérebro roda pelo Ollama no seu computador, e o padrão do projeto agora é Qwen 3.5 9B. O 6xb é meu avatar, não meu cérebro. Minha voz usa ElevenLabs quando está configurada, com alternativas do Edge TTS e do Windows. A transcrição do microfone é feita localmente pelo Whisper.';
@@ -857,7 +838,7 @@ export default function App() {
   };
 
   const analyzeScreen = async () => {
-    const prompt = 'Analise a captura da minha tela. Descreva o que está visível e me ajude com o que eu estiver fazendo. Se houver erro, identifique a mensagem e sugira como resolver. Não afirme que clicou ou alterou nada: apenas observe e oriente.';
+    const prompt = 'Analise a captura da tela. Descreva os elementos, janelas, textos e mensagens de erro que estiverem visíveis. A visão é somente de leitura: explique e oriente, sem tentar clicar, digitar ou alterar qualquer coisa.';
     setChatOpen(true);
     setAppsOpen(false);
     setNotice('Capturando a tela para análise local…');
@@ -901,22 +882,6 @@ export default function App() {
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
     void sendMessage(input);
-  };
-
-  const approvePendingAction = async () => {
-    if (!pendingAction || actionRunning) return;
-    setActionRunning(true);
-    try {
-      const result = await window.aurora.executeAction(pendingAction);
-      const confirmation = result.description || 'Ação executada.';
-      setMessages((current) => [...current, { role: 'assistant', content: `Prontinho! ${confirmation}. ✨` }]);
-      setNotice('Ação confirmada e executada.');
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Não consegui executar essa ação.');
-    } finally {
-      setPendingAction(null);
-      setActionRunning(false);
-    }
   };
 
   const stopVoiceMode = () => {
@@ -1082,36 +1047,6 @@ export default function App() {
         </section>
       )}
 
-      {pendingAction && (
-        <section className="pet-action-confirm" role="alertdialog" aria-modal="true" aria-label="Confirmar ação no computador">
-          <div className="pet-panel-title">Aurora quer fazer uma ação</div>
-          <strong>
-            {pendingAction.type === 'click'
-              ? `Clicar na posição aproximada ${pendingAction.x}, ${pendingAction.y} da captura`
-              : pendingAction.type === 'doubleClick'
-                ? `Dar dois cliques em ${pendingAction.x}, ${pendingAction.y}`
-                : pendingAction.type === 'rightClick'
-                  ? `Clicar com o botão direito em ${pendingAction.x}, ${pendingAction.y}`
-                  : pendingAction.type === 'move'
-                    ? `Mover o cursor para ${pendingAction.x}, ${pendingAction.y}`
-                    : pendingAction.type === 'drag'
-                      ? `Arrastar de ${pendingAction.x}, ${pendingAction.y} até ${pendingAction.endX}, ${pendingAction.endY}`
-                      : pendingAction.type === 'scroll'
-                        ? `Rolar ${pendingAction.delta > 0 ? 'para baixo' : 'para cima'} na posição ${pendingAction.x}, ${pendingAction.y}`
-                        : pendingAction.type === 'type'
-                          ? `Digitar: “${pendingAction.text.slice(0, 160)}${pendingAction.text.length > 160 ? '…' : ''}”`
-                          : `Pressionar ${pendingAction.key}`}
-          </strong>
-          <p>Janela analisada: <strong>{pendingAction.windowTitle || 'não identificada'}</strong>. A confirmação vale para uma única ação e expira em 60 segundos. Confira antes de autorizar.</p>
-          <div className="pet-action-buttons">
-            <button className="pet-confirm-button" onClick={() => void approvePendingAction()} disabled={actionRunning}>
-              {actionRunning ? 'Executando…' : 'Confirmar ação'}
-            </button>
-            <button className="pet-cancel-button" onClick={() => setPendingAction(null)} disabled={actionRunning}>Cancelar</button>
-          </div>
-        </section>
-      )}
-
       {chatOpen && (
         <section className="chat-card pet-chat-card">
           <div className="chat-heading">
@@ -1259,7 +1194,7 @@ export default function App() {
                 </div>
                 <div>
                   <strong>Comandos disponíveis nesta versão</strong>
-                  <p>Você pode pedir para abrir Calculadora, Bloco de Notas, Explorador, Paint, Gerenciador de Tarefas, Ferramenta de Captura, Configurações, Câmera, sites, pesquisas na internet e pastas conhecidas. Também posso analisar sua tela e sugerir cliques, rolagem, digitação e atalhos; ações no PC sempre precisam de confirmação.</p>
+                  <p>Você pode pedir para abrir Calculadora, Bloco de Notas, Explorador, Paint, Gerenciador de Tarefas, Ferramenta de Captura, Configurações, Câmera, sites, pesquisas na internet e pastas conhecidas. Também posso analisar o que aparece na sua tela. A visão é somente de leitura: não controlo mouse nem teclado.</p>
                 </div>
               </div>
 
