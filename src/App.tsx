@@ -316,9 +316,17 @@ export default function App() {
       recorder.onstop = () => {
         void (async () => {
           if (voiceCaptureRef.current === session) voiceCaptureRef.current = null;
+          const inputSettings = session.stream.getAudioTracks()[0]?.getSettings();
           console.info('[Aurora Performance] Microfone', {
             captureSeconds: Number(((Date.now() - session.startedAt) / 1000).toFixed(2)),
             peakRms: Number(session.peakRms.toFixed(4)),
+            noiseFloorRms: Number(session.noiseFloorRms.toFixed(4)),
+            speechThresholdRms: Number(session.speechThresholdRms.toFixed(4)),
+            inputSampleRate: inputSettings?.sampleRate || null,
+            inputChannels: inputSettings?.channelCount || null,
+            echoCancellation: inputSettings?.echoCancellation ?? null,
+            noiseSuppression: inputSettings?.noiseSuppression ?? null,
+            autoGainControl: inputSettings?.autoGainControl ?? null,
             speechDetected: session.speechDetected,
             recorderChunks: session.chunks.length,
           });
