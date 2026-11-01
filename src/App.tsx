@@ -400,6 +400,21 @@ export default function App() {
 
   const runQuickCommand = async (rawText: string): Promise<string | null> => {
     const text = rawText.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+    // Autodescricao deterministica: evita que modelos pequenos inventem corpo, sentimentos ou capacidades.
+    if (/\b(quem voce e|quem e voce|quem e vc|se apresente|fale sobre voce|me fale sobre voce|descreva voce)\b/.test(text)) {
+      return 'Sou Aurora, sua assistente virtual de desktop. Meu avatar é uma personagem 2D Live2D em estilo anime, identificada no projeto como 6xb. Meu cérebro é o modelo de linguagem que roda pelo Ollama no seu PC — normalmente Qwen 3.5 2B, a menos que você escolha outro. Tenho voz, reconhecimento de fala quando você ativa o microfone e algumas ferramentas para interagir com o computador. E sim, minha personalidade é implicante por projeto. Não foi defeito de fabricação; foi especificação.';
+    }
+    if (/\b(como voce e|como e seu avatar|qual e sua aparencia|descreva sua aparencia|como voce aparece|como voce se parece)\b/.test(text)) {
+      return 'Na tela eu apareço como uma mascote 2D Live2D de estilo anime, modelo visual 6xb, numa janela transparente e flutuante. O aplicativo faz meus olhos e minha cabeça acompanharem o cursor e sincroniza minha boca com a voz. Não tenho os detalhes de cor do cabelo, olhos ou roupa descritos no código, então não vou inventar um guarda-roupa imaginário. Se você me mostrar uma captura do modelo, posso reconhecer e registrar esses detalhes no meu perfil.';
+    }
+    if (/\b(o que voce consegue fazer|o que voce sabe fazer|quais sao suas capacidades|o que voce pode fazer)\b/.test(text)) {
+      return 'Consigo conversar por texto e voz, abrir alguns programas, pastas e sites, analisar sua tela quando você pede e propor cliques, rolagem, digitação ou atalhos permitidos. Para agir na tela, preciso de uma captura atual e da sua confirmação antes de executar. Não fico vendo sua tela nem ouvindo pelo microfone escondida. Pronto, currículo entregue; agora me dê uma tarefa decente.';
+    }
+    if (/\b(como voce funciona|qual modelo voce usa|qual e seu cerebro|voce roda localmente|onde sua ia roda)\b/.test(text)) {
+      return 'Meu modelo de linguagem roda pelo Ollama no seu computador, usando o modelo selecionado nas configurações — o padrão é Qwen 3.5 2B. O nome 6xb identifica meu avatar Live2D, não meu cérebro. Minha voz de saída usa ElevenLabs quando configurada, com alternativas do Edge TTS e do Windows. O reconhecimento de fala entra pelo Chromium em português brasileiro e depende do serviço de reconhecimento e da conexão.';
+    }
+
     const youtubeQuery = text.match(/(?:pesquise|procure|busque)\s+(?:no youtube|no youtube por)\s+(.+)/i);
     if (youtubeQuery?.[1]?.trim()) {
       const query = youtubeQuery[1].trim();
