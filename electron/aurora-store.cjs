@@ -372,8 +372,12 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
     if (!['.txt', '.md', '.markdown', '.csv', '.json', '.pdf'].includes(extension)) {
       throw new Error('Formato não suportado. Use PDF, TXT, Markdown, CSV ou JSON.');
     }
-    const bytes = Buffer.from(base64.replace(/^data:[^;]+;base64,/, ''), 'base64');
-    if (!bytes.length || bytes.length > MAX_DOCUMENT_BYTES || (Number(size) > MAX_DOCUMENT_BYTES)) {
+    const encoded = base64.replace(/^data:[^;]+;base64,/, '');
+    if (encoded.length > Math.ceil(MAX_DOCUMENT_BYTES * 4 / 3) + 16 || Number(size) > MAX_DOCUMENT_BYTES) {
+      throw new Error('O arquivo precisa ter até 24 MB e não pode estar vazio.');
+    }
+    const bytes = Buffer.from(encoded, 'base64');
+    if (!bytes.length || bytes.length > MAX_DOCUMENT_BYTES) {
       throw new Error('O arquivo precisa ter até 24 MB e não pode estar vazio.');
     }
     let content = '';
@@ -406,6 +410,10 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
     if (!pieces.length) throw new Error('Não consegui dividir o conteúdo do arquivo em trechos pesquisáveis.');
     const data = await readKnowledge();
     if (data.documents.length >= MAX_DOCUMENTS) throw new Error('A biblioteca atingiu o limite de 120 documentos. Remova algum material antigo.');
+    const availableChunks = MAX_INDEXED_CHUNKS - data.chunks.length;
+    if (pieces.length > availableChunks) {
+      throw new Error('Este material geraria ' + pieces.length + ' trechos, mas só há espaço para ' + Math.max(availableChunks, 0) + '. Remova documentos antigos ou divida o arquivo em partes menores.');
+    }
     const id = crypto.randomUUID();
     const document = {
       id,
