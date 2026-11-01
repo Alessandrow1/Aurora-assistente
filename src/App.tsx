@@ -581,7 +581,7 @@ export default function App() {
         return;
       }
 
-      const asksForComputerAction = /\b(clique|clica|clicar|digite|digita|escreva|pressione|aperte|selecione|marque|preencha|role|rolar|pagine|desça|suba|scroll|copie|copiar|cole|colar|analise|analisa|olhe|olha|veja|observe|resolva|arrume|configure|configurar|abra|abre|abrir|mova|mover|arraste|arrastar|redimensione|feche|fechar|print|captura)\b/i.test(text)
+      const asksForComputerAction = /\b(clique|clica|clicar|digite|digita|escreva|pressione|aperte|selecione|marque|preencha|role|rolar|pagine|desça|suba|scroll|copie|copiar|cole|colar|analise|analisa|olhe|olha|veja|observe|resolva|arrume|configure|configurar|abra|abre|abrir|mova|mover|arraste|arrastar|redimensione|feche|fechar|print|captura|controle|controlar|navegue|navegar|interaja|interagir|automatize|automatizar|mexa|mexer)\b/i.test(text)
         || /\b(minha tela|na tela|essa janela|nessa janela|este programa|este aplicativo|esse aplicativo)\b/i.test(text);
       const capture = asksForComputerAction ? await window.aurora.captureScreen() : null;
       const computerPrompt = capture
