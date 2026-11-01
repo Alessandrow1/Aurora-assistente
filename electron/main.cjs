@@ -562,8 +562,8 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   });
   const preserveConversationContext = studyMode || !voiceMode || Boolean(payload.imageBase64) ||
     /\b(compare|comparar|analise|analisar|calcule|calcular|resolva|resolver|planeje|planejar|estrategia|vantagens|desvantagens|explica|explique|porque|por que|como funciona|qual diferenca|o que significa|consequencia|detalhad[oa]s?|passo a passo|lembra|lembre|antes|conversamos|historico|retomar|continuar|voltar)\b/i.test(normalizeMemoryText(message));
-  const historyLimit = studyMode ? 8 : preserveConversationContext ? 6 : 2;
-  const historyCharacterLimit = studyMode ? 1600 : preserveConversationContext ? 1400 : 600;
+  const historyLimit = studyMode ? 6 : preserveConversationContext ? 6 : 2;
+  const historyCharacterLimit = studyMode ? 1200 : preserveConversationContext ? 1400 : 600;
   const history = Array.isArray(payload.history)
     ? payload.history
         .filter((item) => item && ['user', 'assistant'].includes(item.role) && typeof item.content === 'string')
@@ -593,7 +593,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   const needsExplanation = /\b(por que|porque|explique|explicar|como funciona|o que significa|qual a diferenca|como acontece|causa|consequencia)\b/i.test(normalizedRequest);
   const needsThinking = studyMode || needsReasoning || asksForLongResponse;
 
-  const numPredict = studyMode ? (imageBase64 ? 1000 : asksForLongResponse ? 1500 : 1100) : imageBase64 ? 650 : asksForLongResponse ? 1500 : needsReasoning ? 1100 : needsExplanation ? 520 : voiceMode ? 80 : 200;
+  const numPredict = studyMode ? (imageBase64 ? 800 : asksForLongResponse ? 1200 : 900) : imageBase64 ? 650 : asksForLongResponse ? 1500 : needsReasoning ? 1100 : needsExplanation ? 520 : voiceMode ? 80 : 200;
 
   // Preserva todo o histórico e o prompt também na tentativa de recuperação.
     const systemPrompt = [
