@@ -699,7 +699,8 @@ export default function App() {
            } else if (candidate?.type === 'key' && capture && typeof candidate.key === 'string' &&
                ['ENTER','TAB','ESC','BACKSPACE','SPACE','DELETE','UP','DOWN','LEFT','RIGHT','HOME','END','PAGEUP','PAGEDOWN','F5','CTRL+A','CTRL+C','CTRL+V','CTRL+L','CTRL+S','CTRL+Z','CTRL+F','CTRL+W','CTRL+T','CTRL+R','CTRL+SHIFT+S','ALT+TAB','ALT+F4','ALT+LEFT','ALT+RIGHT'].includes(candidate.key.toUpperCase())) {
              safeAction = { type: 'key', captureId: capture.captureId, windowTitle: capture.windowTitle, key: candidate.key.toUpperCase() };
-           }if (safeAction) {
+           }
+           if (safeAction) {
             setPendingAction(safeAction);
             setChatOpen(true);
             answer = answer.replace(actionMatch[0], '').trim() + '\n\nPosso executar essa ação? Confira e confirme na janelinha.';
