@@ -593,7 +593,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   try {
     retrievedContext = await auroraStore.searchContext(
       [history.slice(-4).map((item) => item.content).join(' '), message].join(' '),
-      5,
+      3,
     );
   } catch (error) {
     console.warn('[Aurora RAG] Não consegui recuperar conversas/documentos relevantes:', error instanceof Error ? error.message : String(error));
