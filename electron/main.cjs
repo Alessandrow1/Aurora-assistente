@@ -1288,7 +1288,7 @@ if ($window -ne [IntPtr]::Zero) { [void][AuroraForeground]::GetWindowText($windo
       const foreground = JSON.parse(String(focusResult.stdout || '').trim() || '{}');
       foregroundHandle = typeof foreground.handle === 'string' ? foreground.handle : String(foreground.handle || '0');
       windowTitle = typeof foreground.title === 'string' ? foreground.title.trim().slice(0, 180) : '';
-      if (!/^-?\\d+$/.test(foregroundHandle)) foregroundHandle = '0';
+      if (!/^-?\d+$/.test(foregroundHandle)) foregroundHandle = '0';
     } catch {
       foregroundHandle = '0';
       windowTitle = '';
@@ -1366,7 +1366,7 @@ ipcMain.handle('aurora:execute-action', async (event, payload = {}) => {
     capturedForegroundContext = null;
     throw new Error('A confirmação expirou. Faça uma nova captura da tela antes de agir.');
   }
-  if (!/^-?\\d+$/.test(captureContext.handle) || captureContext.handle === '0') {
+  if (!/^-?\d+$/.test(captureContext.handle) || captureContext.handle === '0') {
     capturedForegroundContext = null;
     throw new Error('Não consegui identificar a janela que estava ativa na captura. Tente novamente.');
   }
