@@ -29,6 +29,7 @@ type IdentityProfile = {
 type Props = {
   onOpenConversation: (id: string) => Promise<void>;
   onNewConversation: () => Promise<void>;
+  onAnalyzeAvatar: () => Promise<string>;
 };
 
 function formatDate(value: string): string {
@@ -43,7 +44,7 @@ function formatSize(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
-export default function MemoryHub({ onOpenConversation, onNewConversation }: Props) {
+export default function MemoryHub({ onOpenConversation, onNewConversation, onAnalyzeAvatar }: Props) {
   const [tab, setTab] = useState<Tab>('history');
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [historyQuery, setHistoryQuery] = useState('');
@@ -361,8 +362,23 @@ export default function MemoryHub({ onOpenConversation, onNewConversation }: Pro
             <textarea className="memory-textarea" rows={4} value={identity.appearanceDescription} onChange={(event) => setIdentity((current) => ({ ...current, appearanceDescription: event.target.value }))} placeholder="Descreva fielmente cabelo, olhos, rosto, roupas, acessórios e cores do avatar. Não inclua características que não estejam no modelo." />
             <label className="memory-label">Personalidade</label>
             <textarea className="memory-textarea" rows={3} value={identity.personality} onChange={(event) => setIdentity((current) => ({ ...current, personality: event.target.value }))} />
-            <button className="memory-primary full-button" onClick={() => void saveIdentity()} disabled={busy || !identity.name.trim() || !identity.avatar.trim()}>Salvar identidade da Aurora</button>
-            <p className="memory-help">A ficha dá à Aurora uma referência estável; reconhecer uma expressão ou pose em tempo real ainda depende de analisar uma captura atual do avatar.</p>
+            <div className="knowledge-actions">
+              <button onClick={async () => {
+                setBusy(true);
+                setNotice('A Aurora está observando o próprio avatar Live2D…');
+                try {
+                  const description = await onAnalyzeAvatar();
+                  setIdentity((current) => ({ ...current, appearanceDescription: description }));
+                  setNotice('Sugestão de descrição criada a partir do avatar. Revise o texto e salve a identidade.');
+                } catch (error) {
+                  setNotice(error instanceof Error ? error.message : 'Não consegui analisar o avatar.');
+                } finally {
+                  setBusy(false);
+                }
+              }} disabled={busy}>👁 Analisar meu avatar</button>
+              <button className="memory-primary" onClick={() => void saveIdentity()} disabled={busy || !identity.name.trim() || !identity.avatar.trim()}>Salvar identidade</button>
+            </div>
+            <p className="memory-help">A análise usa uma imagem do canvas Live2D e o modelo local do Ollama. Ela sugere uma descrição que você pode revisar antes de salvar; expressões momentâneas não substituem a aparência permanente.</p>
           </>
         )}
       </div>
