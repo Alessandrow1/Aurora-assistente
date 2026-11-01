@@ -1266,17 +1266,17 @@ ipcMain.handle('aurora:capture-screen', async () => {
     await new Promise((resolve) => setTimeout(resolve, 180));
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
-      thumbnailSize: { width: 1600, height: 900 },
+      thumbnailSize: { width: 1920, height: 1080 },
       fetchWindowIcons: false,
     });
     const source = sources[0];
     if (!source || source.thumbnail.isEmpty()) {
       throw new Error('Não consegui capturar a tela. Verifique se há um monitor ativo.');
     }
-    const image = source.thumbnail.resize({ width: 1600, quality: 'good' });
+    const image = source.thumbnail.resize({ width: 1920, quality: 'good' });
     const size = image.getSize();
     return {
-      imageBase64: image.toJPEG(86).toString('base64'),
+      imageBase64: image.toJPEG(88).toString('base64'),
       width: size.width,
       height: size.height,
       screenWidth: screen.getPrimaryDisplay().size.width,
