@@ -703,7 +703,7 @@ export default function App() {
         (result.count > 10 ? '\n... e mais ' + (result.count - 10) + ' registro(s).' : '');
     }
 
-    const forgetMatch = rawText.match(/^\s*(?:aurora[, ]+)?(?:esqueca que|apague da memoria|remova da memoria)\s+([\s\S]+)$/i);
+    const forgetMatch = rawText.match(/^\s*(?:aurora[, ]+)?(?:esqueça que|esqueca que|esquece que|apague da memória|apague da memoria|remova da memória|remova da memoria)\s+([\s\S]+)$/i);
     if (forgetMatch?.[1]?.trim()) {
       const result = await window.aurora.deleteMemory(forgetMatch[1].trim());
       return result.deleted
