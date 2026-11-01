@@ -1402,18 +1402,48 @@ if ([AuroraActionWindow]::GetForegroundWindow() -ne $targetWindow) { throw 'Não
 `;
 
   try {
-    if (actionType === 'click') {
+    if (['click', 'doubleClick', 'rightClick', 'move', 'drag'].includes(actionType)) {
       const imageWidth = Number(payload.imageWidth);
       const imageHeight = Number(payload.imageHeight);
       const x = Number(payload.x);
       const y = Number(payload.y);
+      const endX = Number(payload.endX);
+      const endY = Number(payload.endY);
       if (![imageWidth, imageHeight, x, y].every(Number.isFinite) ||
           imageWidth < 1 || imageHeight < 1 || x < 0 || y < 0 || x >= imageWidth || y >= imageHeight) {
-        throw new Error('A posição do clique não é válida.');
+        throw new Error('A posição do mouse não é válida.');
+      }
+      if (actionType === 'drag' &&
+          (![endX, endY].every(Number.isFinite) || endX < 0 || endY < 0 || endX >= imageWidth || endY >= imageHeight)) {
+        throw new Error('O destino do arraste não é válido.');
       }
       const display = screen.getPrimaryDisplay();
       const screenX = Math.round((x / imageWidth) * display.size.width * (display.scaleFactor || 1));
       const screenY = Math.round((y / imageHeight) * display.size.height * (display.scaleFactor || 1));
+      const screenEndX = actionType === 'drag'
+        ? Math.round((endX / imageWidth) * display.size.width * (display.scaleFactor || 1))
+        : screenX;
+      const screenEndY = actionType === 'drag'
+        ? Math.round((endY / imageHeight) * display.size.height * (display.scaleFactor || 1))
+        : screenY;
+      let mouseCommand = '';
+      let description = '';
+      if (actionType === 'click') {
+        mouseCommand = `[AuroraMouse]::Click(${screenX}, ${screenY})`;
+        description = `Clique na posição ${screenX}, ${screenY}`;
+      } else if (actionType === 'doubleClick') {
+        mouseCommand = `[AuroraMouse]::DoubleClick(${screenX}, ${screenY})`;
+        description = `Clique duplo na posição ${screenX}, ${screenY}`;
+      } else if (actionType === 'rightClick') {
+        mouseCommand = `[AuroraMouse]::RightClick(${screenX}, ${screenY})`;
+        description = `Clique com o botão direito na posição ${screenX}, ${screenY}`;
+      } else if (actionType === 'move') {
+        mouseCommand = `[AuroraMouse]::Move(${screenX}, ${screenY})`;
+        description = `Cursor movido para ${screenX}, ${screenY}`;
+      } else {
+        mouseCommand = `[AuroraMouse]::Drag(${screenX}, ${screenY}, ${screenEndX}, ${screenEndY})`;
+        description = `Arraste de ${screenX}, ${screenY} até ${screenEndX}, ${screenEndY}`;
+      }
       const script = `${focusCapturedWindowScript}
 Add-Type -TypeDefinition @'
 using System;
@@ -1421,18 +1451,44 @@ using System.Runtime.InteropServices;
 public static class AuroraMouse {
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
   [DllImport("user32.dll")] public static extern void mouse_event(int flags, int dx, int dy, int data, int extraInfo);
+  public static void Move(int x, int y) {
+    SetCursorPos(x, y);
+  }
   public static void Click(int x, int y) {
     SetCursorPos(x, y);
-    System.Threading.Thread.Sleep(90);
+    System.Threading.Thread.Sleep(80);
     mouse_event(0x0002, 0, 0, 0, 0);
+    mouse_event(0x0004, 0, 0, 0, 0);
+  }
+  public static void DoubleClick(int x, int y) {
+    Click(x, y);
+    System.Threading.Thread.Sleep(90);
+    Click(x, y);
+  }
+  public static void RightClick(int x, int y) {
+    SetCursorPos(x, y);
+    System.Threading.Thread.Sleep(80);
+    mouse_event(0x0008, 0, 0, 0, 0);
+    mouse_event(0x0010, 0, 0, 0, 0);
+  }
+  public static void Drag(int x1, int y1, int x2, int y2) {
+    SetCursorPos(x1, y1);
+    System.Threading.Thread.Sleep(100);
+    mouse_event(0x0002, 0, 0, 0, 0);
+    for (int step = 1; step <= 14; step++) {
+      int x = x1 + ((x2 - x1) * step / 14);
+      int y = y1 + ((y2 - y1) * step / 14);
+      SetCursorPos(x, y);
+      System.Threading.Thread.Sleep(12);
+    }
     mouse_event(0x0004, 0, 0, 0, 0);
   }
 }
 '@
-[AuroraMouse]::Click(${screenX}, ${screenY})
+${mouseCommand}
 `;
-      await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { timeout: 10000, windowsHide: true });
-      return { success: true, description: `Clique na janela capturada, posição ${screenX}, ${screenY}` };
+      await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { timeout: 12000, windowsHide: true });
+      return { success: true, description };
     }
 
     if (actionType === 'scroll') {
