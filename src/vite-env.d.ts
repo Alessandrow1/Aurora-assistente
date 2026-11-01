@@ -21,8 +21,11 @@ declare global {
       openApp: (appId: string) => Promise<{ success: boolean; label: string }>;
       openFolder: (folderId: string) => Promise<{ success: boolean; label: string }>;
       openUrl: (url: string) => Promise<{ success: boolean }>;
-      speak: (text: string) => Promise<{ audioBase64: string; voice: string; provider: 'elevenlabs' | 'edge'; fallbackReason?: string }>;
+      speak: (text: string) => Promise<{ audioBase64: string; audioMimeType?: string; voice: string; provider: 'elevenlabs' | 'edge'; fallbackReason?: string }>;
+      startSpeakSession: () => Promise<{ active: boolean }>;
+      endSpeakSession: () => Promise<{ closed: boolean }>;
       transcribeAudio: (samples: Float32Array) => Promise<{ text: string }>;
+      warmupTranscription: () => Promise<{ ready: boolean }>;
       onSpeechRecognitionStatus: (callback: (status: { state: 'loading' | 'downloading' | 'ready' | 'error'; message: string }) => void) => () => void;
       setMousePassthrough: (ignore: boolean) => void;
       onCursorPosition: (callback: (position: { x: number; y: number }) => void) => () => void;
