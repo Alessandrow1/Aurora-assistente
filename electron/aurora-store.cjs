@@ -201,6 +201,8 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
     };
     data.conversations.unshift(conversation);
     data.conversations = data.conversations.slice(0, MAX_CONVERSATIONS);
+    const retainedIds = new Set(data.conversations.map((item) => item.id));
+    data.index = data.index.filter((item) => retainedIds.has(item.sessionId));
     await writeEncrypted(conversationsPath(), data, 'conversations');
     return { id: conversation.id, title: conversation.title, createdAt: conversation.createdAt, updatedAt: conversation.updatedAt };
   }
@@ -229,6 +231,8 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
     };
     data.conversations = [conversation, ...data.conversations.filter((item) => item.id !== id)]
       .slice(0, MAX_CONVERSATIONS);
+    const retainedIds = new Set(data.conversations.map((item) => item.id));
+    data.index = data.index.filter((item) => retainedIds.has(item.sessionId));
     await writeEncrypted(conversationsPath(), data, 'conversations');
     // A indexação é assíncrona: a gravação do histórico não espera o modelo de embeddings.
     void indexConversationPairs(conversation).catch((error) => {
