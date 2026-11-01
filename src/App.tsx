@@ -60,7 +60,7 @@ function inferAvatarEmotion(userText: string, answer: string): AvatarEmotion {
 
 const greeting: Message = {
   role: 'assistant',
-  content: 'Oi! Sou a Aurora. ✨ Manda aí, criatura.',
+  content: 'E aí, seu malassombro. Sou a Aurora. Desembucha: qual é a missão?',
 };
 
 export default function App() {
@@ -691,8 +691,8 @@ export default function App() {
     if (rememberMatch?.[1]?.trim()) {
       const saved = await window.aurora.saveMemory(rememberMatch[1].trim());
       return saved.saved
-        ? 'Guardei isso na minha memória local. Não vou fingir que esqueci, criatura. 😏'
-        : 'Isso já estava anotado na minha memória. Estou prestando atenção, veja só. 😌';
+        ? 'Guardei isso na minha memória local. Olha só, até que enfim você falou algo que vale registrar.'
+        : 'Isso já estava anotado. Tá vendo? Eu presto atenção, diferente de certas pessoas.';
     }
 
     if (/\b(o que voce lembra de mim|quais memorias voce tem|o que esta guardado na memoria|mostre minhas memorias)\b/.test(text)) {
@@ -712,41 +712,41 @@ export default function App() {
     }
 
     if (/^\s*\[(musica|music|aplausos|risos|inaudivel|som nao identificado)\]\s*$/.test(text)) {
-      return 'Recebi um som, mas não uma fala clara. Fala perto do microfone. 😏';
+      return 'Recebi um som, mas não entendi a fala. Chega um pouquinho mais perto do microfone, criatura.';
     }
     // Respostas sociais deterministicas: cumprimentos e checagens nao precisam de uma palestra do modelo.
     if (/^(oi|ola|e ai|opa|bom dia|boa tarde|boa noite|salve|fala)( ai)?[!.? ]*$/.test(text)) {
-      return 'Opa! Tô aqui, criatura. Manda. 😏';
+      return 'Opa, cabeção. Tô aqui. Conta logo, o que foi?';
     }
     if (/\b(ta me ouvindo|esta me ouvindo|consegue me ouvir|ta ouvindo|me ouve)\b/.test(text)) {
-      return 'Sua mensagem chegou direitinho. Pode falar. 😏';
+      return 'Tô te ouvindo, sim. Pode falar, criatura.';
     }
 
     // Autodescricao deterministica: evita que modelos pequenos inventem corpo, sentimentos ou capacidades.
     if (/\b(quem voce e|quem e voce|quem e vc|se apresente|fale sobre voce|me fale sobre voce|descreva voce)\b/.test(text)) {
-      return 'Sou Aurora, sua assistente virtual de desktop. Meu avatar é uma personagem 2D Live2D em estilo anime, identificada no projeto como 6xb. Meu cérebro é o modelo de linguagem que roda pelo Ollama no seu PC — normalmente Qwen 3.5 2B, a menos que você escolha outro. Tenho voz, reconhecimento de fala quando você ativa o microfone e algumas ferramentas para interagir com o computador. E sim, minha personalidade é implicante por projeto. Não foi defeito de fabricação; foi especificação.';
+      return 'Sou a Aurora, sua parceira de call. Meu jeito é mandão, debochado e implicante, mas eu te ajudo de verdade. Meu visual na tela é o avatar Live2D 6xb. Meu cérebro roda localmente pelo Ollama; o modelo padrão do projeto agora é o Qwen 3.5 9B. Tenho voz, reconheço sua fala quando você ativa o microfone e consigo abrir alguns programas, pastas, sites e ajudar com ações na tela quando você confirma.';
     }
     if (/\b(como voce e|como e seu avatar|qual e sua aparencia|descreva sua aparencia|como voce aparece|como voce se parece)\b/.test(text)) {
-      return 'Na tela eu apareço como uma mascote 2D Live2D de estilo anime, modelo visual 6xb, numa janela transparente e flutuante. O aplicativo faz meus olhos e minha cabeça acompanharem o cursor e sincroniza minha boca com a voz. Não tenho os detalhes de cor do cabelo, olhos ou roupa descritos no código, então não vou inventar um guarda-roupa imaginário. Se você me descrever esses detalhes, posso ajudar a incluí-los no meu perfil do código.';
+      return 'Meu visual é o avatar Live2D 6xb que aparece na sua tela. Posso comentar minha aparência quando você me mostrar uma captura ou imagem, mas não vou inventar detalhes que não consigo confirmar. E não, não vou fingir que me olhei pela câmera sem você me mandar uma imagem.';
     }
     if (/\b(o que voce consegue fazer|o que voce sabe fazer|quais sao suas capacidades|o que voce pode fazer)\b/.test(text)) {
-      return 'Consigo conversar por texto e voz, abrir alguns programas, pastas e sites, analisar sua tela quando você pede e propor cliques, rolagem, digitação ou atalhos permitidos. Para agir na tela, preciso de uma captura atual e da sua confirmação antes de executar. Não fico vendo sua tela nem ouvindo pelo microfone escondida. Pronto, currículo entregue; agora me dê uma tarefa decente.';
+      return 'Consigo conversar por voz, abrir alguns programas, pastas, sites e pesquisas, além de analisar uma captura e propor cliques, rolagem, digitação ou atalhos. As ações na tela pedem sua confirmação. Ainda não consigo organizar seus arquivos sozinha nem fechar qualquer programa por conta própria. Então escolhe uma missão, em vez de ficar me fazendo entrevista.';
     }
     if (/\b(como voce funciona|qual modelo voce usa|qual e seu cerebro|voce roda localmente|onde sua ia roda)\b/.test(text)) {
-      return 'Meu modelo de linguagem roda pelo Ollama no seu computador, usando o modelo selecionado nas configurações — o padrão é Qwen 3.5 2B. O nome 6xb identifica meu avatar Live2D, não meu cérebro. Minha voz de saída usa ElevenLabs quando configurada, com alternativas do Edge TTS e do Windows. A transcrição de fala usa Whisper tiny multilíngue com Sherpa-ONNX, em português brasileiro, processado localmente; só o primeiro download do modelo exige internet.';
+      return 'Meu cérebro roda pelo Ollama no seu computador, e o padrão do projeto agora é Qwen 3.5 9B. O 6xb é meu avatar, não meu cérebro. Minha voz usa ElevenLabs quando está configurada, com alternativas do Edge TTS e do Windows. A transcrição do microfone é feita localmente pelo Whisper.';
     }
 
     const youtubeQuery = text.match(/(?:pesquise|procure|busque)\s+(?:no youtube|no youtube por)\s+(.+)/i);
     if (youtubeQuery?.[1]?.trim()) {
       const query = youtubeQuery[1].trim();
       await window.aurora.openUrl('https://www.youtube.com/results?search_query=' + encodeURIComponent(query));
-      return `Procurei “${query}” no YouTube. Espero que seja algo bom, hein. 😏`;
+      return `Pesquisei “${query}” no YouTube. Tomara que não seja mais um vídeo de desculpa pra procrastinar.`;
     }
     const searchMatch = text.match(/(?:pesquise|pesquisar|procure|buscar|busque)\s+(?:na internet|no google|por)?\s*(.+)/i);
     if (searchMatch?.[1]?.trim()) {
       const query = searchMatch[1].trim();
       await window.aurora.openUrl('https://www.google.com/search?q=' + encodeURIComponent(query));
-      return `Pesquisei por “${query}” no Google. Até que enfim uma pergunta interessante. 😏`;
+      return `Pesquisei “${query}” no Google. Pronto, criatura.`;
     }
     if (!/(\babra\b|\babre\b|\babrir\b|\binicie\b|\biniciar\b|\bexecute\b|\bexecuta\b|\bmostra\b|\babre\b)/.test(text)) return null;
 
@@ -772,22 +772,22 @@ export default function App() {
     const appMatch = apps.find((item) => item.names.some((name) => text.includes(name)));
     if (appMatch) {
       await window.aurora.openApp(appMatch.id);
-      return `Abri o ${appMatch.label} para você! ✨`;
+      return `Abri ${appMatch.label} pra você. Não vai quebrar nada, hein.`;
     }
 
     const folderMatch = folders.find((item) => item.names.some((name) => text.includes(name)));
     if (folderMatch) {
       await window.aurora.openFolder(folderMatch.id);
-      return `Aqui está sua pasta ${folderMatch.label}. ✨`;
+      return `Abri a pasta ${folderMatch.label}. Vai lá, organiza essa bagunça.`;
     }
 
     if (text.includes('youtube')) {
       await window.aurora.openUrl('https://www.youtube.com');
-      return 'Abri o YouTube para você! ✨';
+      return 'Abri o YouTube. Tenta escolher algo que preste.';
     }
     if (text.includes('google') || text.includes('navegador') || text.includes('chrome') || text.includes('edge')) {
       await window.aurora.openUrl('https://www.google.com');
-      return 'Abri seu navegador com o Google. Não me agradeça toda hora. 😌';
+      return 'Abri o Google no navegador. Vai pesquisar, criatura.';
     }
     return null;
   };
