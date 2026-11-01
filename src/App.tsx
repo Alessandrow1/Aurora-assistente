@@ -2,11 +2,12 @@ import { FormEvent, useEffect, useRef, useState } from 'react';
 import Avatar3D from './components/Avatar3D';
 
 type Message = { role: 'user' | 'assistant'; content: string };
+type PendingActionContext = { captureId: string; windowTitle: string };
 type PendingAction =
-  | { type: 'click'; x: number; y: number; imageWidth: number; imageHeight: number }
-  | { type: 'scroll'; x: number; y: number; delta: number; imageWidth: number; imageHeight: number }
-  | { type: 'type'; text: string }
-  | { type: 'key'; key: string };
+  | ({ type: 'click'; x: number; y: number; imageWidth: number; imageHeight: number } & PendingActionContext)
+  | ({ type: 'scroll'; x: number; y: number; delta: number; imageWidth: number; imageHeight: number } & PendingActionContext)
+  | ({ type: 'type'; text: string } & PendingActionContext)
+  | ({ type: 'key'; key: string } & PendingActionContext);
 
 type VoiceCaptureSession = {
   stream: MediaStream;
@@ -669,17 +670,17 @@ export default function App() {
               Number.isFinite(candidate.x) && Number.isFinite(candidate.y) &&
               candidate.x >= 0 && candidate.y >= 0 &&
               candidate.x < capture.width && candidate.y < capture.height) {
-            safeAction = { type: 'click', x: Math.round(candidate.x), y: Math.round(candidate.y), imageWidth: capture.width, imageHeight: capture.height };
+            safeAction = { type: 'click', captureId: capture.captureId, windowTitle: capture.windowTitle, x: Math.round(candidate.x), y: Math.round(candidate.y), imageWidth: capture.width, imageHeight: capture.height };
           } else if (candidate?.type === 'scroll' && capture &&
               Number.isFinite(candidate.x) && Number.isFinite(candidate.y) && Number.isFinite(candidate.delta) &&
               candidate.x >= 0 && candidate.y >= 0 && candidate.x < capture.width && candidate.y < capture.height &&
               candidate.delta !== 0 && Math.abs(candidate.delta) <= 1200) {
-            safeAction = { type: 'scroll', x: Math.round(candidate.x), y: Math.round(candidate.y), delta: Math.round(candidate.delta), imageWidth: capture.width, imageHeight: capture.height };
+            safeAction = { type: 'scroll', captureId: capture.captureId, windowTitle: capture.windowTitle, x: Math.round(candidate.x), y: Math.round(candidate.y), delta: Math.round(candidate.delta), imageWidth: capture.width, imageHeight: capture.height };
           } else if (candidate?.type === 'type' && typeof candidate.text === 'string' && candidate.text.length > 0 && candidate.text.length <= 1500) {
-            safeAction = { type: 'type', text: candidate.text };
+            safeAction = { type: 'type', captureId: capture.captureId, windowTitle: capture.windowTitle, text: candidate.text };
           } else if (candidate?.type === 'key' && typeof candidate.key === 'string' &&
               ['ENTER','TAB','ESC','BACKSPACE','SPACE','DELETE','UP','DOWN','LEFT','RIGHT','HOME','END','PAGEUP','PAGEDOWN','F5','CTRL+A','CTRL+C','CTRL+V','CTRL+L','CTRL+S','CTRL+Z','CTRL+F','CTRL+W','CTRL+T','CTRL+R','CTRL+SHIFT+S','ALT+TAB','ALT+F4','ALT+LEFT','ALT+RIGHT'].includes(candidate.key.toUpperCase())) {
-            safeAction = { type: 'key', key: candidate.key.toUpperCase() };
+            safeAction = { type: 'key', captureId: capture.captureId, windowTitle: capture.windowTitle, key: candidate.key.toUpperCase() };
           }
           if (safeAction) {
             setPendingAction(safeAction);
@@ -1075,7 +1076,7 @@ export default function App() {
                 ? `Digitar: “${pendingAction.text.slice(0, 160)}${pendingAction.text.length > 160 ? '…' : ''}”`
                 : `Pressionar ${pendingAction.key}`}
           </strong>
-          <p>Vou executar somente esta ação na janela que estava ativa quando fiz a captura. Você pode cancelar.</p>
+          <p>Janela analisada: <strong>{pendingAction.windowTitle || 'não identificada'}</strong>. A confirmação vale para uma única ação e expira em 60 segundos. Confira antes de autorizar.</p>
           <div className="pet-action-buttons">
             <button className="pet-confirm-button" onClick={() => void approvePendingAction()} disabled={actionRunning}>
               {actionRunning ? 'Executando…' : 'Confirmar ação'}
