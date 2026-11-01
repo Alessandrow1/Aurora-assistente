@@ -216,7 +216,13 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
       .filter((item) => item && (item.role === 'user' || item.role === 'assistant') && typeof item.content === 'string')
       .filter((item) => item.content.trim())
       .slice(-MAX_CONVERSATION_MESSAGES)
-      .map((item) => ({ role: item.role, content: item.content.slice(0, 8000) }));
+      .map((item) => ({
+        role: item.role,
+        content: item.content.slice(0, 8000),
+        ...(typeof item.imageId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(item.imageId)
+          ? { imageId: item.imageId }
+          : {}),
+      }));
     const firstUserMessage = messages.find((item) => item.role === 'user')?.content || '';
     const requestedTitle = typeof raw.title === 'string' ? raw.title.trim() : '';
     const title = (requestedTitle && requestedTitle !== 'Nova conversa' ? requestedTitle : (firstUserMessage || existing?.title || 'Nova conversa'))
