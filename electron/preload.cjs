@@ -23,7 +23,11 @@ contextBridge.exposeInMainWorld('aurora', {
   openUrl: (url) => ipcRenderer.invoke('aurora:open-url', url),
   executeAction: (action) => ipcRenderer.invoke('aurora:execute-action', action),
   setMousePassthrough: (ignore) => ipcRenderer.send('aurora:set-mouse-passthrough', Boolean(ignore)),
-  moveWindowBy: (deltaX, deltaY) => ipcRenderer.send('aurora:move-window-by', { deltaX, deltaY }),
+  onCursorPosition: (callback) => {
+    const listener = (_event, position) => callback(position);
+    ipcRenderer.on('aurora:cursor-position', listener);
+    return () => ipcRenderer.removeListener('aurora:cursor-position', listener);
+  },  moveWindowBy: (deltaX, deltaY) => ipcRenderer.send('aurora:move-window-by', { deltaX, deltaY }),
   onToggleCleanUi: (callback) => {
     const listener = () => callback();
     ipcRenderer.on('aurora:toggle-clean-ui', listener);

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-type AvatarEmotion = 'neutral' | 'happy' | 'sad' | 'surprised' | 'curious';
+type AvatarEmotion = 'neutral' | 'happy' | 'sad' | 'surprised' | 'curious' | 'angry' | 'affectionate' | 'laughing';
 type Props = {
   speaking: boolean;
   thinking: boolean;
@@ -14,6 +14,8 @@ export default function Avatar3D(props: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const hitZoneRef = useRef<HTMLDivElement>(null);
   const [modelFailed, setModelFailed] = useState('');
+  const emotionRef = useRef(props.emotion);
+  emotionRef.current = props.emotion;
 
   useEffect(() => {
     const host = mountRef.current;
@@ -22,6 +24,7 @@ export default function Avatar3D(props: Props) {
 
     let active = true;
     let disposeLive2D: (() => void) | null = null;
+    let disposeCursor: (() => void) | null = null;
     let adjustZoom: ((factor: number) => number) | null = null;
     let pointerInside = false;
     let uiOpen = document.body.classList.contains('aurora-ui-open');
@@ -114,10 +117,16 @@ export default function Avatar3D(props: Props) {
     host.replaceChildren(canvas);
 
     import('../live2d/Live2DHost')
-      .then(({ mountLive2D, adjustLive2DZoom }) => {
+      .then(({ mountLive2D, adjustLive2DZoom, setLive2DCursorPosition, setLive2DEmotion }) => {
         if (!active) return;
         adjustZoom = adjustLive2DZoom;
         disposeLive2D = mountLive2D(canvas);
+        setLive2DEmotion(emotionRef.current);
+        disposeCursor = window.aurora.onCursorPosition((position) => {
+          if (!active) return;
+          const rect = canvas.getBoundingClientRect();
+          setLive2DCursorPosition(position.x - rect.left, position.y - rect.top);
+        });
       })
       .catch((error: unknown) => {
         console.error('Falha ao carregar a personagem Live2D.', error);
@@ -138,11 +147,20 @@ export default function Avatar3D(props: Props) {
       hitZone.removeEventListener('pointercancel', finishDrag);
       window.removeEventListener('aurora:zoom-updated', onAutomaticZoom);
       window.aurora.setMousePassthrough(false);
+      disposeCursor?.();
       disposeLive2D?.();
       canvas.remove();
     };
   }, []);
 
+
+  useEffect(() => {
+    let active = true;
+    import('../live2d/Live2DHost').then(({ setLive2DEmotion }) => {
+      if (active) setLive2DEmotion(props.emotion);
+    }).catch((error) => console.warn('[Aurora Live2D] Nao foi possivel aplicar a emocao.', error));
+    return () => { active = false; };
+  }, [props.emotion]);
   // AURORA_LIPSYNC_REACT: analisa o audio reproduzido e anima ParamMouthOpenY.
   useEffect(() => {
     let cancelled = false;

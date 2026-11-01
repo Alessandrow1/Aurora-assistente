@@ -14,28 +14,30 @@ type AppConfig = {
   model: string;
 };
 
-type AvatarEmotion = 'neutral' | 'happy' | 'sad' | 'surprised' | 'curious';
+type AvatarEmotion = 'neutral' | 'happy' | 'sad' | 'surprised' | 'curious' | 'angry' | 'affectionate' | 'laughing';
+
+function hasLaughingCue(text: string): boolean {
+  return /(?:\b(?:kkkk+|haha+|hehe+|rsrs+)\b|\u{1F602}|\u{1F923}|\u{1F606}|\u{1F639}|\u{1F63A})/iu.test(text);
+}
 
 function inferAvatarEmotion(userText: string, answer: string): AvatarEmotion {
-  const input = userText.toLocaleLowerCase('pt-BR');
-  const output = answer.toLocaleLowerCase('pt-BR');
+  const input = userText.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const output = answer.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const sadInput = /\b(triste|tristeza|luto|faleceu|morreu|morte|perdi|doente|medo|assustad[oa]|preocupad[oa]|ansios[oa]|deprimid[oa]|sofrendo|chorei|dor)\b|\u{1F622}|\u{1F62D}|\u{1F614}|\u{1F61E}|\u{1F641}|\u{1F97A}/iu.test(input);
+  if (sadInput) return 'sad';
+  if (/\b(raiva|odio|irritad[oa]|revoltad[oa]|furios[oa]|bravo|brava)\b|\u{1F620}|\u{1F621}|\u{1F92C}/iu.test(input)) return 'angry';
+  if (hasLaughingCue(userText)) return 'laughing';
+  if (/\b(te amo|amo voce|gosto de voce|querid[oa]|fof[oa]|carinho)\b|\u{2764}|\u{1F495}|\u{1F970}|\u{1F60D}|\u{1F618}/iu.test(input)) return 'affectionate';
+  if (/\b(uau|nossa|caramba|surpres[oa]|inacreditavel)\b|\u{1F62E}|\u{1F632}|\u{1F62F}|\u{1F633}/iu.test(input)) return 'surprised';
+  if (/\b(feliz|contente|animad[oa]|adorei|amei|boa noticia|parabens|consegui|deu certo)\b|\u{1F600}|\u{1F603}|\u{1F604}|\u{1F601}|\u{1F60A}|\u{1F642}/iu.test(input)) return 'happy';
 
-  if (/\b(cansad[oa]|trist[ea]|desanimad[oa]|preocupad[oa]|ansios[oa]|frustrad[oa]|com medo)\b/.test(input)
-      || /\b(sinto muito|lamento|imagino que seja difícil|estou aqui com você)\b/.test(output)) {
-    return 'sad';
-  }
-  if (/\[\s*laughs?\s*\]|\bkkkk{2,}\b|\b(?:ha){2,}\b|😂|🤣/i.test(answer)) {
-    return 'happy';
-  }
-  if (/\b(nossa|uau|caramba|sério|não acredito|que incrível|que surpresa)\b/i.test(output)) {
-    return 'surprised';
-  }
-  if (/\b(que bom|adorei|amei|legal|ótimo|perfeito|incrível|super bem|feliz|boa notícia)\b/i.test(output)) {
-    return 'happy';
-  }
-  if (/\b(interessante|quero saber|me conta|curioso|curiosa)\b/i.test(output) || /\?/.test(output)) {
-    return 'curious';
-  }
+  if (/\b(sinto muito|lamento|imagino que seja dificil|estou aqui com voce|meus sentimentos)\b|\u{1F622}|\u{1F62D}|\u{1F614}/iu.test(output)) return 'sad';
+  if (/\b(raiva|irritante|absurdo|injusto|revoltante)\b|\u{1F620}|\u{1F621}/iu.test(output)) return 'angry';
+  if (hasLaughingCue(answer)) return 'laughing';
+  if (/\b(te adoro|com carinho|que fof[oa]|um abraco|um beijo)\b|\u{2764}|\u{1F495}|\u{1F970}|\u{1F60D}/iu.test(output)) return 'affectionate';
+  if (/\b(nossa|uau|caramba|serio|nao acredito|que incrivel|que surpresa)\b|\u{1F62E}|\u{1F632}|\u{1F633}/iu.test(output)) return 'surprised';
+  if (/\b(que bom|adorei|amei|legal|otimo|perfeito|incrivel|feliz|boa noticia|parabens)\b|\u{1F604}|\u{1F60A}|\u{1F60D}/iu.test(output)) return 'happy';
+  if (/\b(interessante|quero saber|me conta|curioso|curiosa)\b|\?/.test(output)) return 'curious';
   return 'neutral';
 }
 
@@ -142,7 +144,7 @@ export default function App() {
   }, [laughing]);
 
   const speak = async (text: string) => {
-    if (/(?:\[\s*laughs?\s*\]|\bkkkk+\b|\bhaha+\b|\bhehe+\b|\brsrs+\b|😂|🤣)/i.test(text)) {
+    if (hasLaughingCue(text)) {
       setLaughing(true);
     }
     audioRef.current?.pause();
@@ -265,7 +267,7 @@ export default function App() {
       const quickReply = await runQuickCommand(text);
       if (quickReply) {
         setEmotion(inferAvatarEmotion(text, quickReply));
-        if (/\[\s*laughs?\s*\]|\bkkkk+\b|\b(?:ha){2,}\b|😂|🤣/i.test(quickReply)) setLaughing(true);
+        if (hasLaughingCue(text + " " + quickReply)) setLaughing(true);
         setMessages((current) => [...current, { role: 'assistant', content: quickReply }]);
         if (autoSpeak) void speak(quickReply);
         return;
@@ -288,7 +290,7 @@ export default function App() {
       });
       let answer = response.text?.trim() || 'Não consegui responder agora.';
       setEmotion(inferAvatarEmotion(text, answer));
-      if (/(?:\[\s*laughs?\s*\]|\bkkkk+\b|\bhaha+\b|\bhehe+\b|\brsrs+\b|😂|🤣)/i.test(text + ' ' + answer)) setLaughing(true);
+      if (hasLaughingCue(text + " " + answer)) setLaughing(true);
       const actionMatch = answer.match(/\[AURORA_ACTION\]\s*(\{[\s\S]*?\})\s*\[\/AURORA_ACTION\]/i);
       if (actionMatch) {
         try {

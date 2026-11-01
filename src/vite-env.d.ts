@@ -20,6 +20,7 @@ declare global {
       openUrl: (url: string) => Promise<{ success: boolean }>;
       speak: (text: string) => Promise<{ audioBase64: string; voice: string; provider: 'elevenlabs' | 'edge'; fallbackReason?: string }>;
       setMousePassthrough: (ignore: boolean) => void;
+      onCursorPosition: (callback: (position: { x: number; y: number }) => void) => () => void;
       moveWindowBy: (deltaX: number, deltaY: number) => void;
       onToggleCleanUi: (callback: () => void) => () => void;      minimize: () => void;
       close: () => void;

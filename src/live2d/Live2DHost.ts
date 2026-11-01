@@ -10,6 +10,14 @@ export function adjustLive2DZoom(factor: number): number {
   return activeSubdelegate?.adjustZoom(factor) ?? 1;
 }
 
+export function setLive2DCursorPosition(x: number, y: number): void {
+  activeSubdelegate?.setCursorPosition(x, y);
+}
+
+export function setLive2DEmotion(emotion: 'neutral' | 'happy' | 'sad' | 'surprised' | 'curious' | 'angry' | 'affectionate' | 'laughing'): void {
+  activeSubdelegate?.setAuroraEmotion(emotion);
+}
+
 // AURORA_LIPSYNC_HOST: nivel de abertura da boca (0 a 1) vindo do audio real.
 export function setLive2DLipSync(level: number): void {
   activeSubdelegate?.setLipSyncLevel(level);
