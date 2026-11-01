@@ -608,10 +608,11 @@ export default function App() {
         return;
       }
 
+      const normalizedScreenRequest = text.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       const asksForScreenAnalysis =
-        /\b(analise|analisar|olhe|olhar|veja|ver|observe|observar|descreva|descrever)\b/i.test(text) &&
-        /\b(tela|janela|aplicativo|programa|erro|mensagem|desktop)\b/i.test(text) ||
-        /\b(o que (?:esta|está) (?:aparecendo|acontecendo|aberto)|o que aparece na tela|minha tela|nessa janela|esse erro)\b/i.test(text);
+        /\b(analise|analisar|olha|olhe|olhar|veja|ver|observe|observar|descreva|descrever|mostre|mostrar)\b/.test(normalizedScreenRequest) &&
+        /\b(tela|janela|aplicativo|programa|erro|mensagem|desktop)\b/.test(normalizedScreenRequest) ||
+        /\b(o que esta aparecendo|o que aparece na tela|o que tem na tela|minha tela|nessa janela|esse erro)\b/.test(normalizedScreenRequest);
       const capture = asksForScreenAnalysis ? await window.aurora.captureScreen() : null;
       const computerPrompt = capture
         ? `${text}\n\nEstou fornecendo uma captura atual do desktop. Analise somente o que estiver visível e explique o que aparece. A visão é somente de leitura: não proponha cliques, movimentos de mouse, digitação, atalhos ou blocos de ação. Se algo estiver ilegível, diga isso com clareza.`
