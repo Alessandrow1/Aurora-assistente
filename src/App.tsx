@@ -1128,11 +1128,11 @@ export default function App() {
               </div>
               <label className="field-label" htmlFor="model">Modelo local</label>
               <select id="model" className="settings-input" value={model} onChange={(event) => setModel(event.target.value)}>
-                <option value="qwen3.5:2b">Qwen 3.5 2B — mais leve, também entende imagens</option>
-                <option value="qwen3.5:4b">Qwen 3.5 4B — melhor qualidade, exige mais memória</option>
-                <option value="qwen3.5:9b">Qwen 3.5 9B — mais pesado, PC mais forte</option>
+                <option value="qwen3.5:2b">Qwen 3.5 2B — mais rápido, menor capacidade de raciocínio</option>
+                <option value="qwen3.5:4b">Qwen 3.5 4B — equilíbrio entre velocidade e qualidade</option>
+                <option value="qwen3.5:9b">Qwen 3.5 9B — melhor capacidade, exige mais memória e pode ser mais lento</option>
               </select>
-              <p className="field-help">Modelos maiores podem demorar mais para responder. Para começar, mantenha o 2B.</p>
+              <p className="field-help">Recomendação: 4B para equilibrar velocidade e qualidade; 9B para respostas mais elaboradas se o computador aguentar. O 2B é mais rápido, mas pode errar mais em análises complexas.</p>
 
               <div className="secure-note">
                 <span>{config.ollamaAvailable ? '✓' : '!'}</span>
