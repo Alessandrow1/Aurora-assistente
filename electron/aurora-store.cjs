@@ -337,8 +337,10 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
     try {
       const [embedding] = await generateEmbeddings([memory.content]);
       if (!embedding) return;
-      data.memoryEmbeddings[memory.id] = { content: memory.content, embedding };
-      await writeEncrypted(knowledgePath(), data, 'knowledge');
+      // Reabre o arquivo antes de gravar para preservar documentos ou perfil salvos em paralelo.
+      const latest = await readKnowledge();
+      latest.memoryEmbeddings[memory.id] = { content: memory.content, embedding };
+      await writeEncrypted(knowledgePath(), latest, 'knowledge');
     } catch (error) {
       console.warn('[Aurora Memory] Não consegui criar embedding da lembrança:', error instanceof Error ? error.message : String(error));
     }
@@ -429,9 +431,11 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
     } catch (error) {
       console.warn('[Aurora Knowledge] Documento salvo sem vetores semânticos:', error instanceof Error ? error.message : String(error));
     }
-    data.documents.unshift(document);
-    data.chunks = [...chunks, ...data.chunks].slice(0, MAX_INDEXED_CHUNKS);
-    await writeEncrypted(knowledgePath(), data, 'knowledge');
+    // Preserva a identidade e outras importações que possam ter sido salvas enquanto o embedding era calculado.
+    const latest = await readKnowledge();
+    latest.documents = [document, ...latest.documents.filter((item) => item.id !== id)].slice(0, MAX_DOCUMENTS);
+    latest.chunks = [...chunks, ...latest.chunks].slice(0, MAX_INDEXED_CHUNKS);
+    await writeEncrypted(knowledgePath(), latest, 'knowledge');
     return { saved: true, document, semanticReady: chunks.some((chunk) => Array.isArray(chunk.embedding)) };
   }
 
