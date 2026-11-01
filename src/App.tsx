@@ -75,6 +75,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [appsOpen, setAppsOpen] = useState(false);
+  const [studyMode, setStudyMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [thinking, setThinking] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -619,13 +620,16 @@ export default function App() {
       const normalizedScreenRequest = text.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       const asksForScreenAnalysis =
         /\b(analise|analisar|olha|olhe|olhar|veja|ver|observe|observar|descreva|descrever|mostre|mostrar)\b/.test(normalizedScreenRequest) &&
-        /\b(tela|janela|aplicativo|programa|erro|mensagem|desktop)\b/.test(normalizedScreenRequest) ||
-        /\b(o que esta aparecendo|o que aparece na tela|o que tem na tela|minha tela|nessa janela|esse erro)\b/.test(normalizedScreenRequest);
-      const capture = asksForScreenAnalysis ? await window.aurora.captureScreen() : null;
+        /\b(tela|janela|aplicativo|programa|erro|mensagem|desktop|questao|questoes|alternativa|enunciado|exercicio|exercicios)\b/.test(normalizedScreenRequest) ||
+        /\b(o que esta aparecendo|o que aparece na tela|o que tem na tela|minha tela|nessa janela|esse erro|essa questao|qual alternativa|qual a resposta|me explica isso|resolve essa)\b/.test(normalizedScreenRequest);
+      // No Modo Estudo, cada pergunta recebe uma captura nova; o modelo não analisa vídeo em loop.
+      const capture = (studyMode || asksForScreenAnalysis) ? await window.aurora.captureScreen() : null;
+      const studyPrompt = studyMode
+        ? 'MODO ESTUDO ENEM/CONCURSOS: aja como professor particular rigoroso e didático. Leia cuidadosamente a captura antes de responder. Primeiro identifique o que está escrito no enunciado e nas alternativas; nunca complete palavras ou números ilegíveis por adivinhação. Se uma parte essencial estiver pequena, cortada ou ambígua, diga exatamente o que não conseguiu ler e peça uma captura aproximada em vez de chutar. Identifique matéria e assunto. Em questão objetiva, indique a alternativa correta somente quando houver evidência suficiente, explique o raciocínio passo a passo e por que as alternativas mais plausíveis estão erradas. Confira cálculos, sinais, unidades, datas e conceitos antes de concluir. Diferencie fatos, interpretações e hipóteses. Nunca invente fonte, artigo de lei, número, autor, dado ou regra de edital. Para legislação, atualidades e regras de concurso que possam mudar, avise quando for necessária conferência em fonte oficial atualizada. Ensine o conceito por trás da questão com linguagem clara e um exemplo curto quando ajudar. Seja completa sem enrolar; faça uma pergunta de checagem apenas quando for útil para confirmar meu aprendizado.'
+        : '';
       const computerPrompt = capture
-        ? `${text}\n\nEstou fornecendo uma captura atual do desktop. Analise somente o que estiver visível e explique o que aparece. A visão é somente de leitura: não proponha cliques, movimentos de mouse, digitação, atalhos ou blocos de ação. Se algo estiver ilegível, diga isso com clareza.`
+        ? \`\${text}\n\nEstou fornecendo uma captura atual do desktop. Analise somente o que estiver visível e explique o que aparece. A visão é somente de leitura: não proponha cliques, movimentos de mouse, digitação, atalhos ou blocos de ação. Se algo estiver ilegível, diga isso com clareza. \${studyPrompt}\`
         : text;
-
       const canStreamSpeech = autoSpeak && !capture;
       let speechSessionActive = false;
       let speechSessionClosed = false;
@@ -686,7 +690,7 @@ export default function App() {
       };
 
       setMessages((current) => [...current, { role: 'assistant', content: '' }]);
-      const response = await window.aurora.chat({ message: computerPrompt, history, voiceMode: voiceModeRef.current, ...(capture ? { imageBase64: capture.imageBase64 } : {}) }, (chunk) => {
+      const response = await window.aurora.chat({ message: computerPrompt, history, voiceMode: voiceModeRef.current, studyMode, ...(capture ? { imageBase64: capture.imageBase64 } : {}) }, (chunk) => {
         setMessages((current) => {
           const updated = [...current];
           const last = updated[updated.length - 1];
@@ -763,6 +767,15 @@ export default function App() {
       return result.deleted
         ? 'Apaguei essa lembrança da memória local.'
         : 'Não encontrei uma lembrança com esse conteúdo.';
+    }
+
+    if (/\b(ativar|ligar|iniciar|entrar|comecar)\b.*\b(modo estudo|modo estudar|estudo)\b|\b(modo estudo|modo estudar)\b.*\b(ativar|ligar|iniciar|entrar|comecar)\b/.test(text)) {
+      setStudyMode(true);
+      return 'Modo estudo ativado. Vou acompanhar cada pergunta com uma captura atual da sua tela e explicar com cuidado.';
+    }
+    if (/\b(desativar|desligar|sair|parar)\b.*\b(modo estudo|modo estudar|estudo)\b|\b(modo estudo|modo estudar)\b.*\b(desativar|desligar|sair|parar)\b/.test(text)) {
+      setStudyMode(false);
+      return 'Modo estudo desativado. Continuo ouvindo você, mas só olho a tela quando pedir.';
     }
 
     if (/^\s*\[(musica|music|aplausos|risos|inaudivel|som nao identificado)\]\s*$/.test(text)) {
@@ -861,6 +874,7 @@ export default function App() {
         message: `${prompt} A imagem tem ${capture.width} por ${capture.height} pixels.`,
         history,
         imageBase64: capture.imageBase64,
+        studyMode,
       }, (chunk) => {
         setMessages((current) => {
           const updated = [...current];
@@ -1024,6 +1038,7 @@ export default function App() {
       <div className="pet-toolbar">
         <button className={'pet-action ' + (chatOpen ? 'selected' : '')} onClick={() => { setChatOpen(!chatOpen); setAppsOpen(false); }} title="Conversar com Aurora">💬</button>
         <button className={'pet-action ' + (voiceMode ? 'selected' : '')} onClick={startListening} title={voiceMode ? 'Desligar microfone' : 'Ligar microfone'} aria-label={voiceMode ? 'Desligar microfone' : 'Ligar microfone'} aria-pressed={voiceMode}>🎙</button>
+        <button className={'pet-action ' + (studyMode ? 'selected' : '')} onClick={() => setStudyMode((active) => !active)} title={studyMode ? 'Desativar Modo Estudo' : 'Ativar Modo Estudo'} aria-label={studyMode ? 'Desativar Modo Estudo' : 'Ativar Modo Estudo'} aria-pressed={studyMode}>📚</button>
         <button className="pet-action" onClick={() => void analyzeScreen()} title="Analisar o que está na tela">👁</button>
         <button className={'pet-action ' + (appsOpen ? 'selected' : '')} onClick={() => { setAppsOpen(!appsOpen); setChatOpen(false); }} title="Abrir aplicativos e pastas">▦</button>
         <button className="pet-action" onClick={() => setSettingsOpen(true)} title="Configurações">⚙</button>
@@ -1116,6 +1131,7 @@ export default function App() {
                         : 'Escuta offline ativada')
                 : 'Microfone desligado'}
             </span>
+            <span className={'voice-mode-status ' + (studyMode ? 'active' : '')}><i /> {studyMode ? 'Modo Estudo ligado · captura a tela a cada pergunta' : 'Modo Estudo desligado'}</span>
             <label className="speak-toggle">
               <input type="checkbox" checked={autoSpeak} onChange={(event) => setAutoSpeak(event.target.checked)} />
               <span>Fala automática</span>
@@ -1204,7 +1220,7 @@ export default function App() {
                 </div>
                 <div>
                   <strong>Comandos disponíveis nesta versão</strong>
-                  <p>Você pode pedir para abrir Calculadora, Bloco de Notas, Explorador, Paint, Gerenciador de Tarefas, Ferramenta de Captura, Configurações, Câmera, sites, pesquisas na internet e pastas conhecidas. Também posso analisar o que aparece na sua tela. A visão é somente de leitura: não controlo mouse nem teclado.</p>
+                  <p>Você pode pedir para abrir programas, sites e pastas conhecidas. Também posso analisar o que aparece na tela. Ative o Modo Estudo no botão 📚 para que eu faça uma captura nova a cada pergunta e ajude a resolver questões do ENEM e de concursos. A visão é somente de leitura: não controlo mouse nem teclado.</p>
                 </div>
               </div>
 
