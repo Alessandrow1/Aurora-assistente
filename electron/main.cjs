@@ -3,6 +3,7 @@ const { Menu: AuroraTrayMenu, Tray: AuroraSystemTray, nativeImage: AuroraNativeI
 const path = require('node:path');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
+const { randomUUID } = require('node:crypto');
 const { spawn, execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { Readable } = require('node:stream');
@@ -40,7 +41,7 @@ let mainWindow;
 let activeElevenLabsStreamSession = null;
 let ollamaWarmupPromise = null;
 let ollamaWarmupModel = '';
-let capturedForegroundHandle = 0;
+let capturedForegroundContext = null;
 let tray = null;
 let isQuitting = false; // AURORA_TRAY_V3
 const settingsPath = () => path.join(app.getPath('userData'), 'aurora-settings.json');
@@ -1259,25 +1260,40 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
     await fsp.rm(audioPath, { force: true }).catch(() => undefined);
   }
 });
-ipcMain.handle('aurora:capture-screen', async () => {
+ipcMain.handle('aurora:capture-screen', async (_event) => {
   const wasVisible = Boolean(mainWindow?.isVisible());
   try {
     if (wasVisible) mainWindow.hide();
     await new Promise((resolve) => setTimeout(resolve, 180));
+
+    let foregroundHandle = '0';
+    let windowTitle = '';
     try {
       const focusScript = `
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
+using System.Text;
 public static class AuroraForeground {
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
 }
 '@
-[AuroraForeground]::GetForegroundWindow().ToInt64()
+$window = [AuroraForeground]::GetForegroundWindow()
+$title = New-Object System.Text.StringBuilder 512
+if ($window -ne [IntPtr]::Zero) { [void][AuroraForeground]::GetWindowText($window, $title, $title.Capacity) }
+[pscustomobject]@{ handle = $window.ToInt64().ToString(); title = $title.ToString() } | ConvertTo-Json -Compress
 `;
       const focusResult = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', focusScript], { timeout: 8000, windowsHide: true });
-      capturedForegroundHandle = Number.parseInt(String(focusResult.stdout).trim(), 10) || 0;
-    } catch { capturedForegroundHandle = 0; }
+      const foreground = JSON.parse(String(focusResult.stdout || '').trim() || '{}');
+      foregroundHandle = typeof foreground.handle === 'string' ? foreground.handle : String(foreground.handle || '0');
+      windowTitle = typeof foreground.title === 'string' ? foreground.title.trim().slice(0, 180) : '';
+      if (!/^-?\\d+$/.test(foregroundHandle)) foregroundHandle = '0';
+    } catch {
+      foregroundHandle = '0';
+      windowTitle = '';
+    }
+
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
       thumbnailSize: { width: 1600, height: 900 },
@@ -1287,15 +1303,31 @@ public static class AuroraForeground {
     if (!source || source.thumbnail.isEmpty()) {
       throw new Error('Não consegui capturar a tela. Verifique se há um monitor ativo.');
     }
+
+    const display = screen.getPrimaryDisplay();
     const image = source.thumbnail.resize({ width: 1280, quality: 'good' });
     const size = image.getSize();
+    const captureId = randomUUID();
+    capturedForegroundContext = {
+      captureId,
+      handle: foregroundHandle,
+      windowTitle,
+      capturedAt: Date.now(),
+      displayId: display.id,
+    };
+
     return {
+      captureId,
+      windowTitle: windowTitle || 'Janela não identificada',
       imageBase64: image.toJPEG(78).toString('base64'),
       width: size.width,
       height: size.height,
-      screenWidth: screen.getPrimaryDisplay().size.width,
-      screenHeight: screen.getPrimaryDisplay().size.height,
+      screenWidth: display.size.width,
+      screenHeight: display.size.height,
     };
+  } catch (error) {
+    capturedForegroundContext = null;
+    throw error;
   } finally {
     if (wasVisible && mainWindow && !mainWindow.isDestroyed()) mainWindow.showInactive();
   }
@@ -1322,26 +1354,67 @@ const SAFE_KEYS = {
   'CTRL+SHIFT+S': '^+s', 'ALT+TAB': '%{TAB}', 'ALT+F4': '%{F4}', 'ALT+LEFT': '%{LEFT}', 'ALT+RIGHT': '%{RIGHT}',
 };
 
-ipcMain.handle('aurora:execute-action', async (_event, payload = {}) => {
+ipcMain.handle('aurora:execute-action', async (event, payload = {}) => {
   if (process.platform !== 'win32') throw new Error('O controle do mouse e teclado está disponível nesta versão para Windows.');
+  if (event.sender !== mainWindow?.webContents) throw new Error('Origem da ação não autorizada.');
+
+  const captureContext = capturedForegroundContext;
+  if (!captureContext || typeof payload.captureId !== 'string' || payload.captureId !== captureContext.captureId) {
+    throw new Error('Essa ação não corresponde à captura mais recente. Peça para Aurora olhar a tela novamente.');
+  }
+  if (Date.now() - captureContext.capturedAt > 60_000) {
+    capturedForegroundContext = null;
+    throw new Error('A confirmação expirou. Faça uma nova captura da tela antes de agir.');
+  }
+  if (!/^-?\\d+$/.test(captureContext.handle) || captureContext.handle === '0') {
+    capturedForegroundContext = null;
+    throw new Error('Não consegui identificar a janela que estava ativa na captura. Tente novamente.');
+  }
+  if (screen.getPrimaryDisplay().id !== captureContext.displayId) {
+    capturedForegroundContext = null;
+    throw new Error('O monitor principal mudou desde a captura. Analise a tela novamente.');
+  }
+
   const actionType = payload.type;
   const wasVisible = Boolean(mainWindow?.isVisible());
+  // O identificador é de uso único: uma confirmação autoriza somente uma ação.
+  capturedForegroundContext = null;
   if (wasVisible) mainWindow.hide();
   await new Promise((resolve) => setTimeout(resolve, 120));
+
+  const focusCapturedWindowScript = `
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class AuroraActionWindow {
+  [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+}
+'@
+$targetWindow = [IntPtr]::new([long]${captureContext.handle})
+if (-not [AuroraActionWindow]::IsWindow($targetWindow)) { throw 'A janela analisada não está mais disponível.' }
+[void][AuroraActionWindow]::ShowWindow($targetWindow, 9)
+[void][AuroraActionWindow]::SetForegroundWindow($targetWindow)
+Start-Sleep -Milliseconds 180
+if ([AuroraActionWindow]::GetForegroundWindow() -ne $targetWindow) { throw 'Não consegui devolver o foco à janela analisada. Faça outra captura e tente novamente.' }
+`;
+
   try {
-  if (actionType === 'click') {
-    const imageWidth = Number(payload.imageWidth);
-    const imageHeight = Number(payload.imageHeight);
-    const x = Number(payload.x);
-    const y = Number(payload.y);
-    if (!Number.isFinite(x) || !Number.isFinite(y) || imageWidth < 1 || imageHeight < 1 ||
-        x < 0 || y < 0 || x >= imageWidth || y >= imageHeight) {
-      throw new Error('A posição do clique não é válida.');
-    }
-    const display = screen.getPrimaryDisplay();
-    const screenX = Math.round((x / imageWidth) * display.size.width * (display.scaleFactor || 1));
-    const screenY = Math.round((y / imageHeight) * display.size.height * (display.scaleFactor || 1));
-    const script = `
+    if (actionType === 'click') {
+      const imageWidth = Number(payload.imageWidth);
+      const imageHeight = Number(payload.imageHeight);
+      const x = Number(payload.x);
+      const y = Number(payload.y);
+      if (![imageWidth, imageHeight, x, y].every(Number.isFinite) ||
+          imageWidth < 1 || imageHeight < 1 || x < 0 || y < 0 || x >= imageWidth || y >= imageHeight) {
+        throw new Error('A posição do clique não é válida.');
+      }
+      const display = screen.getPrimaryDisplay();
+      const screenX = Math.round((x / imageWidth) * display.size.width * (display.scaleFactor || 1));
+      const screenY = Math.round((y / imageHeight) * display.size.height * (display.scaleFactor || 1));
+      const script = `${focusCapturedWindowScript}
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -1358,25 +1431,25 @@ public static class AuroraMouse {
 '@
 [AuroraMouse]::Click(${screenX}, ${screenY})
 `;
-    await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { timeout: 10000, windowsHide: true });
-    return { success: true, description: `Clique na posição ${screenX}, ${screenY}` };
-  }
-
-
-  if (actionType === 'scroll') {
-    const imageWidth = Number(payload.imageWidth);
-    const imageHeight = Number(payload.imageHeight);
-    const x = Number(payload.x);
-    const y = Number(payload.y);
-    const delta = Math.max(-1200, Math.min(1200, Math.round(Number(payload.delta))));
-    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(delta) ||
-        imageWidth < 1 || imageHeight < 1 || x < 0 || y < 0 || x >= imageWidth || y >= imageHeight || delta === 0) {
-      throw new Error('A rolagem não tem posição ou distância válida.');
+      await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { timeout: 10000, windowsHide: true });
+      return { success: true, description: `Clique na janela capturada, posição ${screenX}, ${screenY}` };
     }
-    const display = screen.getPrimaryDisplay();
-    const screenX = Math.round((x / imageWidth) * display.size.width * (display.scaleFactor || 1));
-    const screenY = Math.round((y / imageHeight) * display.size.height * (display.scaleFactor || 1));
-    const script = `
+
+    if (actionType === 'scroll') {
+      const imageWidth = Number(payload.imageWidth);
+      const imageHeight = Number(payload.imageHeight);
+      const x = Number(payload.x);
+      const y = Number(payload.y);
+      const rawDelta = Number(payload.delta);
+      if (![imageWidth, imageHeight, x, y, rawDelta].every(Number.isFinite) ||
+          imageWidth < 1 || imageHeight < 1 || x < 0 || y < 0 || x >= imageWidth || y >= imageHeight || rawDelta === 0) {
+        throw new Error('A rolagem não tem posição ou distância válida.');
+      }
+      const delta = Math.max(-1200, Math.min(1200, Math.round(rawDelta)));
+      const display = screen.getPrimaryDisplay();
+      const screenX = Math.round((x / imageWidth) * display.size.width * (display.scaleFactor || 1));
+      const screenY = Math.round((y / imageHeight) * display.size.height * (display.scaleFactor || 1));
+      const script = `${focusCapturedWindowScript}
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -1391,15 +1464,15 @@ public static class AuroraScroll {
 '@
 [AuroraScroll]::Scroll(${screenX}, ${screenY}, ${delta})
 `;
-    await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { timeout: 10000, windowsHide: true });
-    return { success: true, description: `Rolagem de ${delta > 0 ? 'baixo' : 'cima'} na posição ${screenX}, ${screenY}` };
-  }
+      await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { timeout: 10000, windowsHide: true });
+      return { success: true, description: `Rolagem na janela capturada, posição ${screenX}, ${screenY}` };
+    }
 
-  if (actionType === 'type') {
-    const text = typeof payload.text === 'string' ? payload.text : '';
-    if (!text || text.length > 1500) throw new Error('O texto precisa ter entre 1 e 1.500 caracteres.');
-    const encoded = Buffer.from(text, 'utf8').toString('base64');
-    const script = `
+    if (actionType === 'type') {
+      const text = typeof payload.text === 'string' ? payload.text : '';
+      if (!text || text.length > 1500) throw new Error('O texto precisa ter entre 1 e 1.500 caracteres.');
+      const encoded = Buffer.from(text, 'utf8').toString('base64');
+      const script = `${focusCapturedWindowScript}
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -1413,7 +1486,6 @@ public struct AuroraInputUnion { [FieldOffset(0)] public AuroraMouseInput mi; [F
 public struct AuroraInput { public UInt32 type; public AuroraInputUnion U; }
 public static class AuroraTyping {
   [DllImport("user32.dll", SetLastError=true)] static extern UInt32 SendInput(UInt32 nInputs, AuroraInput[] pInputs, Int32 cbSize);
-  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
   public static void TypeText(string value) {
     foreach (char ch in value) {
       var pair = new AuroraInput[2];
@@ -1424,30 +1496,26 @@ public static class AuroraTyping {
   }
 }
 '@
-if (${capturedForegroundHandle} -gt 0) { [void][AuroraTyping]::SetForegroundWindow([IntPtr]::new([long]${capturedForegroundHandle})); Start-Sleep -Milliseconds 160 }
 $text = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}'))
 [AuroraTyping]::TypeText($text)
 `;
-    await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { timeout: 15000, windowsHide: true });
-    return { success: true, description: 'Texto digitado na janela ativa' };
-  }
+      await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { timeout: 15000, windowsHide: true });
+      return { success: true, description: 'Texto digitado na janela capturada' };
+    }
 
-  if (actionType === 'key') {
-    const keyName = typeof payload.key === 'string' ? payload.key.toUpperCase() : '';
-    const sendKey = SAFE_KEYS[keyName];
-    if (!sendKey) throw new Error('Essa tecla de atalho não está na lista permitida.');
-    const script = `Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-public static class AuroraKeyFocus { [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd); }
-'@;
-if (${capturedForegroundHandle} -gt 0) { [void][AuroraKeyFocus]::SetForegroundWindow([IntPtr]::new([long]${capturedForegroundHandle})); Start-Sleep -Milliseconds 160 }
-Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${sendKey}')`;
-    await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { timeout: 10000, windowsHide: true });
-    return { success: true, description: `Tecla ${keyName} pressionada` };
-  }
+    if (actionType === 'key') {
+      const keyName = typeof payload.key === 'string' ? payload.key.toUpperCase() : '';
+      const sendKey = SAFE_KEYS[keyName];
+      if (!sendKey) throw new Error('Essa tecla de atalho não está na lista permitida.');
+      const script = `${focusCapturedWindowScript}
+Add-Type -AssemblyName System.Windows.Forms
+[System.Windows.Forms.SendKeys]::SendWait('${sendKey}')
+`;
+      await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { timeout: 10000, windowsHide: true });
+      return { success: true, description: `Tecla ${keyName} pressionada na janela capturada` };
+    }
 
-  throw new Error('Ação não reconhecida. Só aceito clique, digitação e atalhos permitidos.');
+    throw new Error('Ação não reconhecida. Só aceito clique, digitação e atalhos permitidos.');
   } finally {
     if (wasVisible && mainWindow && !mainWindow.isDestroyed()) mainWindow.showInactive();
   }
