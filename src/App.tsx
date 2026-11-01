@@ -7,6 +7,22 @@ type PendingAction =
   | { type: 'scroll'; x: number; y: number; delta: number; imageWidth: number; imageHeight: number }
   | { type: 'type'; text: string }
   | { type: 'key'; key: string };
+
+type VoiceCaptureSession = {
+  stream: MediaStream;
+  recorder: MediaRecorder;
+  chunks: Blob[];
+  audioContext: AudioContext;
+  analyser: AnalyserNode;
+  samples: Float32Array;
+  timer: number;
+  startedAt: number;
+  firstSpeechAt: number | null;
+  lastSpeechAt: number;
+  speechDetected: boolean;
+  stopped: boolean;
+  transcribeOnStop: boolean;
+};
 type AppConfig = {
   ollamaAvailable: boolean;
   installedModels: string[];
@@ -69,16 +85,16 @@ export default function App() {
   const [audioAnalyser, setAudioAnalyser] = useState<AnalyserNode | null>(null);
   const [listening, setListening] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
+  const [transcribingVoice, setTranscribingVoice] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(true);
   const [notice, setNotice] = useState('');
   const [version, setVersion] = useState('0.4.0');
   const listRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<any>(null);
-  const recognitionRestartRef = useRef<number | null>(null);
+  const voiceCaptureRef = useRef<VoiceCaptureSession | null>(null);
   const voiceResumeRef = useRef<number | null>(null);
   const recognitionPausedRef = useRef(false);
-  const recognitionFailureCountRef = useRef(0);
-  const startRecognitionSessionRef = useRef<(() => void) | null>(null);
+  const startVoiceCaptureRef = useRef<(() => Promise<void>) | null>(null);
+  const stopVoiceCaptureRef = useRef<((transcribe: boolean) => void) | null>(null);
   const voiceModeRef = useRef(false);
   const thinkingRef = useRef(false);
   const pendingVoiceRef = useRef<string[]>([]);
@@ -109,13 +125,7 @@ export default function App() {
       window.clearTimeout(voiceResumeRef.current);
       voiceResumeRef.current = null;
     }
-    if (recognitionRestartRef.current !== null) {
-      window.clearTimeout(recognitionRestartRef.current);
-      recognitionRestartRef.current = null;
-    }
-    const recognition = recognitionRef.current;
-    recognitionRef.current = null;
-    try { recognition?.stop?.(); } catch { /* a sessao pode ja ter terminado */ }
+    stopVoiceCaptureRef.current?.(false);
     setListening(false);
   };
 
@@ -126,7 +136,7 @@ export default function App() {
       voiceResumeRef.current = null;
       if (!voiceModeRef.current) return;
       recognitionPausedRef.current = false;
-      if (!recognitionRef.current) startRecognitionSessionRef.current?.();
+      void startVoiceCaptureRef.current?.();
     }, delay);
   };
 
@@ -150,16 +160,14 @@ export default function App() {
 
     return () => {
       voiceModeRef.current = false;
-      if (recognitionRestartRef.current !== null) {
-        window.clearTimeout(recognitionRestartRef.current);
-        recognitionRestartRef.current = null;
-      }
       if (voiceResumeRef.current !== null) {
         window.clearTimeout(voiceResumeRef.current);
         voiceResumeRef.current = null;
       }
       recognitionPausedRef.current = false;
-      startRecognitionSessionRef.current = null;
+      stopVoiceCaptureRef.current?.(false);
+      startVoiceCaptureRef.current = null;
+      stopVoiceCaptureRef.current = null;
       audioRef.current?.pause();
       const activeAudioContext = audioContextRef.current;
       audioContextRef.current = null;
@@ -167,7 +175,6 @@ export default function App() {
         void activeAudioContext.close().catch(() => undefined);
       }
       window.speechSynthesis?.cancel();
-      recognitionRef.current?.abort?.();
     };
   }, []);
 
