@@ -129,7 +129,7 @@ export default function App() {
     setListening(false);
   };
 
-  const resumeVoiceRecognitionAfterSpeech = (delay = 750) => {
+  const resumeVoiceRecognitionAfterSpeech = (delay = 400) => {
     if (!voiceModeRef.current) return;
     if (voiceResumeRef.current !== null) window.clearTimeout(voiceResumeRef.current);
     voiceResumeRef.current = window.setTimeout(() => {
@@ -389,14 +389,14 @@ export default function App() {
           const rms = Math.sqrt(sumSquares / session.samples.length);
           const now = Date.now();
 
-          // Detecta fala pelo volume; 0,85 s de silencio encerra a frase automaticamente.
+          // Detecta fala pelo volume; 0,65 s de silencio encerra a frase automaticamente.
           if (rms >= 0.012) {
             if (session.firstSpeechAt === null) session.firstSpeechAt = now;
             session.lastSpeechAt = now;
             if (now - session.firstSpeechAt >= 250) session.speechDetected = true;
           }
 
-          if (session.speechDetected && now - session.lastSpeechAt >= 850) {
+          if (session.speechDetected && now - session.lastSpeechAt >= 650) {
             stopVoiceCaptureRef.current?.(true);
           } else if (now - session.startedAt >= 25000) {
             stopVoiceCaptureRef.current?.(true);
@@ -445,7 +445,7 @@ export default function App() {
         setNotice('');
       }
 
-      const audio = new Audio('data:audio/mpeg;base64,' + result.audioBase64);
+      const audio = new Audio('data:' + (result.audioMimeType || 'audio/mpeg') + ';base64,' + result.audioBase64);
       audioRef.current = audio;
 
       // Liga o áudio ao Web Audio para medir seu volume e animar a boca em tempo real.
@@ -553,6 +553,7 @@ export default function App() {
       .filter((message) => message.content !== greeting.content)
       .slice(-6);
 
+    let closeSpeechSession: (() => Promise<void>) | null = null;
     setMessages((current) => [...current, { role: 'user', content: text }]);
     setInput('');
     setThinking(true);
@@ -575,6 +576,29 @@ export default function App() {
         : text;
 
       const canStreamSpeech = autoSpeak && !capture;
+      let speechSessionActive = false;
+      let speechSessionClosed = false;
+      const speechSessionPromise = canStreamSpeech
+        ? window.aurora.startSpeakSession()
+            .then((status) => {
+              speechSessionActive = status.active;
+              return status;
+            })
+            .catch((error) => {
+              console.warn('[Aurora TTS] Nao consegui preparar o streaming; usarei uma conexao por trecho.', error);
+              return { active: false };
+            })
+        : Promise.resolve({ active: false });
+      closeSpeechSession = async () => {
+        await speechSessionPromise;
+        if (!speechSessionActive || speechSessionClosed) return;
+        speechSessionClosed = true;
+        speechSessionActive = false;
+        await window.aurora.endSpeakSession().catch((error) => {
+          console.warn('[Aurora TTS] Nao consegui encerrar a sessao de fala.', error);
+        });
+      };
+
       let speechBuffer = '';
       let speechStarted = false;
       let speechQueue = Promise.resolve();
@@ -583,20 +607,23 @@ export default function App() {
         if (!cleanSegment) return;
         speechStarted = true;
         speechQueue = speechQueue
-          .then(() => speak(cleanSegment, true, false))
+          .then(async () => {
+            await speechSessionPromise;
+            await speak(cleanSegment, true, false);
+          })
           .catch((error) => {
             setNotice(error instanceof Error ? error.message : 'Não consegui reproduzir um trecho da resposta.');
           });
       };
       const collectCompleteSpeech = (chunk: string) => {
         speechBuffer += chunk;
-        const boundary = /[.!?…]+\\s+/g;
+        const boundary = /[.!?…]+\s+/g;
         let cursor = 0;
         let match: RegExpExecArray | null;
         while ((match = boundary.exec(speechBuffer)) !== null) {
           const end = match.index + match[0].length;
           const candidate = speechBuffer.slice(cursor, end).trim();
-          const wordCount = candidate.split(/\\s+/).filter(Boolean).length;
+          const wordCount = candidate.split(/\s+/).filter(Boolean).length;
           if (candidate.length >= 18 || wordCount >= 5) {
             enqueueSpeech(candidate);
             cursor = end;
@@ -661,20 +688,24 @@ export default function App() {
           if (speechBuffer.trim()) enqueueSpeech(speechBuffer);
           if (speechStarted) {
             await speechQueue;
-            if (voiceModeRef.current) resumeVoiceRecognitionAfterSpeech(750);
           } else {
-            void speak(answer);
+            await speechSessionPromise;
+            await speak(answer, true, false);
           }
+          await closeSpeechSession?.();
+          if (voiceModeRef.current) resumeVoiceRecognitionAfterSpeech(400);
         } else {
           void speak(answer);
         }
       }
     } catch (error) {
+      if (closeSpeechSession) await closeSpeechSession();
       setNotice(error instanceof Error ? error.message : 'Ocorreu um erro ao conversar com a IA.');
       if (voiceModeRef.current && recognitionPausedRef.current) {
         resumeVoiceRecognitionAfterSpeech(500);
       }
     } finally {
+      if (closeSpeechSession) await closeSpeechSession();
       thinkingRef.current = false;
       setThinking(false);
       if (!autoSpeak && voiceModeRef.current && recognitionPausedRef.current) {
@@ -879,6 +910,9 @@ export default function App() {
     recognitionPausedRef.current = false;
     setVoiceMode(true);
     setNotice('Escuta offline ativada. Fale naturalmente; o Whisper encerra sua frase apos uma pausa.');
+    void window.aurora.warmupTranscription().catch((error) => {
+      console.warn('[Aurora Whisper] Nao consegui aquecer o reconhecimento antecipadamente.', error);
+    });
     void startVoiceCaptureRef.current?.();
   };
 
@@ -1132,7 +1166,7 @@ export default function App() {
                 <option value="qwen3.5:4b">Qwen 3.5 4B — equilíbrio entre velocidade e qualidade</option>
                 <option value="qwen3.5:9b">Qwen 3.5 9B — melhor capacidade, exige mais memória e pode ser mais lento</option>
               </select>
-              <p className="field-help">Recomendação: 4B para equilibrar velocidade e qualidade; 9B para respostas mais elaboradas se o computador aguentar. O 2B é mais rápido, mas pode errar mais em análises complexas.</p>
+              <p className="field-help">O 9B prioriza respostas mais capazes. Em computadores que fazem a maior parte do trabalho pela CPU, ele pode demorar mais; o 4B é a alternativa para priorizar velocidade, com alguma perda de qualidade.</p>
 
               <div className="secure-note">
                 <span>{config.ollamaAvailable ? '✓' : '!'}</span>
