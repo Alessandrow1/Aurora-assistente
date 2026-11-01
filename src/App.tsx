@@ -433,7 +433,7 @@ export default function App() {
     window.speechSynthesis?.cancel();
     setSpeaking(true);
 
-    let finishPlayback: (() => void) | null = null;
+    let finishPlayback!: () => void;
     const playbackFinished = new Promise<void>((resolve) => { finishPlayback = resolve; });
 
     try {
@@ -476,7 +476,7 @@ export default function App() {
         if (audioRef.current === audio) audioRef.current = null;
         resetAudioAnalysis();
         if (resumeAfterPlayback) resumeVoiceRecognitionAfterSpeech();
-        finishPlayback?.();
+        finishPlayback();
       };
       audio.onended = finishAudio;
       audio.onerror = () => {
@@ -508,13 +508,13 @@ export default function App() {
           setSpeaking(false);
           setEmotion('neutral');
           if (resumeAfterPlayback) resumeVoiceRecognitionAfterSpeech();
-          finishPlayback?.();
+          finishPlayback();
         };
         utterance.onerror = () => {
           setSpeaking(false);
           setEmotion('neutral');
           if (resumeAfterPlayback) resumeVoiceRecognitionAfterSpeech();
-          finishPlayback?.();
+          finishPlayback();
         };
         const neuralDetail = error instanceof Error ? error.message : String(error);
         setNotice('A voz neural falhou: ' + neuralDetail.slice(0, 160) + '. Estou usando temporariamente a voz instalada no Windows.');
@@ -526,7 +526,7 @@ export default function App() {
         setSpeaking(false);
         setEmotion('neutral');
         if (resumeAfterPlayback) resumeVoiceRecognitionAfterSpeech();
-        finishPlayback?.();
+        finishPlayback();
         const neuralDetail = error instanceof Error ? error.message : String(error);
         const fallbackDetail = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
         setNotice('Não consegui gerar áudio. Voz neural: ' + neuralDetail.slice(0, 150) + '. Voz do Windows: ' + fallbackDetail.slice(0, 100));
