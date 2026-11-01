@@ -640,6 +640,9 @@ export default function App() {
 
   const runQuickCommand = async (rawText: string): Promise<string | null> => {
     const text = rawText.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (/^\\s*\\[(musica|music|aplausos|risos|inaudivel|som nao identificado)\\]\\s*$/.test(text)) {
+      return 'Recebi um som, mas não uma fala clara. Fala perto do microfone. 😏';
+    }
     // Respostas sociais deterministicas: cumprimentos e checagens nao precisam de uma palestra do modelo.
     if (/^(oi|ola|e ai|opa|bom dia|boa tarde|boa noite|salve|fala)( ai)?[!.? ]*$/.test(text)) {
       return 'Opa! Tô aqui, criatura. Manda. 😏';
