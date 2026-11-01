@@ -176,4 +176,29 @@ ESTADO DO TESTE: a correção foi publicada no GitHub. O usuário confirmou que 
 - O GitHub guarda o código e este TXT de continuidade; o modelo Whisper, chaves e conteúdo local permanecem fora do Git.
 
 
+
+12. AJUSTE DE RESPOSTAS CURTAS E PORTUGUÊS NATURAL — 01/11/2026
+
+Commits de código:
+- b290a1ad993dad04889cef59f45b88d8fe0cfba3 — Define respostas concisas e português natural no prompt.
+- 725174605269db36843c2eb4088acc91ee1179d5 — Encurta saudação e respostas simples da Aurora.
+Estado atual da branch no momento da documentação: feature/live2d-avatar, HEAD 725174605269db36843c2eb4088acc91ee1179d5.
+
+Alterações realizadas:
+- electron/main.cjs: adicionadas regras prioritárias e explícitas de tamanho. Cumprimentos, confirmações e perguntas simples devem receber uma frase curta (preferencialmente até 12 palavras); conversa normal deve ficar em 1 a 3 frases e preferencialmente abaixo de 40 palavras. Respostas longas continuam permitidas quando o usuário pedir detalhes, explicação ou plano, ou quando a tarefa exigir.
+- electron/main.cjs: reforçada a regra de português brasileiro natural e de tratamento de erros óbvios de transcrição Whisper. A Aurora deve interpretar erros evidentes pelo contexto, não reproduzi-los como corretos e fazer pergunta curta quando houver ambiguidade real.
+- Exemplos gramaticais adicionados ao prompt: “eu ouvi” (não “eu ouvei”) e “estou ouvindo” (não “estou ouço”).
+- src/App.tsx: saudação inicial reduzida para “Oi! Sou a Aurora. ✨ Manda aí, criatura.”
+- src/App.tsx: incluídas respostas rápidas determinísticas para cumprimentos e perguntas simples sobre se a mensagem chegou. Isso evita chamar o modelo Qwen para produzir uma palestra diante de um “oi”.
+- Personalidade sarcástica e brincalhona foi preservada; a mudança reduz o tamanho, não a atitude.
+
+TESTES PENDENTES:
+- Atualizar o código local com git pull --ff-only origin feature/live2d-avatar.
+- Executar npm run build e npm run dev.
+- Testar “oi”, “olá”, “está me ouvindo?” por texto e pelo microfone: respostas devem ser curtas e naturais.
+- Testar uma pergunta simples e uma pergunta que peça explicação detalhada para confirmar que a Aurora continua sabendo desenvolver quando solicitado.
+- Verificar que a gramática do português está natural e que a resposta não repete erros evidentes de transcrição.
+- Estes ajustes foram publicados no GitHub, mas ainda não foram testados/buildados na máquina Windows do usuário. Não afirmar que o comportamento final já foi validado.
+
+
 FIM DO ARQUIVO DE CONTINUIDADE
