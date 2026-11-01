@@ -517,7 +517,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
         model: settings.model,
         stream: true,
         think: false,
-        keep_alive: '10m',
+        keep_alive: '20m',
         messages: [
           {
             role: 'system',
@@ -566,7 +566,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
           ...history,
           { role: 'user', content: message, ...(imageBase64 ? { images: [imageBase64] } : {}) },
         ],
-        options: { temperature: 0.45, num_predict: imageBase64 ? 360 : asksForLongResponse ? 650 : 180, num_ctx: 4096 },
+        options: { temperature: 0.35, num_predict: imageBase64 ? 360 : asksForLongResponse ? 650 : 180, num_ctx: 4096 },
       }),
     });
   } catch (error) {
