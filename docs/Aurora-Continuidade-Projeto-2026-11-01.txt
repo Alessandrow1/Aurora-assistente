@@ -8,8 +8,8 @@ Pasta no Windows:
 C:\Users\Alessandro Linhares\Desktop\AURORA\Aurora-assistente
 Repositório GitHub: Alessandrow1/Aurora-assistente
 Branch de trabalho conhecida: feature/live2d-avatar
-Último commit remoto confirmado anteriormente: e73a9c2 — checkpoint: Live2D mascot, zoom and system tray
-ATENÇÃO: e73a9c2 é o último commit confirmado no histórico anterior. Depois das atualizações de voz e zoom, é necessário executar o novo backup e conferir o hash mais recente.
+Último commit remoto confirmado antes desta atualização de documentação: edc5be4942b8959f7db97b2bfc5331aad394621c — Permite arrastar Aurora com o chat aberto.
+O commit desta atualização de TXT criará um novo checkpoint Git na mesma branch.
 
 2. OBJETIVO DA AURORA
 Assistente desktop para Windows, com personagem Live2D flutuante, conversa com modelo local via Ollama, fala sintetizada, lip sync, análise opcional de tela e comandos locais com confirmação.
@@ -107,5 +107,73 @@ Se push falhar após o commit, o commit continua salvo localmente; corrigir aute
 - Preservar o trabalho já funcional; não alterar Lip Sync, zoom, SDK ou modelo sem necessidade.
 - Nunca pedir para o usuário colar a chave ElevenLabs no chat.
 - O usuário quer manter assets do modelo/SDK localmente e não distribuir o modelo. A licença do SDK e dos assets deve continuar sendo respeitada; não assumir domínio público sem conferir a licença aplicável.
+
+
+11. ATUALIZAÇÃO DE CONTINUIDADE — 01/11/2026 (ESTADO MAIS RECENTE)
+
+Último estado de código revisado:
+- Branch: feature/live2d-avatar
+- Commit de código imediatamente anterior a este backup documental: edc5be4942b8959f7db97b2bfc5331aad394621c
+- Mensagem: "Permite arrastar Aurora com o chat aberto".
+- Repositório: Alessandrow1/Aurora-assistente
+- Esta seção complementa e, quando houver divergência, substitui as observações antigas deste TXT.
+
+11.1. RECONHECIMENTO DE VOZ — WHISPER OFFLINE + SHERPA-ONNX
+A implementação antiga baseada em SpeechRecognition/webkitSpeechRecognition do Chromium foi removida de src/App.tsx. A captura atual usa getUserMedia + MediaRecorder, detecção de atividade de voz por RMS e transcrição local via Whisper tiny multilingual com sherpa-onnx-node.
+Arquivos envolvidos:
+- package.json: dependências sherpa-onnx-node ^2.0.1 e sherpa-onnx-win-x64 ^2.0.1; configuração electron-builder.asarUnpack para os dois pacotes.
+- electron/main.cjs: baixa e guarda os três arquivos do modelo em app.getPath('userData')/speech-recognition/sherpa-onnx-whisper-tiny; inicializa recognizer Sherpa-ONNX para Whisper em português, CPU.
+- electron/preload.cjs: expõe transcribeAudio() e onSpeechRecognitionStatus().
+- src/vite-env.d.ts: tipos da API IPC.
+- src/App.tsx: grava segmentos de áudio, converte para mono/16 kHz Float32Array, envia para o processo principal, recebe texto e encaminha para o chat.
+Comportamento implementado:
+- A fala é segmentada automaticamente; após cerca de 1,4 s de silêncio o segmento é enviado para transcrição.
+- Limite de 25 s por segmento capturado e limite de 45 s no envio para transcrição.
+- O microfone é pausado enquanto Aurora fala e enquanto uma mensagem está sendo processada, retomando depois quando o modo contínuo permanece ativo.
+- O primeiro uso exige conexão com a internet para baixar os pesos do modelo; depois de armazenados em userData, a transcrição é local/offline.
+- A interface informa estados de download, escuta e transcrição.
+ESTADO DO TESTE: o usuário informou que apareceu "Baixando componente tiny-encoder.int8.onnx do reconhecimento offline…". Isso confirma que o fluxo de download foi iniciado, mas ainda NÃO confirma que os três arquivos terminaram de baixar nem que a transcrição foi testada com sucesso.
+
+ATENÇÃO AO LOCKFILE:
+- package.json já contém as duas dependências Sherpa.
+- O package-lock.json remoto consultado neste backup ainda NÃO contém sherpa-onnx-node nem sherpa-onnx-win-x64.
+- Depois de atualizar o projeto na máquina, executar npm install (não npm ci) para regenerar package-lock.json; depois executar npm run build.
+- Só então verificar git status --short e incluir package-lock.json no próximo commit/push se estiver modificado.
+- Não declarar build aprovado ou addon nativo validado até receber o resultado real do Windows do usuário.
+
+Comandos de teste, no CMD, dentro da pasta do projeto:
+git pull --ff-only origin feature/live2d-avatar
+npm install
+npm run build
+npm run dev
+
+11.2. CORREÇÃO DE ARRASTE COM CHAT ABERTO
+No commit edc5be4942b8959f7db97b2bfc5331aad394621c, src/components/Avatar3D.tsx foi ajustado:
+- Antes, onPointerDown retornava imediatamente quando body tinha a classe aurora-ui-open, impedindo iniciar o arraste enquanto a interface estava aberta.
+- Agora o arraste pode começar pela hit-zone da personagem também com o chat aberto.
+- O painel de chat continua com seus elementos em pointer-events:auto e -webkit-app-region:no-drag para manter digitação e botões utilizáveis.
+- A área do chat se sobrepõe ao avatar; portanto o arraste deve começar numa parte visível/desobstruída da personagem, não sobre o painel.
+ESTADO DO TESTE: a correção foi publicada no GitHub. O usuário confirmou que concluiu a etapa anterior ("pronto"), mas ainda não informou explicitamente o resultado do teste de arraste com o chat aberto. Não marcar como validado sem confirmação.
+
+11.3. VOZ E PERSONAGEM — ESTADO DOCUMENTAL ATUALIZADO
+- O TTS configurado mais recentemente usa ElevenLabs com voice ID 29BpZaywSObgMLvRvBhB e modelo eleven_v4_turbo; Edge TTS e Windows Speech são mecanismos de reserva.
+- A animação da boca usa AudioAnalyser/RMS quando o áudio é disponibilizado ao Web Audio; o usuário já havia confirmado o movimento da boca em teste anterior.
+- O avatar Live2D 6xb, SDK Live2D e arquivos de personagem permanecem locais e não devem ser incluídos no GitHub sem autorização/licença aplicável.
+- A chave ElevenLabs é protegida por safeStorage/DPAPI no Windows. Nunca copiar chave, token ou segredo para o Git, TXT ou chat.
+
+11.4. CHECKLIST PARA RETOMAR O TRABALHO
+1. Confirmar que o download de tiny-encoder, tiny-decoder e tiny-tokens terminou.
+2. Rodar npm install para atualizar o lockfile e npm run build.
+3. Abrir com npm run dev e testar o microfone: falar em português, esperar o silêncio automático, confirmar que a transcrição aparece e é enviada ao chat.
+4. Testar várias frases, incluindo fala curta, fala longa e pausa; confirmar que o microfone pausa durante TTS/processamento e retoma corretamente.
+5. Com a interface de chat aberta, arrastar Aurora pelo corpo visível; confirmar que os botões, o campo de texto e a rolagem do chat continuam funcionando.
+6. Verificar git status --short. Se package-lock.json estiver alterado, revisar e fazer commit/push do lockfile.
+7. Registrar somente resultados realmente observados pelo usuário; não presumir build, teste do microfone ou teste do arraste.
+
+11.5. ÚLTIMO CHECKPOINT DE SEGURANÇA
+- Não colocar o modelo Whisper baixado em userData dentro do repositório.
+- Não versionar node_modules, chaves, credenciais, dumps de voz, dados pessoais ou os assets/SDK licenciados do Live2D.
+- O GitHub guarda o código e este TXT de continuidade; o modelo Whisper, chaves e conteúdo local permanecem fora do Git.
+
 
 FIM DO ARQUIVO DE CONTINUIDADE
