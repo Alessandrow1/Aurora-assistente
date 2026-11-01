@@ -716,7 +716,9 @@ export default function App() {
     setThinking(true);
 
     try {
-      const quickReply = await runQuickCommand(text);
+      const normalizedUserRequest = text.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const selfVisualRequest = /\b(como voce e|como e seu avatar|qual e sua aparencia|descreva sua aparencia|como voce aparece|como voce se parece|olha pra voce|olhe para voce|olha para voce|veja seu avatar|se veja|se olhe|esta sorrindo|esta fazendo qual expressao|qual expressao voce esta|como esta sua expressao)\b/.test(normalizedUserRequest);
+      const quickReply = selfVisualRequest ? null : await runQuickCommand(text);
       if (quickReply) {
         setEmotion(inferAvatarEmotion(text, quickReply));
         if (hasLaughingCue(text + " " + quickReply)) setLaughing(true);
@@ -730,14 +732,29 @@ export default function App() {
         /\b(analise|analisar|olha|olhe|olhar|veja|ver|observe|observar|descreva|descrever|mostre|mostrar)\b/.test(normalizedScreenRequest) &&
         /\b(tela|janela|aplicativo|programa|erro|mensagem|desktop|questao|questoes|alternativa|enunciado|exercicio|exercicios)\b/.test(normalizedScreenRequest) ||
         /\b(o que esta aparecendo|o que aparece na tela|o que tem na tela|minha tela|nessa janela|esse erro|essa questao|qual alternativa|qual a resposta|me explica isso|resolve essa)\b/.test(normalizedScreenRequest);
+      // A Aurora pode observar seu próprio canvas Live2D quando o usuário pergunta sobre sua aparência.
+      let selfAvatarImage = '';
+      if (selfVisualRequest) {
+        try {
+          const live2d = await import('./live2d/Live2DHost');
+          selfAvatarImage = await live2d.captureLive2DSnapshot();
+        } catch (error) {
+          console.warn('[Aurora Self-Perception] Não consegui capturar o próprio avatar:', error);
+        }
+      }
       // No Modo Estudo, cada pergunta recebe uma captura nova; o modelo não analisa vídeo em loop.
-      const capture = (studyMode || asksForScreenAnalysis) ? await window.aurora.captureScreen() : null;
+      const capture = (!selfAvatarImage && (studyMode || asksForScreenAnalysis)) ? await window.aurora.captureScreen() : null;
+      const imageBase64 = selfAvatarImage || capture?.imageBase64 || '';
       const studyPrompt = studyMode
         ? 'MODO ESTUDO ENEM/CONCURSOS: aja como professor particular rigoroso e didático. Leia cuidadosamente a captura antes de responder. Primeiro identifique o que está escrito no enunciado e nas alternativas; nunca complete palavras ou números ilegíveis por adivinhação. Se uma parte essencial estiver pequena, cortada ou ambígua, diga exatamente o que não conseguiu ler e peça uma captura aproximada em vez de chutar. Identifique matéria e assunto. Em questão objetiva, indique a alternativa correta somente quando houver evidência suficiente, explique o raciocínio passo a passo e por que as alternativas mais plausíveis estão erradas. Confira cálculos, sinais, unidades, datas e conceitos antes de concluir. Diferencie fatos, interpretações e hipóteses. Nunca invente fonte, artigo de lei, número, autor, dado ou regra de edital. Para legislação, atualidades e regras de concurso que possam mudar, avise quando for necessária conferência em fonte oficial atualizada. Ensine o conceito por trás da questão com linguagem clara e um exemplo curto quando ajudar. Seja completa sem enrolar; faça uma pergunta de checagem apenas quando for útil para confirmar meu aprendizado.'
         : '';
-      const computerPrompt = capture
-        ? `${text}\n\nEstou fornecendo uma captura atual do desktop. Analise somente o que estiver visível e explique o que aparece. A visão é somente de leitura: não proponha cliques, movimentos de mouse, digitação, atalhos ou blocos de ação. Se algo estiver ilegível, diga isso com clareza. ${studyPrompt}`
-        : text;
+      const computerPrompt = selfAvatarImage
+        ? text + '\n\nA imagem anexada é uma captura atual do seu próprio avatar Live2D, renderizada diretamente do canvas da personagem. Observe a aparência e a expressão que realmente estão visíveis. Diferencie características permanentes da personagem da expressão momentânea. Use sua ficha de identidade como referência complementar. Não invente detalhes, não diga que viu uma webcam e não afirme ter consciência subjetiva.'
+        : capture
+          ? text + '\n\nEstou fornecendo uma captura atual do desktop. Analise somente o que estiver visível e explique o que aparece. A visão é somente de leitura: não proponha cliques, movimentos de mouse, digitação, atalhos ou blocos de ação. Se algo estiver ilegível, diga isso com clareza. ' + studyPrompt
+          : selfVisualRequest
+            ? text + '\n\nNão foi possível capturar seu avatar nesta ocasião. Responda somente com base na ficha de identidade cadastrada. Não diga que acabou de se observar nem invente características visuais.'
+            : text;
       const canStreamSpeech = autoSpeak && (studyMode || !capture);
       let speechSessionActive = false;
       let speechSessionClosed = false;
@@ -798,7 +815,7 @@ export default function App() {
       };
 
       setMessages((current) => [...current, { role: 'assistant', content: '' }]);
-      const response = await window.aurora.chat({ message: computerPrompt, history, voiceMode: voiceModeRef.current, studyMode, ...(capture ? { imageBase64: capture.imageBase64 } : {}) }, (chunk) => {
+      const response = await window.aurora.chat({ message: computerPrompt, history, voiceMode: voiceModeRef.current, studyMode, ...(imageBase64 ? { imageBase64 } : {}) }, (chunk) => {
         setMessages((current) => {
           const updated = [...current];
           const last = updated[updated.length - 1];
