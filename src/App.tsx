@@ -105,6 +105,10 @@ export default function App() {
   const pauseVoiceRecognitionForSpeech = () => {
     if (!voiceModeRef.current) return;
     recognitionPausedRef.current = true;
+    if (voiceResumeRef.current !== null) {
+      window.clearTimeout(voiceResumeRef.current);
+      voiceResumeRef.current = null;
+    }
     if (recognitionRestartRef.current !== null) {
       window.clearTimeout(recognitionRestartRef.current);
       recognitionRestartRef.current = null;
@@ -373,6 +377,9 @@ export default function App() {
       if (autoSpeak) void speak(answer);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Ocorreu um erro ao conversar com a IA.');
+      if (voiceModeRef.current && recognitionPausedRef.current) {
+        resumeVoiceRecognitionAfterSpeech(500);
+      }
     } finally {
       thinkingRef.current = false;
       setThinking(false);
