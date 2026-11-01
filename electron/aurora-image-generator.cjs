@@ -91,7 +91,7 @@ function createAuroraImageGenerator({
       const status = entry?.status?.status_str;
       if (status === 'error') {
         const messages = Array.isArray(entry?.status?.messages) ? JSON.stringify(entry.status.messages) : '';
-        throw new Error(`O ComfyUI não consegui gerar a imagem.${messages ? ` ${messages.slice(0, 700)}` : ''}`);
+        throw new Error(`O ComfyUI não conseguiu gerar a imagem.${messages ? ` ${messages.slice(0, 700)}` : ''}`);
       }
       const outputs = entry?.outputs;
       if (outputs && typeof outputs === 'object') {
