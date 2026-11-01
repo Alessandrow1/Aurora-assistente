@@ -8,8 +8,8 @@ const crypto = require('node:crypto');
 
 const execFileAsync = promisify(execFile);
 const EMBEDDING_MODEL = 'nomic-embed-text';
-const MAX_CONVERSATIONS = 250;
-const MAX_CONVERSATION_MESSAGES = 180;
+const MAX_CONVERSATIONS = 120;
+const MAX_CONVERSATION_MESSAGES = 140;
 const MAX_DOCUMENTS = 120;
 const MAX_DOCUMENT_BYTES = 24 * 1024 * 1024;
 const MAX_INDEXED_CHUNKS = 3000;
@@ -199,7 +199,7 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
       .filter((item) => item && (item.role === 'user' || item.role === 'assistant') && typeof item.content === 'string')
       .filter((item) => item.content.trim())
       .slice(-MAX_CONVERSATION_MESSAGES)
-      .map((item) => ({ role: item.role, content: item.content.slice(0, 12000) }));
+      .map((item) => ({ role: item.role, content: item.content.slice(0, 8000) }));
     const firstUserMessage = messages.find((item) => item.role === 'user')?.content || '';
     const requestedTitle = typeof raw.title === 'string' ? raw.title.trim() : '';
     const title = (requestedTitle && requestedTitle !== 'Nova conversa' ? requestedTitle : (firstUserMessage || existing?.title || 'Nova conversa'))
