@@ -66,7 +66,8 @@ export default function Avatar3D(props: Props) {
     };
 
     const onPointerDown = (event: PointerEvent) => {
-      if (uiOpen || event.button !== 0) return;
+      // A interface aberta nao deve bloquear o arraste iniciado sobre a personagem.
+      if (event.button !== 0) return;
       draggingPointerId = event.pointerId;
       lastScreenX = event.screenX;
       lastScreenY = event.screenY;
