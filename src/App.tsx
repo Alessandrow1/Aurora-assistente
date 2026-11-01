@@ -698,9 +698,9 @@ export default function App() {
     if (/\b(o que voce lembra de mim|quais memorias voce tem|o que esta guardado na memoria|mostre minhas memorias)\b/.test(text)) {
       const result = await window.aurora.listMemories();
       if (!result.memories.length) return 'Ainda não tenho lembranças salvas. Diga “lembre que…” quando quiser guardar alguma coisa.';
-      return 'Estas são as coisas que você me pediu para guardar:\n' +
-        result.memories.slice(0, 10).map((item, index) => (index + 1) + '. ' + item.content).join('\n') +
-        (result.count > 10 ? '\n... e mais ' + (result.count - 10) + ' registro(s).' : '');
+      return 'Tenho estas lembranças suas: ' +
+        result.memories.slice(0, 10).map((item) => item.content).join('; ') +
+        (result.count > 10 ? '. E mais ' + (result.count - 10) + ' lembranças.' : '.');
     }
 
     const forgetMatch = rawText.match(/^\s*(?:aurora[, ]+)?(?:esqueça que|esqueca que|esquece que|apague da memória|apague da memoria|remova da memória|remova da memoria)\s+([\s\S]+)$/i);
