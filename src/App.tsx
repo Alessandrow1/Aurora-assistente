@@ -77,6 +77,7 @@ export default function App() {
   const recognitionRestartRef = useRef<number | null>(null);
   const voiceResumeRef = useRef<number | null>(null);
   const recognitionPausedRef = useRef(false);
+  const recognitionFailureCountRef = useRef(0);
   const startRecognitionSessionRef = useRef<(() => void) | null>(null);
   const voiceModeRef = useRef(false);
   const thinkingRef = useRef(false);
@@ -235,7 +236,8 @@ export default function App() {
         setEmotion('neutral');
         audioRef.current = null;
         resetAudioAnalysis();
-        setNotice('O áudio neural não pôde ser reproduzido; vou tentar a voz de reserva.');
+        setNotice('O áudio neural não pôde ser reproduzido. A escuta por voz será retomada.');
+        resumeVoiceRecognitionAfterSpeech();
       };
       await audio.play();
     } catch (error) {
@@ -374,6 +376,9 @@ export default function App() {
     } finally {
       thinkingRef.current = false;
       setThinking(false);
+      if (!autoSpeak && voiceModeRef.current && recognitionPausedRef.current) {
+        resumeVoiceRecognitionAfterSpeech(500);
+      }
     }
   };
 
@@ -510,6 +515,7 @@ export default function App() {
   const stopVoiceMode = () => {
     voiceModeRef.current = false;
     recognitionPausedRef.current = false;
+    recognitionFailureCountRef.current = 0;
     setVoiceMode(false);
     if (recognitionRestartRef.current !== null) {
       window.clearTimeout(recognitionRestartRef.current);
@@ -541,27 +547,34 @@ export default function App() {
 
     voiceModeRef.current = true;
     recognitionPausedRef.current = false;
+    recognitionFailureCountRef.current = 0;
     setVoiceMode(true);
-    setNotice('Conversa contínua ativada. O microfone pausa enquanto Aurora fala e volta a escutar quando ela termina.');
+    setNotice('Escuta ativada. Fale normalmente; o microfone pausa durante a resposta da Aurora.');
 
     let startRecognitionSession: () => void;
-    const scheduleRestart = (delay = 850) => {
+    const scheduleRestart = (requestedDelay?: number) => {
       if (!voiceModeRef.current || recognitionPausedRef.current || recognitionRestartRef.current !== null) return;
+      const failures = recognitionFailureCountRef.current;
+      const retryDelay = requestedDelay ?? (failures > 0
+        ? Math.min(1200 * (2 ** (failures - 1)), 6000)
+        : 350);
       recognitionRestartRef.current = window.setTimeout(() => {
         recognitionRestartRef.current = null;
         if (voiceModeRef.current && !recognitionPausedRef.current) startRecognitionSession();
-      }, delay);
+      }, retryDelay);
     };
 
     startRecognitionSession = () => {
-      if (!voiceModeRef.current || recognitionPausedRef.current) return;
+      if (!voiceModeRef.current || recognitionPausedRef.current || recognitionRef.current) return;
       const recognition = new Recognition();
       recognition.lang = 'pt-BR';
       recognition.interimResults = false;
       recognition.continuous = true;
       recognition.maxAlternatives = 1;
 
-      recognition.onstart = () => setListening(!recognitionPausedRef.current);
+      recognition.onstart = () => {
+        if (voiceModeRef.current && !recognitionPausedRef.current) setListening(true);
+      };
       recognition.onresult = (event: any) => {
         if (!voiceModeRef.current || recognitionPausedRef.current) return;
         const phrases: string[] = [];
@@ -573,13 +586,15 @@ export default function App() {
         const transcript = phrases.join(' ').replace(/\s+/g, ' ').trim();
         if (!transcript) return;
 
-        // A fala reconhecida do usuário interrompe a voz atual da Aurora.
+        // Reinicia a escuta só depois da resposta, evitando sessões concorrentes e autoescuta.
+        recognitionFailureCountRef.current = 0;
+        setNotice('');
+        pauseVoiceRecognitionForSpeech();
         audioRef.current?.pause();
         audioRef.current = null;
         resetAudioAnalysis();
         window.speechSynthesis?.cancel();
         setSpeaking(false);
-        setNotice('');
 
         if (thinkingRef.current) {
           pendingVoiceRef.current.push(transcript);
@@ -589,23 +604,43 @@ export default function App() {
         }
       };
       recognition.onerror = (event: any) => {
-        setListening(false);
-        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-          voiceModeRef.current = false;
-          setVoiceMode(false);
-          setNotice('O acesso ao microfone foi bloqueado. Libere a permissão de microfone no Windows.');
-        } else if (event.error === 'audio-capture') {
-          voiceModeRef.current = false;
-          setVoiceMode(false);
-          setNotice('Não encontrei um microfone ativo. Confira o dispositivo de entrada do Windows.');
-        } else if (event.error && !['no-speech', 'aborted', 'network'].includes(event.error)) {
-          setNotice('O reconhecimento de voz encontrou um erro: ' + event.error);
+        const error = String(event?.error || 'unknown');
+        if (['no-speech', 'aborted'].includes(error)) return;
+
+        if (error === 'network') {
+          recognitionFailureCountRef.current += 1;
+          const failures = recognitionFailureCountRef.current;
+          if (failures >= 3) {
+            stopVoiceMode();
+            setNotice('O serviço de reconhecimento de voz está indisponível ou sem conexão. Tente novamente mais tarde.');
+          } else {
+            setNotice('Reconhecimento instável. Vou tentar reconectar (' + failures + '/3).');
+          }
+          return;
         }
+
+        if (error === 'not-allowed' || error === 'service-not-allowed') {
+          stopVoiceMode();
+          setNotice('O acesso ao microfone foi negado. Libere a permissão de microfone para a Aurora nas configurações do Windows.');
+          return;
+        }
+        if (error === 'audio-capture') {
+          stopVoiceMode();
+          setNotice('Não encontrei um microfone ativo. Confira o dispositivo de entrada do Windows.');
+          return;
+        }
+
+        stopVoiceMode();
+        setNotice('O reconhecimento de voz falhou (' + error + '). Confira o microfone e tente novamente.');
       };
       recognition.onend = () => {
-        setListening(false);
         if (recognitionRef.current === recognition) recognitionRef.current = null;
-        if (voiceModeRef.current && !recognitionPausedRef.current) scheduleRestart();
+        if (voiceModeRef.current && !recognitionPausedRef.current) {
+          // Mantém o estado visual ativo durante a pequena pausa de reinício.
+          scheduleRestart();
+        } else {
+          setListening(false);
+        }
       };
 
       recognitionRef.current = recognition;
@@ -613,7 +648,13 @@ export default function App() {
         recognition.start();
       } catch {
         if (recognitionRef.current === recognition) recognitionRef.current = null;
-        scheduleRestart(1400);
+        recognitionFailureCountRef.current += 1;
+        if (recognitionFailureCountRef.current >= 3) {
+          stopVoiceMode();
+          setNotice('Não consegui iniciar o reconhecimento. Feche outra aplicação que esteja usando o microfone e tente novamente.');
+        } else {
+          scheduleRestart();
+        }
       }
     };
 
@@ -824,7 +865,12 @@ export default function App() {
 
           <div className="chat-footer">
             <span className={'voice-mode-status ' + (voiceMode ? 'active' : '')}>
-              <i /> {voiceMode ? (listening ? 'Microfone ativo' : 'Reconectando microfone…') : 'Microfone desligado'}
+              <i /> {voiceMode
+                ? (speaking ? 'Aurora falando · microfone pausado'
+                  : thinking ? 'Aurora pensando · microfone pausado'
+                    : listening ? 'Escutando · pode falar'
+                      : 'Escuta ativada · conectando')
+                : 'Microfone desligado'}
             </span>
             <label className="speak-toggle">
               <input type="checkbox" checked={autoSpeak} onChange={(event) => setAutoSpeak(event.target.checked)} />
