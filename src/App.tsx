@@ -536,6 +536,8 @@ export default function App() {
     const text = rawText.trim();
     if (!text || thinkingRef.current) return;
 
+    // Enquanto a IA pensa, evita capturar outra frase por cima da mensagem atual.
+    pauseVoiceRecognitionForSpeech();
     thinkingRef.current = true;
     setNotice('');
     audioRef.current?.pause();
