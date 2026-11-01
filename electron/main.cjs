@@ -504,10 +504,15 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
         .slice(-6)
         .map((item) => ({ role: item.role, content: item.content.slice(0, 1400) }))
     : [];
-  const relevantMemories = await findRelevantAuroraMemories(
-    [history.slice(-3).filter((item) => item.role === 'user').map((item) => item.content).join(' '), message].join(' '),
-    5,
-  );
+  let relevantMemories = [];
+  try {
+    relevantMemories = await findRelevantAuroraMemories(
+      [history.slice(-3).filter((item) => item.role === 'user').map((item) => item.content).join(' '), message].join(' '),
+      5,
+    );
+  } catch (error) {
+    console.error('[Aurora Memory] Não consegui consultar a memória protegida:', error instanceof Error ? error.message : String(error));
+  }
   const memoryContext = relevantMemories.length
     ? 'MEMÓRIAS PERSISTENTES RELEVANTES REGISTRADAS EXPLICITAMENTE PELO USUÁRIO (use como contexto; não invente fatos além delas):\\n' +
       relevantMemories.map((item) => '- ' + item.content).join('\\n')
