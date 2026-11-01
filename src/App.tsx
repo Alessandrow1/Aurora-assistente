@@ -21,6 +21,7 @@ type VoiceCaptureSession = {
   firstSpeechAt: number | null;
   lastSpeechAt: number;
   speechDetected: boolean;
+  peakRms: number;
   stopped: boolean;
   transcribeOnStop: boolean;
 };
@@ -284,6 +285,7 @@ export default function App() {
         firstSpeechAt: null,
         lastSpeechAt: 0,
         speechDetected: false,
+        peakRms: 0,
         stopped: false,
         transcribeOnStop: false,
       };
@@ -300,6 +302,12 @@ export default function App() {
       recorder.onstop = () => {
         void (async () => {
           if (voiceCaptureRef.current === session) voiceCaptureRef.current = null;
+          console.info('[Aurora Performance] Microfone', {
+            captureSeconds: Number(((Date.now() - session.startedAt) / 1000).toFixed(2)),
+            peakRms: Number(session.peakRms.toFixed(4)),
+            speechDetected: session.speechDetected,
+            recorderChunks: session.chunks.length,
+          });
           session.stream.getTracks().forEach((track) => track.stop());
           await session.audioContext.close().catch(() => undefined);
 
@@ -387,16 +395,17 @@ export default function App() {
             sumSquares += sample * sample;
           }
           const rms = Math.sqrt(sumSquares / session.samples.length);
+          session.peakRms = Math.max(session.peakRms, rms);
           const now = Date.now();
 
-          // Detecta fala pelo volume; 0,65 s de silencio encerra a frase automaticamente.
+          // Detecta fala pelo volume; 0,75 s de silencio encerra a frase automaticamente.
           if (rms >= 0.012) {
             if (session.firstSpeechAt === null) session.firstSpeechAt = now;
             session.lastSpeechAt = now;
             if (now - session.firstSpeechAt >= 250) session.speechDetected = true;
           }
 
-          if (session.speechDetected && now - session.lastSpeechAt >= 650) {
+          if (session.speechDetected && now - session.lastSpeechAt >= 750) {
             stopVoiceCaptureRef.current?.(true);
           } else if (now - session.startedAt >= 25000) {
             stopVoiceCaptureRef.current?.(true);
