@@ -634,3 +634,10 @@ button.memory-item-main { cursor: pointer; }
 }
 .memory-suggestion button:last-child { color: #aaa2c5; background: rgba(255,255,255,.04); }
 body:not(.aurora-ui-open) .pet-memory-hub { display: none !important; }
+
+.pet-chat-card .chat-subtitle {
+  max-width: 258px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
