@@ -19,6 +19,8 @@ declare global {
       openFolder: (folderId: string) => Promise<{ success: boolean; label: string }>;
       openUrl: (url: string) => Promise<{ success: boolean }>;
       speak: (text: string) => Promise<{ audioBase64: string; voice: string; provider: 'elevenlabs' | 'edge'; fallbackReason?: string }>;
+      transcribeAudio: (samples: Float32Array) => Promise<{ text: string }>;
+      onSpeechRecognitionStatus: (callback: (status: { state: 'loading' | 'downloading' | 'ready' | 'error'; message: string }) => void) => () => void;
       setMousePassthrough: (ignore: boolean) => void;
       onCursorPosition: (callback: (position: { x: number; y: number }) => void) => () => void;
       moveWindowBy: (deltaX: number, deltaY: number) => void;
@@ -26,8 +28,6 @@ declare global {
       close: () => void;
       version: () => Promise<string>;
     };
-    SpeechRecognition?: new () => any;
-    webkitSpeechRecognition?: new () => any;
   }
 }
 
