@@ -791,13 +791,13 @@ export default function App() {
 
     // Autodescricao deterministica: evita que modelos pequenos inventem corpo, sentimentos ou capacidades.
     if (/\b(quem voce e|quem e voce|quem e vc|se apresente|fale sobre voce|me fale sobre voce|descreva voce)\b/.test(text)) {
-      return 'Sou a Aurora, sua parceira de call. Meu jeito é mandão, debochado e implicante, mas eu te ajudo de verdade. Meu visual na tela é o avatar Live2D 6xb. Meu cérebro roda localmente pelo Ollama; o modelo padrão é o Qwen 3.5 9B. Tenho voz, escuto quando o microfone está ativo, abro programas e pastas permitidos e analiso capturas da sua tela.';
+      return 'Sou a Aurora, sua parceira de call. Meu jeito é mandão, debochado e implicante, mas eu te ajudo de verdade. Meu visual na tela é o avatar Live2D 6xb. Meu cérebro roda localmente pelo Ollama; o modelo padrão é o Qwen 3.5 9B. Tenho voz, escuto quando o microfone está ativo, abro programas e pastas permitidos, analiso sua tela e posso estudar com você no Modo Estudo.';
     }
     if (/\b(como voce e|como e seu avatar|qual e sua aparencia|descreva sua aparencia|como voce aparece|como voce se parece)\b/.test(text)) {
       return 'Meu visual é o avatar Live2D 6xb que aparece na sua tela. Posso comentar minha aparência quando você me mostrar uma captura ou imagem, mas não vou inventar detalhes que não consigo confirmar. E não, não vou fingir que me olhei pela câmera sem você me mandar uma imagem.';
     }
     if (/\b(o que voce consegue fazer|o que voce sabe fazer|quais sao suas capacidades|o que voce pode fazer)\b/.test(text)) {
-      return 'Consigo conversar por voz, abrir programas e pastas conhecidos, acessar sites e analisar o que está aparecendo na sua tela. Minha visão é somente de leitura: eu explico o que vejo, mas não controlo mouse nem teclado.';
+      return 'Consigo conversar por voz, abrir programas e pastas conhecidos, acessar sites e analisar sua tela. No Modo Estudo, leio uma captura nova a cada pergunta e explico questões do ENEM e de concursos. Minha visão é somente de leitura: não controlo mouse nem teclado.';
     }
     if (/\b(como voce funciona|qual modelo voce usa|qual e seu cerebro|voce roda localmente|onde sua ia roda)\b/.test(text)) {
       return 'Meu cérebro roda pelo Ollama no seu computador, e o padrão do projeto agora é Qwen 3.5 9B. O 6xb é meu avatar, não meu cérebro. Minha voz usa ElevenLabs quando está configurada, com alternativas do Edge TTS e do Windows. A transcrição do microfone é feita localmente pelo Whisper.';
