@@ -21,6 +21,8 @@ declare global {
       listKnowledgeDocuments: () => Promise<{ documents: Array<{ id: string; name: string; extension: string; size: number; addedAt: string; characterCount: number; chunkCount: number }> }>;
       deleteKnowledgeDocument: (id: string) => Promise<{ deleted: boolean; name?: string }>;
       searchKnowledge: (query: string) => Promise<{ results: Array<{ type: string; title: string; source: string; content: string }> }>;
+      getIdentityProfile: () => Promise<{ name: string; avatar: string; appearanceDescription: string; personality: string }>;
+      saveIdentityProfile: (profile: { name: string; avatar: string; appearanceDescription: string; personality: string }) => Promise<{ name: string; avatar: string; appearanceDescription: string; personality: string }>;
       getEmbeddingStatus: () => Promise<{ checkedAt?: number; installed: boolean; model: string }>;
       installEmbeddingModel: () => Promise<{ installed: boolean; indexed: number; documents: number; conversations: number }>;
       onEmbeddingStatus: (callback: (status: { state: string; message?: string; percent?: number | null; completed?: number; total?: number }) => void) => () => void;
