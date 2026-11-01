@@ -16,8 +16,8 @@ declare global {
       saveElevenLabsKey: (apiKey: string) => Promise<{ configured: boolean }>;
       clearElevenLabsKey: () => Promise<{ configured: boolean }>;
       chat: (payload: { message: string; history: AuroraMessage[]; voiceMode?: boolean; imageBase64?: string }, onChunk?: (content: string) => void) => Promise<{ text: string }>;
-      captureScreen: () => Promise<{ imageBase64: string; width: number; height: number; screenWidth: number; screenHeight: number }>;
-      executeAction: (action: { type: 'click'; x: number; y: number; imageWidth: number; imageHeight: number } | { type: 'scroll'; x: number; y: number; delta: number; imageWidth: number; imageHeight: number } | { type: 'type'; text: string } | { type: 'key'; key: string }) => Promise<{ success: boolean; description: string }>; 
+      captureScreen: () => Promise<{ captureId: string; windowTitle: string; imageBase64: string; width: number; height: number; screenWidth: number; screenHeight: number }>;
+      executeAction: (action: { captureId: string; type: 'click'; x: number; y: number; imageWidth: number; imageHeight: number } | { captureId: string; type: 'scroll'; x: number; y: number; delta: number; imageWidth: number; imageHeight: number } | { captureId: string; type: 'type'; text: string } | { captureId: string; type: 'key'; key: string }) => Promise<{ success: boolean; description: string }>; 
       openApp: (appId: string) => Promise<{ success: boolean; label: string }>;
       openFolder: (folderId: string) => Promise<{ success: boolean; label: string }>;
       openUrl: (url: string) => Promise<{ success: boolean }>;
