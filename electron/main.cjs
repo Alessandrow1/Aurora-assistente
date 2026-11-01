@@ -523,7 +523,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
     : '';
   const normalizedRequest = normalizeMemoryText(message);
   const asksForLongResponse = /\b(detalhes?|detalhad[oa]s?|passo a passo|aprofundad[oa]s?|plano completo|guia completo|explique detalhadamente|analise completa|compare em detalhes)\b/i.test(normalizedRequest);
-  const needsReasoning = /\b(por que|porque|explique|compare|analise|calcule|calcular|resolva|resolver|planeje|planejar|estrategia|diagnostique|depure|debug|vantagens|desvantagens|qual compensa|qual e melhor|como funciona|causa|consequencia)\b/i.test(normalizedRequest);
+  const needsReasoning = /\b(por que|porque|explique|compare|analise|calcule|calcular|resolva|resolver|planeje|planejar|questione|questionar|questionamento|conclusoes|premissas|pressupostos|critique|criticar|avaliar|avalie|alternativas|estrategia|diagnostique|depure|debug|vantagens|desvantagens|qual compensa|qual e melhor|como funciona|causa|consequencia)\b/i.test(normalizedRequest);
 
   const numPredict = imageBase64 ? 650 : asksForLongResponse ? 1800 : needsReasoning ? 1400 : 240;
 
