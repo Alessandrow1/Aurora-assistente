@@ -10,6 +10,7 @@ type PendingAction =
 
 type VoiceCaptureSession = {
   stream: MediaStream;
+  source: MediaStreamAudioSourceNode;
   recorder: MediaRecorder;
   chunks: Blob[];
   audioContext: AudioContext;
@@ -272,6 +273,7 @@ export default function App() {
         : new MediaRecorder(stream);
       const session: VoiceCaptureSession = {
         stream,
+        source,
         recorder,
         chunks: [],
         audioContext,
