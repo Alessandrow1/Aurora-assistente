@@ -4,6 +4,9 @@ contextBridge.exposeInMainWorld('aurora', {
   getConfig: () => ipcRenderer.invoke('aurora:get-config'),
   checkOllama: () => ipcRenderer.invoke('aurora:check-ollama'),
   saveSettings: (payload) => ipcRenderer.invoke('aurora:save-settings', payload),
+  getElevenLabsStatus: () => ipcRenderer.invoke('aurora:elevenlabs-status'),
+  saveElevenLabsKey: (apiKey) => ipcRenderer.invoke('aurora:save-elevenlabs-key', apiKey),
+  clearElevenLabsKey: () => ipcRenderer.invoke('aurora:clear-elevenlabs-key'),
   chat: (payload, onChunk) => {
     const requestId = Date.now().toString(36) + Math.random().toString(36).slice(2);
     const listener = (_event, data) => {

@@ -9,6 +9,11 @@ let activeSubdelegate: LAppSubdelegate | null = null;
 export function adjustLive2DZoom(factor: number): number {
   return activeSubdelegate?.adjustZoom(factor) ?? 1;
 }
+
+// AURORA_LIPSYNC_HOST: nivel de abertura da boca (0 a 1) vindo do audio real.
+export function setLive2DLipSync(level: number): void {
+  activeSubdelegate?.setLipSyncLevel(level);
+}
 /** Inicializa o Cubism em um canvas pertencente ao componente React da Aurora. */
 export function mountLive2D(canvas: HTMLCanvasElement): () => void {
   let disposed = false;

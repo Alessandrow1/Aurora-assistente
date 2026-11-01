@@ -1,0 +1,111 @@
+AURORA — ARQUIVO DE CONTINUIDADE DO PROJETO
+Atualizado em: 01/11/2026
+Idioma de trabalho: português brasileiro
+
+1. PROJETO E CAMINHO LOCAL
+Nome: Aurora-assistente
+Pasta no Windows:
+C:\Users\Alessandro Linhares\Desktop\AURORA\Aurora-assistente
+Repositório GitHub: Alessandrow1/Aurora-assistente
+Branch de trabalho conhecida: feature/live2d-avatar
+Último commit remoto confirmado anteriormente: e73a9c2 — checkpoint: Live2D mascot, zoom and system tray
+ATENÇÃO: e73a9c2 é o último commit confirmado no histórico anterior. Depois das atualizações de voz e zoom, é necessário executar o novo backup e conferir o hash mais recente.
+
+2. OBJETIVO DA AURORA
+Assistente desktop para Windows, com personagem Live2D flutuante, conversa com modelo local via Ollama, fala sintetizada, lip sync, análise opcional de tela e comandos locais com confirmação.
+O usuário prefere manter o Live2D dentro do Electron e não depender de programas externos como VTube Studio ou Unity.
+
+3. TECNOLOGIAS E ESTRUTURA
+- Electron + React + TypeScript + Vite.
+- Electron main process: electron/main.cjs
+- Preload protegido: electron/preload.cjs
+- Interface principal: src/App.tsx
+- Personagem: src/components/Avatar3D.tsx
+- Host Live2D: src/live2d/Live2DHost.ts
+- SDK Live2D: src/live2d/sdk/
+- Ollama local: http://127.0.0.1:11434
+- Modelos selecionáveis conhecidos: qwen3.5:2b, qwen3.5:4b e qwen3.5:9b.
+- Voz de reserva conhecida: node-edge-tts, pt-BR-LeticiaNeural; SpeechSynthesis do Windows é o último fallback no React.
+
+4. FUNCIONALIDADES JÁ IMPLEMENTADAS E CONFIRMADAS
+- Modelo Live2D 6xb carregado localmente no Electron.
+- Janela flutuante transparente, sem moldura, always-on-top e ícone na bandeja.
+- Menu da bandeja com Mostrar Aurora e Encerrar Aurora.
+- Modo mascote limpo; Ctrl+Shift+Espaço alterna a interface.
+- Mouse passthrough fora da área interativa, arrastar a janela e zoom manual pelo scroll do mouse.
+- Chat não deve redimensionar o palco do Live2D nem resetar o zoom.
+- Lip sync por AudioAnalyser/RMS ligado ao parâmetro ParamMouthOpenY; o usuário já confirmou que a boca se movimentou com a fala.
+- Sistema de emoções/humor visual e estado de fala.
+- Cálculo de enquadramento baseado nos vértices visíveis do modelo em LAppLive2DManager.getFittingScaleLimit.
+- O usuário solicitou que a Aurora inicie no maior zoom seguro automaticamente, sem cortar cabeça, corpo ou pés.
+- Ajustes automáticos de zoom foram incorporados no ciclo de carregamento do Live2D; o usuário deve confirmar visualmente a abertura no zoom desejado após a última atualização.
+
+5. VOZ ELEVENLABS — CONFIGURAÇÃO ALVO
+Objetivo: usar a mesma voz testada no laboratório NOVAAURORA.
+Voice ID: 29BpZaywSObgMLvRvBhB
+Model ID: eleven_v4_turbo
+Protocolo correto: WebSocket Text-to-Dialogue, não o REST /text-to-speech comum.
+A chave é armazenada cifrada por Electron safeStorage/DPAPI do Windows em arquivo localizado em app.getPath('userData'), fora do repositório do projeto.
+NUNCA colocar chave API neste TXT, no GitHub, no código-fonte ou em mensagens de chat.
+
+Histórico recente dos problemas e correções:
+- Primeira integração tentou o endpoint REST Text-to-Speech; não compatível com o modelo eleven_v4_turbo.
+- Integração posterior migrou para WebSocket Text-to-Dialogue.
+- O primeiro teste chegou a falar uma vez pela ElevenLabs; em chamadas seguintes apareceu `input_text_empty`, e o Edge TTS apresentou `WebSocket closed before turn.end`.
+- Versões posteriores ajustaram uso do pacote `ws` que já estava instalado e adicionaram `flush: true` para forçar saída de falas curtas.
+- Um instalador v6 falhou antes de alterar arquivos porque chamou `node.cmd`, que não foi reconhecido no ambiente do usuário.
+- Instalador v7 corrigiu a detecção do executável Node/npm. O usuário informou “FOI” após executar a versão v7.
+- A voz precisa ser validada com várias respostas consecutivas, principalmente respostas curtas e longas. Não afirmar que a integração está definitivamente resolvida sem esse teste.
+
+6. INSTALADORES E BACKUPS RECENTES
+- Integração inicial ElevenLabs: Aurora-Integrar-ElevenLabs-v2.ps1 (a primeira versão falhou por marcador de código incorreto; restauração automática foi executada).
+- Correção de voz + zoom: versões v3/v4; v3 parou antes de alterar arquivos por busca de marcador no arquivo errado; v4 corrigiu a verificação.
+- Correções WebSocket/flush: Aurora-Corrigir-ElevenLabs-v5.ps1 e v6.ps1.
+- v6 falhou antes de alterar arquivos por procurar node.cmd.
+- Aurora-Corrigir-ElevenLabs-v7.ps1 corrigiu o caminho do executável; usuário informou que funcionou.
+- Os instaladores criaram backups temporários antes de alterar arquivos. Os caminhos temporários completos devem ser consultados nos próprios logs do CMD se necessário.
+- Backup local completo anterior confirmado: C:\Users\Alessandro Linhares\Downloads\Aurora-Backup-Completo-20261101-105716.zip (aprox. 100,7 MB; 590 entradas; incluía projeto, SDK e pacote de modelo BOOTH). Esse backup não foi enviado ao GitHub.
+
+7. BUILD E AVISOS
+Build previamente aprovado em integração anterior:
+`npm run build` executa `tsc --noEmit && vite build`.
+Aviso recorrente não bloqueante:
+`<script src="./live2d/Core/live2dcubismcore.js"> ... can't be bundled without type="module" attribute`
+Builds anteriores finalizaram com `✓ built`. O build exato após o instalador v7 precisa ser confirmado se o log não estiver disponível.
+
+8. GIT — PROCEDIMENTO DE BACKUP
+Script fornecido junto deste TXT:
+Aurora-Backup-GitHub-v8.ps1
+Ele:
+- trabalha na pasta local do projeto;
+- exige branch de trabalho (não main/master);
+- verifica remote origin no GitHub;
+- mostra as alterações antes de confirmar;
+- executa git add -A respeitando .gitignore;
+- bloqueia nomes de arquivos que aparentam conter credenciais e verifica o diff preparado por padrões comuns de API key;
+- pede confirmação antes do commit e do push;
+- envia a branch atual ao GitHub.
+Comando no CMD:
+powershell -NoProfile -ExecutionPolicy Bypass -File "%USERPROFILE%\Downloads\Aurora-Backup-GitHub-v8.ps1"
+Mensagem de commit padrão:
+checkpoint: ElevenLabs WebSocket e zoom automatico Live2D
+Se push falhar após o commit, o commit continua salvo localmente; corrigir autenticação/conexão e repetir `git push -u origin feature/live2d-avatar` se essa continuar sendo a branch atual.
+
+9. PRÓXIMOS TESTES
+1. Executar Aurora e confirmar que inicia no maior zoom seguro, sem recortar a personagem.
+2. Testar 3 a 5 falas consecutivas via ElevenLabs, incluindo uma resposta muito curta e outra longa.
+3. Confirmar que áudio continua animando ParamMouthOpenY e que o Edge TTS/Windows só é usado como reserva quando realmente necessário.
+4. Se aparecer erro, copiar somente mensagem de erro e status HTTP/eventos; nunca compartilhar a chave.
+5. Rodar `npm run build` e conferir `git status --short`.
+6. Executar Aurora-Backup-GitHub-v8.ps1 e confirmar o hash do commit e o push.
+
+10. PREFERÊNCIAS DE TRABALHO DO USUÁRIO
+- Orientar em português brasileiro, com tom próximo e direto.
+- Dar comandos de CMD/PowerShell prontos para copiar, preferencialmente em uma linha.
+- Não presumir que comandos foram executados sem o usuário confirmar.
+- Para mudanças grandes, criar instalador PowerShell com backup, validação e restauração automática em caso de falha.
+- Preservar o trabalho já funcional; não alterar Lip Sync, zoom, SDK ou modelo sem necessidade.
+- Nunca pedir para o usuário colar a chave ElevenLabs no chat.
+- O usuário quer manter assets do modelo/SDK localmente e não distribuir o modelo. A licença do SDK e dos assets deve continuar sendo respeitada; não assumir domínio público sem conferir a licença aplicável.
+
+FIM DO ARQUIVO DE CONTINUIDADE

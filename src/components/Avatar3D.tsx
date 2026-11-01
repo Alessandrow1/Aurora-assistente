@@ -10,7 +10,7 @@ type Props = {
 };
 
 /** Renderiza localmente a personagem Live2D 6xb dentro da janela transparente. */
-export default function Avatar3D(_props: Props) {
+export default function Avatar3D(props: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const hitZoneRef = useRef<HTMLDivElement>(null);
   const [modelFailed, setModelFailed] = useState('');
@@ -28,6 +28,14 @@ export default function Avatar3D(_props: Props) {
     let draggingPointerId: number | null = null;
     let lastScreenX = 0;
     let lastScreenY = 0;
+
+    const onAutomaticZoom = (event: Event) => {
+      const scale = (event as CustomEvent<number>).detail;
+      if (Number.isFinite(scale) && scale > 0) {
+        hitZone.style.setProperty('--aurora-hit-scale', String(scale));
+      }
+    };
+    window.addEventListener('aurora:zoom-updated', onAutomaticZoom);
 
     const syncMouseMode = () => {
       window.aurora.setMousePassthrough(!(uiOpen || pointerInside || draggingPointerId !== null));
@@ -128,11 +136,72 @@ export default function Avatar3D(_props: Props) {
       hitZone.removeEventListener('pointermove', onPointerMove);
       hitZone.removeEventListener('pointerup', finishDrag);
       hitZone.removeEventListener('pointercancel', finishDrag);
+      window.removeEventListener('aurora:zoom-updated', onAutomaticZoom);
       window.aurora.setMousePassthrough(false);
       disposeLive2D?.();
       canvas.remove();
     };
   }, []);
+
+  // AURORA_LIPSYNC_REACT: analisa o audio reproduzido e anima ParamMouthOpenY.
+  useEffect(() => {
+    let cancelled = false;
+    let frame = 0;
+    let sendLevel: ((level: number) => void) | null = null;
+    let smoothed = 0;
+    let fallbackPhase = 0;
+    const analyser = props.audioAnalyser;
+    const samples = analyser ? new Uint8Array(analyser.fftSize) : null;
+
+    const start = async () => {
+      try {
+        const live2d = await import('../live2d/Live2DHost');
+        if (cancelled) return;
+        sendLevel = live2d.setLive2DLipSync;
+
+        const update = () => {
+          if (cancelled) return;
+          let target = 0;
+
+          if (analyser && samples) {
+            try {
+              analyser.getByteTimeDomainData(samples);
+              let sumSquares = 0;
+              for (let index = 0; index < samples.length; index++) {
+                const sample = (samples[index] - 128) / 128;
+                sumSquares += sample * sample;
+              }
+              const rms = Math.sqrt(sumSquares / samples.length);
+              const intensity = Math.max(0, Math.min(1, (rms - 0.012) * 7.5));
+              target = Math.pow(intensity, 0.82) * 0.86;
+            } catch {
+              target = 0;
+            }
+          } else if (props.speaking) {
+            // Fallback visual para a voz do Windows, que nao passa pelo AudioAnalyser.
+            fallbackPhase += 0.17;
+            target = 0.10 + ((Math.sin(fallbackPhase * 2.2) + 1) * 0.5) * 0.24;
+          }
+
+          const smoothing = target > smoothed ? 0.48 : 0.20;
+          smoothed += (target - smoothed) * smoothing;
+          sendLevel?.(Math.max(0, Math.min(0.88, smoothed)));
+          frame = requestAnimationFrame(update);
+        };
+
+        update();
+      } catch (error) {
+        console.warn('[Aurora lip-sync] Nao foi possivel iniciar o controle da boca.', error);
+      }
+    };
+
+    void start();
+    return () => {
+      cancelled = true;
+      if (frame) cancelAnimationFrame(frame);
+      sendLevel?.(0);
+    };
+  }, [props.audioAnalyser, props.speaking]);
 
   return (
     <div className="avatar-stage">

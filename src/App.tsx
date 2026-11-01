@@ -79,6 +79,21 @@ export default function App() {
   const sendMessageRef = useRef<(rawText: string) => Promise<void>>(async () => undefined);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const [elevenLabsConfigured, setElevenLabsConfigured] = useState(false);
+  const [elevenLabsStorageAvailable, setElevenLabsStorageAvailable] = useState(false);
+  const [elevenLabsKeyInput, setElevenLabsKeyInput] = useState('');
+  const [elevenLabsSaving, setElevenLabsSaving] = useState(false);
+  useEffect(() => {
+    window.aurora.getElevenLabsStatus()
+      .then((status) => {
+        setElevenLabsConfigured(status.configured);
+        setElevenLabsStorageAvailable(status.storageAvailable);
+      })
+      .catch(() => {
+        setElevenLabsConfigured(false);
+        setElevenLabsStorageAvailable(false);
+      });
+  }, []);
   thinkingRef.current = thinking;
 
   const resetAudioAnalysis = () => {
@@ -138,7 +153,12 @@ export default function App() {
 
     try {
       const result = await window.aurora.speak(text);
-      if (!result?.audioBase64) throw new Error('A voz neural não retornou áudio.');
+      if (!result?.audioBase64) throw new Error('A voz neural nao retornou audio.');
+      if (result.provider === 'edge' && result.fallbackReason) {
+        setNotice('ElevenLabs indisponivel: ' + result.fallbackReason.slice(0, 150) + '. Usando Edge TTS temporariamente.');
+      } else if (result.provider === 'elevenlabs') {
+        setNotice('');
+      }
 
       const audio = new Audio('data:audio/mpeg;base64,' + result.audioBase64);
       audioRef.current = audio;
@@ -206,7 +226,8 @@ export default function App() {
           setSpeaking(false);
           setEmotion('neutral');
         };
-        setNotice('A voz neural está indisponível. Estou usando temporariamente a voz instalada no Windows.');
+        const neuralDetail = error instanceof Error ? error.message : String(error);
+        setNotice('A voz neural falhou: ' + neuralDetail.slice(0, 160) + '. Estou usando temporariamente a voz instalada no Windows.');
         synth.cancel();
         synth.speak(utterance);
       } catch (fallbackError) {
@@ -550,6 +571,40 @@ export default function App() {
     startRecognitionSession();
   };
 
+  const saveElevenLabsKey = async () => {
+    const key = elevenLabsKeyInput.trim();
+    if (!key) {
+      setNotice('Cole sua chave API da ElevenLabs antes de salvar.');
+      return;
+    }
+    setElevenLabsSaving(true);
+    setNotice('');
+    try {
+      const result = await window.aurora.saveElevenLabsKey(key);
+      setElevenLabsConfigured(result.configured);
+      setElevenLabsKeyInput('');
+      setNotice('Chave da ElevenLabs salva com criptografia protegida pelo Windows.');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Nao consegui salvar a chave da ElevenLabs.');
+    } finally {
+      setElevenLabsSaving(false);
+    }
+  };
+
+  const removeElevenLabsKey = async () => {
+    setElevenLabsSaving(true);
+    setNotice('');
+    try {
+      await window.aurora.clearElevenLabsKey();
+      setElevenLabsConfigured(false);
+      setElevenLabsKeyInput('');
+      setNotice('Chave da ElevenLabs removida. A Aurora usara a voz de reserva.');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Nao consegui remover a chave da ElevenLabs.');
+    } finally {
+      setElevenLabsSaving(false);
+    }
+  };
   const saveSettings = async (event: FormEvent) => {
     event.preventDefault();
     setSaving(true);
@@ -773,10 +828,35 @@ export default function App() {
 
               <div className="modal-divider" />
               <div className="settings-bottom">
-                <div>
-                  <strong>Voz de anime da Aurora</strong>
-                  <p>A voz padrão é a Leticia Neural, uma voz feminina jovem, com pitch +42 Hz e fala 12% mais rápida. A voz é sintetizada online e precisa de internet.</p>
-                  <button className="pet-voice-test" type="button" onClick={() => void speak('Oii! Eu sou a Aurora! Hehehe! Vai demorar muito para me dar uma missão? Estou ficando entediada!')}>▶ Testar minha voz</button>
+                <div className="elevenlabs-voice-settings">
+                  <strong>Voz ElevenLabs da Aurora</strong>
+                  <p>Vamos usar a voz que voce testou no laboratorio NOVAAURORA. A sintese usa sua conta ElevenLabs e pode consumir os creditos do seu plano.</p>
+                  <div className="secure-note">
+                    <span>{elevenLabsConfigured ? 'âœ“' : '!'}</span>
+                    <span>{elevenLabsConfigured ? 'Chave cadastrada e armazenada de forma criptografada pelo Windows.' : 'Nenhuma chave ElevenLabs cadastrada. A voz atual de reserva continua disponivel.'}</span>
+                  </div>
+                  {!elevenLabsStorageAvailable && <p className="field-help">O armazenamento seguro ainda nao esta disponivel. Feche e abra a Aurora novamente antes de salvar a chave.</p>}
+                  <label className="field-label" htmlFor="elevenlabs-api-key">Chave API da ElevenLabs</label>
+                  <input
+                    id="elevenlabs-api-key"
+                    className="settings-input"
+                    type="password"
+                    value={elevenLabsKeyInput}
+                    onChange={(event) => setElevenLabsKeyInput(event.target.value)}
+                    placeholder={elevenLabsConfigured ? 'Chave ja cadastrada â€” cole outra para substituir' : 'Cole sua xi-api-key aqui'}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <div className="elevenlabs-key-actions">
+                    <button className="pet-voice-test" type="button" onClick={() => void saveElevenLabsKey()} disabled={elevenLabsSaving || !elevenLabsStorageAvailable || !elevenLabsKeyInput.trim()}>
+                      {elevenLabsSaving ? 'Salvando...' : 'Salvar chave protegida'}
+                    </button>
+                    {elevenLabsConfigured && <button className="text-button" type="button" onClick={() => void removeElevenLabsKey()} disabled={elevenLabsSaving}>Remover chave</button>}
+                  </div>
+                  <button className="pet-voice-test" type="button" onClick={() => void speak('Oii! Eu sou a Aurora! Hehehe! Vai demorar muito para me dar uma missao? Estou ficando entediada!')} disabled={!elevenLabsConfigured}>
+                    â–¶ Testar voz ElevenLabs
+                  </button>
+                  <p className="field-help">Voz: 29BpZaywSObgMLvRvBhB Â· Modelo: eleven_v4_turbo. A chave nao e exibida novamente, nao vai para o React storage e nao deve ser enviada pelo chat.</p>
                 </div>
                 <div>
                   <strong>Visão e privacidade</strong>

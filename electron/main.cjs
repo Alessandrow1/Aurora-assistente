@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, session, desktopCapturer, shell, screen, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, session, desktopCapturer, shell, screen, globalShortcut, safeStorage } = require('electron');
 const { Menu: AuroraTrayMenu, Tray: AuroraSystemTray, nativeImage: AuroraNativeImage } = require('electron'); // AURORA_TRAY_ELECTRON_IMPORT
 const path = require('node:path');
 const fs = require('node:fs');
@@ -8,6 +8,29 @@ const { promisify } = require('node:util');
 const execFileAsync = promisify(execFile);
 
 const OLLAMA_URL = 'http://127.0.0.1:11434';
+const ELEVENLABS_VOICE_ID = '29BpZaywSObgMLvRvBhB';
+const ELEVENLABS_MODEL_ID = 'eleven_v4_turbo';
+const ELEVENLABS_OUTPUT_FORMAT = 'mp3_44100_128';
+// AURORA_ELEVENLABS_TTS: credencial cifrada pelo DPAPI do Windows via Electron safeStorage.
+const elevenLabsKeyPath = () => path.join(app.getPath('userData'), 'elevenlabs-api-key.bin');
+
+async function readElevenLabsApiKey() {
+  const keyPath = elevenLabsKeyPath();
+  if (!fs.existsSync(keyPath)) return null;
+  if (!(await safeStorage.isAsyncEncryptionAvailable())) {
+    throw new Error('O armazenamento seguro do Windows nao esta disponivel.');
+  }
+  const encrypted = await fsp.readFile(keyPath);
+  const decrypted = await safeStorage.decryptStringAsync(encrypted);
+  if (decrypted.shouldReEncrypt) {
+    const renewed = await safeStorage.encryptStringAsync(decrypted.result);
+    const temporaryPath = `${keyPath}.tmp`;
+    await fsp.writeFile(temporaryPath, renewed, { mode: 0o600 });
+    await fsp.rename(temporaryPath, keyPath);
+  }
+  return decrypted.result;
+}
+
 const DEFAULT_MODEL = 'qwen3.5:2b';
 const ALLOWED_MODELS = new Set(['qwen3.5:2b', 'qwen3.5:4b', 'qwen3.5:9b']);
 
@@ -195,6 +218,34 @@ ipcMain.handle('aurora:save-settings', (_event, payload = {}) => {
   return { model };
 });
 
+ipcMain.handle('aurora:elevenlabs-status', async () => {
+  const configured = fs.existsSync(elevenLabsKeyPath());
+  let storageAvailable = false;
+  try { storageAvailable = await safeStorage.isAsyncEncryptionAvailable(); } catch { storageAvailable = false; }
+  return { configured, storageAvailable, voiceId: ELEVENLABS_VOICE_ID, modelId: ELEVENLABS_MODEL_ID };
+});
+
+ipcMain.handle('aurora:save-elevenlabs-key', async (_event, rawKey) => {
+  const apiKey = typeof rawKey === 'string' ? rawKey.trim() : '';
+  if (apiKey.length < 20 || apiKey.length > 512 || /\s/.test(apiKey)) {
+    throw new Error('A chave da ElevenLabs parece invalida. Confira o valor e tente novamente.');
+  }
+  if (!(await safeStorage.isAsyncEncryptionAvailable())) {
+    throw new Error('Nao foi possivel ativar a criptografia protegida pelo Windows.');
+  }
+  const encrypted = await safeStorage.encryptStringAsync(apiKey);
+  const targetPath = elevenLabsKeyPath();
+  await fsp.mkdir(path.dirname(targetPath), { recursive: true });
+  const temporaryPath = `${targetPath}.tmp`;
+  await fsp.writeFile(temporaryPath, encrypted, { mode: 0o600 });
+  await fsp.rename(temporaryPath, targetPath);
+  return { configured: true };
+});
+
+ipcMain.handle('aurora:clear-elevenlabs-key', async () => {
+  await fsp.rm(elevenLabsKeyPath(), { force: true });
+  return { configured: false };
+});
 ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   const message = typeof payload.message === 'string' ? payload.message.trim() : '';
   if (!message) throw new Error('Escreva uma mensagem para a Aurora.');
@@ -308,16 +359,136 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   return { text: answer.trim() || 'Não consegui formular uma resposta desta vez.' };
 });
 
+// AURORA_ELEVENLABS_V7_FLUSH_NODE_PATH: força a geração mesmo em respostas curtas.
+async function synthesizeElevenLabsDialogue(text, apiKey) {
+  const cleanInput = typeof text === 'string' ? text.trim() : '';
+  if (!cleanInput) throw new Error('O texto para a ElevenLabs chegou vazio antes da requisicao.');
+
+  let WebSocket;
+  try { WebSocket = require('ws'); }
+  catch { throw new Error('O pacote ws nao esta disponivel no processo principal do Electron.'); }
+  if (typeof WebSocket !== 'function') throw new Error('O pacote ws nao exportou um construtor WebSocket valido.');
+
+  const query = new URLSearchParams({
+    model_id: ELEVENLABS_MODEL_ID,
+    output_format: ELEVENLABS_OUTPUT_FORMAT,
+  });
+  const endpoint = `wss://api.elevenlabs.io/v1/text-to-dialogue/stream-input?${query.toString()}`;
+
+  return await new Promise((resolve, reject) => {
+    let socket;
+    let settled = false;
+    const audioChunks = [];
+    const timeout = setTimeout(() => fail(new Error('Tempo esgotado aguardando a ElevenLabs.')), 60000);
+
+    const closeSocket = () => {
+      try {
+        if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+          socket.close();
+        }
+      } catch { /* conexao ja encerrada */ }
+    };
+
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      closeSocket();
+      reject(error instanceof Error ? error : new Error(String(error)));
+    };
+
+    const complete = () => {
+      if (settled) return;
+      const audio = Buffer.concat(audioChunks);
+      if (audio.length < 100) {
+        fail(new Error('A ElevenLabs encerrou a sessao sem retornar audio suficiente.'));
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      // O servidor normalmente ja esta fechando apos is_final; nao interromper antes.
+      resolve(audio);
+    };
+
+    const sendFrame = (payload) => new Promise((sendResolve, sendReject) => {
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        sendReject(new Error('WebSocket nao esta aberto para enviar dados.'));
+        return;
+      }
+      socket.send(JSON.stringify(payload), (error) => {
+        if (error) sendReject(error);
+        else sendResolve();
+      });
+    });
+
+    try {
+      socket = new WebSocket(endpoint, {
+        headers: { 'xi-api-key': apiKey },
+        handshakeTimeout: 20000,
+        perMessageDeflate: false,
+      });
+    } catch (error) {
+      fail(error);
+      return;
+    }
+
+    socket.on('open', () => {
+      void (async () => {
+        // Primeiro frame obrigatório: registra a única voz permitida no eleven_v4_turbo.
+        await sendFrame({ voices: [ELEVENLABS_VOICE_ID] });
+        // flush:true é essencial para falas curtas, abaixo do buffer normal (~40 chars/8 palavras).
+        await sendFrame({
+          inputs: [{ text: cleanInput, voice_id: ELEVENLABS_VOICE_ID }],
+          flush: true,
+        });
+        // Fecha após solicitar flush; o servidor envia is_final depois de entregar o áudio.
+        await sendFrame({ close_socket: true });
+      })().catch(fail);
+    });
+
+    socket.on('message', (data) => {
+      if (settled) return;
+      try {
+        const raw = Buffer.isBuffer(data) ? data.toString('utf8') : String(data);
+        const message = JSON.parse(raw);
+        if (message.error) {
+          const detail = typeof message.error === 'string'
+            ? message.error
+            : (message.error.message || message.error.status || JSON.stringify(message.error));
+          if (/input_text_empty/i.test(String(detail))) {
+            throw new Error(`ElevenLabs informou input_text_empty; a Aurora enviou ${cleanInput.length} caracteres e ${cleanInput.split(/\s+/).filter(Boolean).length} palavras.`);
+          }
+          throw new Error(`ElevenLabs recusou a sintese: ${String(detail).slice(0, 260)}`);
+        }
+        if (typeof message.audio === 'string' && message.audio.length > 0) {
+          audioChunks.push(Buffer.from(message.audio, 'base64'));
+        }
+        // is_final_audio_for_turn marca o fim do áudio do turno; is_final encerra o socket.
+        if (message.is_final === true) complete();
+      } catch (error) {
+        fail(error);
+      }
+    });
+
+    socket.on('error', (error) => {
+      const detail = error instanceof Error ? error.message : String(error);
+      fail(new Error(`Falha no WebSocket da ElevenLabs: ${detail}`));
+    });
+
+    socket.on('close', (code, reason) => {
+      if (settled) return;
+      if (audioChunks.length >= 1 && code === 1000) {
+        complete();
+        return;
+      }
+      const explanation = reason && reason.length ? `: ${reason.toString('utf8').slice(0, 180)}` : '';
+      fail(new Error(`Conexao ElevenLabs encerrada antes da mensagem final (codigo ${code})${explanation}.`));
+    });
+  });
+}
 ipcMain.handle('aurora:speak', async (_event, rawText) => {
   const text = typeof rawText === 'string' ? rawText.trim().slice(0, 4200) : '';
-  if (!text) throw new Error('Não há texto para transformar em fala.');
-
-  let EdgeTTS;
-  try {
-    ({ EdgeTTS } = require('node-edge-tts'));
-  } catch {
-    throw new Error('O mecanismo de voz neural ainda não foi instalado. Feche a Aurora e execute ATUALIZAR-AURORA.bat.');
-  }
+  if (!text) throw new Error('Nao ha texto para transformar em fala.');
 
   const cleanText = text
     .replace(/```[\s\S]*?```/g, ' ')
@@ -333,17 +504,48 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
     .replace(/\brsrs+\b/gi, 'he he he')
     .replace(/\s+/g, ' ')
     .trim();
-  if (!cleanText) throw new Error('O texto ficou vazio depois de remover a formatação.');
+  if (!cleanText) throw new Error('O texto ficou vazio depois de remover a formatacao.');
+
+  let elevenLabsFailure = '';
+  let apiKey = null;
+  try { apiKey = await readElevenLabsApiKey(); }
+  catch (error) {
+    elevenLabsFailure = error instanceof Error ? error.message : 'Nao consegui ler a chave protegida.';
+    console.error('[Aurora ElevenLabs] Falha ao acessar a chave protegida:', elevenLabsFailure);
+  }
+
+  if (apiKey) {
+    try {
+      const audio = await synthesizeElevenLabsDialogue(cleanText, apiKey);
+      return {
+        audioBase64: audio.toString('base64'),
+        voice: ELEVENLABS_VOICE_ID,
+        provider: 'elevenlabs',
+      };
+    } catch (error) {
+      elevenLabsFailure = error instanceof Error ? error.message : String(error);
+      // Nunca registrar a chave ou o corpo de autenticacao no log.
+      console.error('[Aurora ElevenLabs] Falha na sessao TTD; usando voz de reserva:', elevenLabsFailure);
+    }
+  } else if (!elevenLabsFailure) {
+    elevenLabsFailure = 'Nenhuma chave ElevenLabs foi cadastrada.';
+  }
+
+  // Fallback Edge TTS mantido; o React continua recebendo MP3 e alimentando o Lip Sync.
+  let EdgeTTS;
+  try {
+    ({ EdgeTTS } = require('node-edge-tts'));
+  } catch {
+    throw new Error(`ElevenLabs indisponivel (${elevenLabsFailure}). O mecanismo Edge TTS tambem nao esta instalado.`);
+  }
 
   const audioPath = path.join(app.getPath('temp'), `aurora-leticia-${process.pid}-${Date.now()}.mp3`);
   const tts = new EdgeTTS({
     voice: 'pt-BR-LeticiaNeural',
     lang: 'pt-BR',
     outputFormat: 'audio-24khz-96kbitrate-mono-mp3',
-    // Mantemos a prosódia neutra para reduzir rejeições de SSML no serviço.
     rate: '+0%',
     pitch: '+0%',
-    // O fallback local entra em ação se o serviço remoto demorar.
     timeout: 25000,
   });
 
@@ -351,26 +553,23 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
     await tts.ttsPromise(cleanText, audioPath);
     const audioInfo = await fsp.stat(audioPath);
     if (!audioInfo.isFile() || audioInfo.size < 100) {
-      throw new Error('O serviço terminou sem gerar um arquivo MP3 válido.');
+      throw new Error('Edge TTS terminou sem gerar um MP3 valido.');
     }
     const audio = await fsp.readFile(audioPath);
-    return { audioBase64: audio.toString('base64'), voice: 'pt-BR-LeticiaNeural' };
+    return {
+      audioBase64: audio.toString('base64'),
+      voice: 'pt-BR-LeticiaNeural',
+      provider: 'edge',
+      fallbackReason: elevenLabsFailure,
+    };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    console.error('[Aurora TTS] Falha ao gerar áudio:', error);
-    if (/timeout|timed out/i.test(detail)) {
-      throw new Error('A voz neural demorou mais de 60 segundos para responder. Confira a internet e tente novamente.');
-    }
-    if (/voice|unsupported|speaker/i.test(detail)) {
-      throw new Error(`O serviço recusou a voz pt-BR-LeticiaNeural. Detalhe: ${detail.slice(0, 220)}`);
-    }
-    throw new Error(`Falha na geração da voz neural. Detalhe técnico: ${detail.slice(0, 300)}`);
+    console.error('[Aurora TTS] Falha tambem no Edge TTS:', detail);
+    throw new Error(`ElevenLabs: ${elevenLabsFailure}. Voz de reserva: ${detail.slice(0, 220)}`);
   } finally {
     await fsp.rm(audioPath, { force: true }).catch(() => undefined);
   }
 });
-
-
 ipcMain.handle('aurora:capture-screen', async () => {
   const wasVisible = Boolean(mainWindow?.isVisible());
   try {

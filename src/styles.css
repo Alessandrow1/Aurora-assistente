@@ -439,3 +439,7 @@ body:not(.aurora-ui-open) .pet-shell {
   cursor: grab;
 }
 .pet-avatar-wrap .avatar-hit-zone:active { cursor: grabbing; }
+/* AURORA_FIXED_AVATAR_STAGE_CHAT: o painel de chat sobrepoe o palco, sem redimensionar o canvas Live2D. */
+body.aurora-ui-open .pet-avatar-wrap {
+  inset: 0 !important;
+}
