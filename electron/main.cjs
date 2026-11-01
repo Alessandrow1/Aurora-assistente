@@ -601,7 +601,7 @@ const chatMessages = [
           think: thinkEnabled,
           keep_alive: '2h',
           messages,
-          options: { temperature: needsThinking ? 0.2 : needsExplanation ? 0.22 : 0.25, num_predict: tokenBudget, num_ctx: 4096 },
+          options: { temperature: needsThinking ? 0.2 : needsExplanation ? 0.22 : 0.25, num_predict: tokenBudget, num_ctx: imageBase64 ? 6144 : 4096 },
         }),
       });
     } catch (error) {
