@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import Avatar3D from './components/Avatar3D';
+import MemoryHub from './components/MemoryHub';
 
 type Message = { role: 'user' | 'assistant'; content: string };
 
@@ -31,6 +32,14 @@ type AppConfig = {
 };
 
 type AvatarEmotion = 'neutral' | 'happy' | 'sad' | 'surprised' | 'curious' | 'angry' | 'affectionate' | 'laughing';
+
+function detectMemorySuggestion(text: string): string | null {
+  const normalized = text.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');
+  const sensitive = /\\b(doenca|medicamento|remedio|diagnostico|terapia|depressao|ansiedade|religiao|igreja|politica|partido|eleicao|orientacao sexual|sexualidade|gravidez|salario|senha|documento|cpf)\\b/i;
+  const durable = /\\b(meu objetivo e|minha meta e|meu projeto e|estou desenvolvendo|estou construindo|prefiro|nao gosto de|gosto de|quero que voce sempre|minha preferencia e|estou estudando para|decidi que)\\b/i;
+  if (text.trim().length < 18 || text.trim().length > 420 || sensitive.test(normalized) || !durable.test(normalized)) return null;
+  return text.trim();
+}
 
 function hasLaughingCue(text: string): boolean {
   return /(?:\b(?:kkkk+|haha+|hehe+|rsrs+)\b|\u{1F602}|\u{1F923}|\u{1F606}|\u{1F639}|\u{1F63A})/iu.test(text);
@@ -76,6 +85,11 @@ export default function App() {
   const [chatOpen, setChatOpen] = useState(false);
   const [appsOpen, setAppsOpen] = useState(false);
   const [studyMode, setStudyMode] = useState(false);
+  const [memoryHubOpen, setMemoryHubOpen] = useState(false);
+  const [conversationId, setConversationId] = useState('');
+  const [conversationTitle, setConversationTitle] = useState('Nova conversa');
+  const [storageReady, setStorageReady] = useState(false);
+  const [memorySuggestion, setMemorySuggestion] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [thinking, setThinking] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -203,6 +217,56 @@ export default function App() {
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [messages, thinking]);
+
+  // Reabre a conversa mais recente entre sessões do aplicativo.
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const result = await window.aurora.listConversations();
+        const latest = result.conversations[0];
+        if (latest) {
+          const loaded = await window.aurora.loadConversation(latest.id);
+          if (active && loaded.found) {
+            setConversationId(loaded.conversation.id);
+            setConversationTitle(loaded.conversation.title);
+            setMessages([greeting, ...loaded.conversation.messages]);
+          }
+        } else {
+          const created = await window.aurora.createConversation();
+          if (active) {
+            setConversationId(created.id);
+            setConversationTitle(created.title);
+          }
+        }
+      } catch (error) {
+        if (active) setNotice(error instanceof Error ? error.message : 'Não consegui restaurar o histórico da Aurora.');
+      } finally {
+        if (active) setStorageReady(true);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
+  // Persiste somente quando o turno termina; evita gravar cada token do streaming.
+  useEffect(() => {
+    if (!storageReady || !conversationId || thinking || messages.length <= 1) return;
+    const timeout = window.setTimeout(() => {
+      const savedMessages = messages.filter((message) => message.content !== greeting.content && message.content.trim());
+      if (!savedMessages.length) return;
+      void window.aurora.saveConversation({
+        id: conversationId,
+        title: conversationTitle,
+        messages: savedMessages,
+      }).then((result) => {
+        if (result.conversation.id === conversationId) setConversationTitle(result.conversation.title);
+      }).catch((error) => {
+        console.warn('[Aurora History] Não consegui salvar a conversa:', error);
+        setNotice('Não consegui salvar o histórico desta conversa. Confira o armazenamento seguro do Windows.');
+      });
+    }, 450);
+    return () => window.clearTimeout(timeout);
+  }, [messages, thinking, conversationId, conversationTitle, storageReady]);
 
   useEffect(() => {
     if (!laughing) return;
@@ -583,9 +647,47 @@ export default function App() {
     }
   };
 
+  const openSavedConversation = async (id: string) => {
+    setStorageReady(false);
+    try {
+      const result = await window.aurora.loadConversation(id);
+      if (!result.found) throw new Error('Essa conversa não está mais disponível.');
+      setConversationId(result.conversation.id);
+      setConversationTitle(result.conversation.title);
+      setMessages([greeting, ...result.conversation.messages]);
+      setMemorySuggestion(null);
+      setMemoryHubOpen(false);
+      setChatOpen(true);
+      setNotice('Conversa anterior restaurada.');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Não consegui abrir essa conversa.');
+    } finally {
+      setStorageReady(true);
+    }
+  };
+
+  const startNewConversation = async () => {
+    setStorageReady(false);
+    try {
+      const created = await window.aurora.createConversation();
+      setConversationId(created.id);
+      setConversationTitle(created.title);
+      setMessages([greeting]);
+      setMemorySuggestion(null);
+      setChatOpen(true);
+      setMemoryHubOpen(false);
+      setNotice('Nova conversa iniciada. As anteriores continuam no histórico.');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Não consegui criar uma nova conversa.');
+    } finally {
+      setStorageReady(true);
+    }
+  };
+
   const sendMessage = async (rawText: string) => {
     const text = rawText.trim();
     if (!text || thinkingRef.current) return;
+    setMemorySuggestion(detectMemorySuggestion(text));
 
     // Enquanto a IA pensa, evita capturar outra frase por cima da mensagem atual.
     pauseVoiceRecognitionForSpeech();
@@ -604,6 +706,12 @@ export default function App() {
 
     let closeSpeechSession: (() => Promise<void>) | null = null;
     setMessages((current) => [...current, { role: 'user', content: text }]);
+    if (conversationId) {
+      const savedMessages = [...messages.filter((message) => message.content !== greeting.content && message.content.trim()), { role: 'user' as const, content: text }];
+      void window.aurora.saveConversation({ id: conversationId, title: conversationTitle, messages: savedMessages }).catch((error) => {
+        console.warn('[Aurora History] Não consegui salvar a mensagem enviada:', error);
+      });
+    }
     setInput('');
     setThinking(true);
 
@@ -1002,8 +1110,7 @@ export default function App() {
     setSpeaking(false);
     setLaughing(false);
     setEmotion('neutral');
-    setMessages([greeting]);
-    setNotice('Conversa limpa. Podemos começar de novo!');
+    void startNewConversation();
   };
 
   const connected = config.ollamaAvailable && config.modelInstalled;
@@ -1016,6 +1123,7 @@ export default function App() {
       if (document.body.classList.contains('aurora-ui-open')) {
         setChatOpen(false);
         setAppsOpen(false);
+        setMemoryHubOpen(false);
       }
     });
   }, []);
@@ -1036,7 +1144,8 @@ export default function App() {
       </div>
 
       <div className="pet-toolbar">
-        <button className={'pet-action ' + (chatOpen ? 'selected' : '')} onClick={() => { setChatOpen(!chatOpen); setAppsOpen(false); }} title="Conversar com Aurora">💬</button>
+        <button className={'pet-action ' + (chatOpen ? 'selected' : '')} onClick={() => { setChatOpen(!chatOpen); setAppsOpen(false); setMemoryHubOpen(false); }} title="Conversar com Aurora">💬</button>
+        <button className={'pet-action ' + (memoryHubOpen ? 'selected' : '')} onClick={() => { setMemoryHubOpen(!memoryHubOpen); setChatOpen(false); setAppsOpen(false); }} title="Memória e conhecimento da Aurora">🧠</button>
         <button className={'pet-action ' + (voiceMode ? 'selected' : '')} onClick={startListening} title={voiceMode ? 'Desligar microfone' : 'Ligar microfone'} aria-label={voiceMode ? 'Desligar microfone' : 'Ligar microfone'} aria-pressed={voiceMode}>🎙</button>
         <button className={'pet-action ' + (studyMode ? 'selected' : '')} onClick={() => setStudyMode((active) => !active)} title={studyMode ? 'Desativar Modo Estudo' : 'Ativar Modo Estudo'} aria-label={studyMode ? 'Desativar Modo Estudo' : 'Ativar Modo Estudo'} aria-pressed={studyMode}>📚</button>
         <button className="pet-action" onClick={() => void analyzeScreen()} title="Analisar o que está na tela">👁</button>
@@ -1045,6 +1154,10 @@ export default function App() {
         <button className="pet-action" onClick={() => window.aurora.minimize()} title="Minimizar">—</button>
         <button className="pet-action pet-close" onClick={() => window.aurora.close()} title="Fechar Aurora">×</button>
       </div>
+
+      {memoryHubOpen && (
+        <MemoryHub onOpenConversation={openSavedConversation} onNewConversation={startNewConversation} />
+      )}
 
       {appsOpen && (
         <section className="pet-apps-menu">
@@ -1098,6 +1211,20 @@ export default function App() {
           </div>
 
           {notice && <div className="notice" role="status">{notice}</div>}
+
+          {memorySuggestion && (
+            <div className="memory-suggestion">
+              <span>Isso parece uma informação importante. Quer que eu guarde na memória?</span>
+              <button type="button" onClick={() => {
+                const content = memorySuggestion;
+                void window.aurora.saveMemory(content).then(() => {
+                  setMemorySuggestion(null);
+                  setNotice('Guardei essa informação na memória.');
+                }).catch((error) => setNotice(error instanceof Error ? error.message : 'Não consegui guardar essa informação.'));
+              }}>Guardar</button>
+              <button type="button" onClick={() => setMemorySuggestion(null)}>Agora não</button>
+            </div>
+          )}
 
           <form className="composer" onSubmit={onSubmit}>
             <input
