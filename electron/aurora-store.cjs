@@ -85,7 +85,7 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
   let knowledgeWrite = Promise.resolve();
 
   const emptyConversations = () => ({ version: 1, conversations: [], index: [] });
-  const emptyKnowledge = () => ({ version: 1, documents: [], chunks: [], memoryEmbeddings: {} });
+  const emptyKnowledge = () => ({ version: 1, documents: [], chunks: [], memoryEmbeddings: {}, identityProfile: { name: 'Aurora', avatar: 'Live2D 6xb', appearanceDescription: '', personality: 'Companheira de conversa: confiante, brincalhona, carinhosa e curiosa.' } });
 
   async function readEncrypted(filePath, fallback) {
     if (!fs.existsSync(filePath)) return fallback();
@@ -133,6 +133,9 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
       documents: Array.isArray(data.documents) ? data.documents.filter((item) => item && typeof item.id === 'string') : [],
       chunks: Array.isArray(data.chunks) ? data.chunks.filter((item) => item && typeof item.id === 'string' && typeof item.content === 'string') : [],
       memoryEmbeddings: data.memoryEmbeddings && typeof data.memoryEmbeddings === 'object' ? data.memoryEmbeddings : {},
+      identityProfile: data.identityProfile && typeof data.identityProfile === 'object'
+        ? { ...emptyKnowledge().identityProfile, ...data.identityProfile }
+        : emptyKnowledge().identityProfile,
     };
   }
 
@@ -555,7 +558,27 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
     return { installed: true, ...result };
   }
 
+  async function getIdentityProfile() {
+    const data = await readKnowledge();
+    return data.identityProfile;
+  }
+
+  async function saveIdentityProfile(raw = {}) {
+    const data = await readKnowledge();
+    const current = data.identityProfile;
+    data.identityProfile = {
+      name: String(raw.name || current.name).trim().slice(0, 80) || 'Aurora',
+      avatar: String(raw.avatar || current.avatar).trim().slice(0, 120) || 'Live2D 6xb',
+      appearanceDescription: String(raw.appearanceDescription || '').trim().slice(0, 2500),
+      personality: String(raw.personality || current.personality).trim().slice(0, 1200),
+    };
+    await writeEncrypted(knowledgePath(), data, 'knowledge');
+    return data.identityProfile;
+  }
+
   return {
+    getIdentityProfile,
+    saveIdentityProfile,
     createConversation,
     saveConversation,
     listConversations,
