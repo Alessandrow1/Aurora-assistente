@@ -393,7 +393,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   const imageBase64 = typeof payload.imageBase64 === 'string' && payload.imageBase64.length <= 18000000
     ? payload.imageBase64.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, '')
     : '';
-  const asksForLongResponse = /\\b(detalhes?|detalhad[oa]s?|passo a passo|aprofundad[oa]s?|plano completo|guia completo|explique detalhadamente|analise completa|compare em detalhes)\\b/i.test(message);
+  const asksForLongResponse = /\b(detalhes?|detalhad[oa]s?|passo a passo|aprofundad[oa]s?|plano completo|guia completo|explique detalhadamente|analise completa|compare em detalhes)\b/i.test(message);
 
   let response;
   try {
