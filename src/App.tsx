@@ -754,7 +754,24 @@ export default function App() {
         setMemoryHubOpen(false);
         setAppsOpen(false);
         setNotice('Gerando imagem localmente pelo ComfyUI…');
-        const generated = await window.aurora.generateImage({ prompt: imagePrompt });
+        const generated = await window.aurora.generateImage({ prompt: imagePrompt }).catch((error) => {
+          const details = error instanceof Error ? error.message : 'Confira se o ComfyUI está aberto e se há um modelo de imagem instalado.';
+          const failureReply = 'Não consegui gerar a imagem agora. ' + details;
+          setNotice(details);
+          setEmotion('neutral');
+          setMessages((current) => [...current, { role: 'assistant', content: failureReply }]);
+          if (autoSpeak) {
+            void speak(failureReply).catch((speechError) => {
+              console.warn('[Aurora Image] Não consegui falar o erro de geração:', speechError);
+            }).finally(() => {
+              if (voiceModeRef.current) resumeVoiceRecognitionAfterSpeech(500);
+            });
+          } else if (voiceModeRef.current) {
+            resumeVoiceRecognitionAfterSpeech(500);
+          }
+          return null;
+        });
+        if (!generated) return;
         const imageReply = 'Prontinho! Criei sua imagem e deixei ela salva na minha galeria local.';
         setEmotion('happy');
         setMessages((current) => [...current, {
@@ -1305,7 +1322,7 @@ export default function App() {
                   {message.imageUrl && (
                     <div className="generated-image-block">
                       <img className="generated-image-preview" src={message.imageUrl} alt="Imagem criada pela Aurora" />
-                      <button type="button" className="generated-image-open" onClick={() => void window.aurora.openGeneratedImages()}>
+                      <button type="button" className="generated-image-open" onClick={() => void window.aurora.openGeneratedImages().catch((error) => setNotice(error instanceof Error ? error.message : 'Não consegui abrir a pasta de imagens.'))}>
                         Abrir pasta de imagens
                       </button>
                     </div>
