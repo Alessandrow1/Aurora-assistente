@@ -583,6 +583,7 @@ const chatMessages = [
       : chatMessages;
 
     let response;
+    const requestStartedAt = Date.now();
     try {
       response = await fetch(`${OLLAMA_URL}/api/chat`, {
         method: 'POST',
@@ -606,11 +607,15 @@ const chatMessages = [
       const detail = await response.text().catch(() => '');
       throw new Error(`O Ollama retornou um erro (${response.status}). ${detail.slice(0, 240)}`);
     }
-    return response;
+    return {
+      response,
+      requestStartedAt,
+      headersReceivedAt: Date.now(),
+    };
   };
 
   const requestId = typeof payload.requestId === 'string' ? payload.requestId : '';
-  const readChatStream = async (response) => {
+  const readChatStream = async ({ response, requestStartedAt, headersReceivedAt }) => {
     const reader = response.body?.getReader();
     if (!reader) throw new Error('Não consegui iniciar a resposta em fluxo.');
     const decoder = new TextDecoder();
@@ -618,7 +623,6 @@ const chatMessages = [
     let answer = '';
     let doneReason = '';
     let usageStats = null;
-    const streamStartedAt = Date.now();
     let firstTokenAt = null;
 
     const consumeLine = (line) => {
@@ -665,11 +669,13 @@ const chatMessages = [
     } finally {
       reader.releaseLock();
     }
-    const elapsedMs = Date.now() - streamStartedAt;
+    const requestFinishedAt = Date.now();
     const evalSeconds = usageStats?.evalDuration ? usageStats.evalDuration / 1e9 : 0;
     console.info('[Aurora Performance] Ollama', {
-      firstTokenMs: firstTokenAt === null ? null : firstTokenAt - streamStartedAt,
-      totalMs: elapsedMs,
+      headersMs: headersReceivedAt - requestStartedAt,
+      firstTokenMs: firstTokenAt === null ? null : firstTokenAt - requestStartedAt,
+      streamReadMs: requestFinishedAt - headersReceivedAt,
+      totalMs: requestFinishedAt - requestStartedAt,
       promptTokens: usageStats?.promptEvalCount ?? null,
       generatedTokens: usageStats?.evalCount ?? null,
       tokensPerSecond: evalSeconds > 0 ? Number((usageStats.evalCount / evalSeconds).toFixed(2)) : null,
