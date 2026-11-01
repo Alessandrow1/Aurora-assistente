@@ -393,6 +393,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   const imageBase64 = typeof payload.imageBase64 === 'string' && payload.imageBase64.length <= 18000000
     ? payload.imageBase64.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, '')
     : '';
+  const asksForLongResponse = /\\b(detalhes?|detalhad[oa]s?|passo a passo|aprofundad[oa]s?|plano completo|guia completo|explique detalhadamente|analise completa|compare em detalhes)\\b/i.test(message);
 
   let response;
   try {
@@ -451,7 +452,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
           ...history,
           { role: 'user', content: message, ...(imageBase64 ? { images: [imageBase64] } : {}) },
         ],
-        options: { temperature: 0.45, num_predict: 300, num_ctx: 4096 },
+        options: { temperature: 0.45, num_predict: imageBase64 ? 360 : asksForLongResponse ? 650 : 180, num_ctx: 4096 },
       }),
     });
   } catch (error) {
