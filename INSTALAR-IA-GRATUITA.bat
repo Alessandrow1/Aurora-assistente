@@ -20,10 +20,10 @@ if errorlevel 1 (
   pause
   exit /b 0
 )
-echo Ollama encontrado. Baixando o modelo gratuito Qwen 3.5 2B...
-echo O download tem alguns GB e so pricisa ser feito uma vez.
+echo Ollama encontrado. Baixando o modelo gratuito Qwen 3.5 9B...
+echo O download e maior que o modelo 2B e so precisa ser feito uma vez.
 echo.
-ollama pull qwen3.5:2b
+ollama pull qwen3.5:9b
 if errorlevel 1 (
   echo.
   echo Nao consegui baixar o modelo. Confira sua internet e tente novamente.
