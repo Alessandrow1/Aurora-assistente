@@ -938,7 +938,7 @@ function createElevenLabsStreamSession(apiKey) {
   try {
     socket = new WebSocket(endpoint, {
       headers: { 'xi-api-key': apiKey },
-      handshakeTimeout: 20000,
+      handshakeTimeout: 10000,
       perMessageDeflate: false,
     });
   } catch (error) {
