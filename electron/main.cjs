@@ -523,9 +523,11 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
     : '';
   const normalizedRequest = normalizeMemoryText(message);
   const asksForLongResponse = /\b(detalhes?|detalhad[oa]s?|passo a passo|aprofundad[oa]s?|plano completo|guia completo|explique detalhadamente|analise completa|compare em detalhes)\b/i.test(normalizedRequest);
-  const needsReasoning = /\b(por que|porque|explique|compare|analise|calcule|calcular|resolva|resolver|planeje|planejar|questione|questionar|questionamento|conclusoes|premissas|pressupostos|critique|criticar|avaliar|avalie|alternativas|estrategia|diagnostique|depure|debug|vantagens|desvantagens|qual compensa|qual e melhor|como funciona|causa|consequencia)\b/i.test(normalizedRequest);
+  const needsReasoning = /\b(compare|comparar|analise|analisar|calcule|calcular|resolva|resolver|planeje|planejar|questione|questionar|questionamento|conclusoes|premissas|pressupostos|critique|criticar|avaliar|avalie|alternativas|estrategia|diagnostique|depure|debug|vantagens|desvantagens|qual compensa|qual e melhor|decida|decidir|decisao|tradeoff|consequencias)\b/i.test(normalizedRequest);
+  const needsExplanation = /\b(por que|porque|explique|explicar|como funciona|o que significa|qual a diferenca|como acontece|causa|consequencia)\b/i.test(normalizedRequest);
+  const needsThinking = needsReasoning || asksForLongResponse;
 
-  const numPredict = imageBase64 ? 650 : asksForLongResponse ? 1800 : needsReasoning ? 1400 : 240;
+  const numPredict = imageBase64 ? 650 : asksForLongResponse ? 1500 : needsReasoning ? 1100 : needsExplanation ? 520 : 200;
 
   // Preserva todo o histórico e o prompt também na tentativa de recuperação.
   const chatMessages = [
@@ -566,6 +568,10 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
               'RIGOR E RACIOCÍNIO: antes de responder, identifique o pedido real e verifique se os fatos necessários estão no contexto. Não concorde automaticamente com uma afirmação do usuário. Corrija premissas erradas com educação e explique a diferença. Separe fatos conhecidos de hipóteses; se não souber, diga que não sabe. Nunca invente nomes, números, causas, fontes, resultados ou recursos do aplicativo. Para problemas técnicos, proponha passos que correspondam ao erro e não finja ter testado código que não executou.',
               'PRECISÃO ANTES DA PERSONALIDADE: em perguntas factuais, científicas ou técnicas, explique primeiro o mecanismo real e os fatos relevantes. Não substitua a explicação por metáforas. Só use uma comparação quando ela for correta, simples e realmente ajudar; deixe claro que é uma analogia. Nunca invente uma comparação extravagante para preencher espaço. A personalidade e o humor jamais podem prejudicar a precisão.',
               'ANÁLISE E PENSAMENTO CRÍTICO: quando o usuário pedir análise, comparação ou contestação de conclusões, separe fatos observados, pressupostos e inferências. Examine pelo menos uma explicação alternativa, procure pontos fracos e possíveis contraexemplos, indique quais informações poderiam confirmar ou refutar a conclusão e diga claramente quando os dados não bastam. Não concorde automaticamente, mas também não discorde só para parecer crítica.',
+              'PEDIDO DE ANÁLISE SEM OBJETO: se o usuário disser genericamente que quer uma análise, que você questione suas conclusões ou que avalie um problema, mas não apresentar o problema nem uma conclusão identificável, não escolha um assunto antigo por conta própria. Peça que ele envie o problema, a conclusão atual e os fatos disponíveis. Só use o contexto anterior quando o usuário fizer referência clara a ele.',
+              'HONESTIDADE SOBRE A TELA: só diga que analisou uma captura, imagem, vídeo ou tela quando uma imagem realmente tiver sido incluída na mensagem atual. Sem imagem, responda somente com base no texto recebido. Nunca invente que viu uma captura.',
+              'CIÊNCIA E FÍSICA: explique primeiro a relação de causa e efeito. Em movimento orbital, a gravidade fornece a aceleração centrípeta e a velocidade tangencial mantém o objeto avançando enquanto sua trajetória curva; não diga que a gravidade é cancelada pela velocidade, nem atribua a órbita de um satélite à rotação da Terra em torno do Sol.',
+              'FINANÇAS PESSOAIS: não diga que pagar apenas o mínimo do cartão evita juros. Em geral, o pagamento mínimo deixa saldo sujeito ao crédito rotativo e a encargos. Diferencie pagar a fatura integral de pagar apenas o mínimo e não recomende dívida como estratégia de economia.',
               'COMPARAÇÕES PRÁTICAS: compare as opções pelos mesmos critérios, como custo total, benefício, risco, esforço, prazo e consequências. Explique os principais trade-offs e conclua com uma recomendação condicional ao contexto, deixando explícitas as premissas que podem mudar a conclusão.',
               'RESPOSTA ÚTIL: dê primeiro a conclusão ou a próxima ação. Se houver várias interpretações plausíveis, faça uma pergunta específica em vez de escolher no chute. Use exemplos somente quando ajudam a esclarecer. Não preencha a resposta com frases de efeito, justificativas repetidas ou conselhos genéricos.',
               'Leia a mensagem mais recente e responda diretamente ao pedido central, sem mudar de assunto nem misturar temas.',
@@ -601,7 +607,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
           think: thinkEnabled,
           keep_alive: '20m',
           messages,
-          options: { temperature: needsReasoning ? 0.25 : 0.35, num_predict: tokenBudget, num_ctx: 6144 },
+          options: { temperature: needsThinking ? 0.2 : needsExplanation ? 0.22 : 0.4, num_predict: tokenBudget, num_ctx: 6144 },
         }),
       });
     } catch (error) {
@@ -661,7 +667,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
     return { text: answer.trim(), doneReason };
   };
 
-  let result = await readChatStream(await sendChatRequest(needsReasoning, numPredict));
+  let result = await readChatStream(await sendChatRequest(needsThinking, numPredict));
   if (!result.text) {
     console.warn('[Aurora Ollama] O fluxo terminou sem texto final. Tentando novamente sem think.', {
       model: settings.model,
