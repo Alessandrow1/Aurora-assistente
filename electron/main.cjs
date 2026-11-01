@@ -33,7 +33,7 @@ async function readElevenLabsApiKey() {
   return decrypted.result;
 }
 
-const DEFAULT_MODEL = 'qwen3.5:2b';
+const DEFAULT_MODEL = 'qwen3.5:9b';
 const ALLOWED_MODELS = new Set(['qwen3.5:2b', 'qwen3.5:4b', 'qwen3.5:9b']);
 
 let mainWindow;
