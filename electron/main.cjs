@@ -1021,6 +1021,9 @@ function createElevenLabsStreamSession(apiKey) {
 
   return {
     ready,
+    isReady() {
+      return !failure && !closing && socket?.readyState === WebSocket.OPEN;
+    },
     synthesize(text) {
       const promise = new Promise((resolve, reject) => {
         void ready.then(() => {
@@ -1066,6 +1069,9 @@ function createElevenLabsStreamSession(apiKey) {
 }
 
 ipcMain.handle('aurora:speak-session-start', async () => {
+  if (activeElevenLabsStreamSession?.isReady()) {
+    return { active: true, reused: true };
+  }
   if (activeElevenLabsStreamSession) {
     const previous = activeElevenLabsStreamSession;
     activeElevenLabsStreamSession = null;
