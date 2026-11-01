@@ -4,7 +4,8 @@ import Avatar3D from './components/Avatar3D';
 type Message = { role: 'user' | 'assistant'; content: string };
 type PendingActionContext = { captureId: string; windowTitle: string };
 type PendingAction =
-  | ({ type: 'click'; x: number; y: number; imageWidth: number; imageHeight: number } & PendingActionContext)
+  | ({ type: 'click' | 'doubleClick' | 'rightClick' | 'move'; x: number; y: number; imageWidth: number; imageHeight: number } & PendingActionContext)
+  | ({ type: 'drag'; x: number; y: number; endX: number; endY: number; imageWidth: number; imageHeight: number } & PendingActionContext)
   | ({ type: 'scroll'; x: number; y: number; delta: number; imageWidth: number; imageHeight: number } & PendingActionContext)
   | ({ type: 'type'; text: string } & PendingActionContext)
   | ({ type: 'key'; key: string } & PendingActionContext);
@@ -585,7 +586,7 @@ export default function App() {
         || /\b(minha tela|na tela|essa janela|nessa janela|este programa|este aplicativo|esse aplicativo)\b/i.test(text);
       const capture = asksForComputerAction ? await window.aurora.captureScreen() : null;
       const computerPrompt = capture
-        ? `${text}\n\nEstou fornecendo uma captura atual do desktop. Analise-a e, se puder cumprir exatamente o pedido, retorne um único bloco [AURORA_ACTION]{JSON}[/AURORA_ACTION] com coordenadas relativas à imagem ou texto/atalho solicitado. Tipos aceitos: click com x/y, scroll com x/y/delta (-1200 a 1200; positivo desce, negativo sobe), type com text, key com key. Use apenas uma ação por vez. Se não conseguir identificar o alvo com clareza, não sugira ação.`
+        ? `${text}\n\nEstou fornecendo uma captura atual do desktop. Analise-a e, se puder cumprir exatamente o pedido, retorne um único bloco [AURORA_ACTION]{JSON}[/AURORA_ACTION] com coordenadas relativas à imagem ou texto/atalho solicitado. Tipos aceitos: click, doubleClick, rightClick e move com x/y; drag com x/y/endX/endY; scroll com x/y/delta (-1200 a 1200; positivo desce, negativo sobe); type com text; key com key. Use apenas uma ação por vez. Se não conseguir identificar o alvo com clareza, não sugira ação.`
         : text;
 
       const canStreamSpeech = autoSpeak && !capture;
@@ -667,22 +668,38 @@ export default function App() {
           const candidate = JSON.parse(actionMatch[1]);
           let safeAction: PendingAction | null = null;
           if (candidate?.type === 'click' && capture &&
-              Number.isFinite(candidate.x) && Number.isFinite(candidate.y) &&
-              candidate.x >= 0 && candidate.y >= 0 &&
-              candidate.x < capture.width && candidate.y < capture.height) {
-            safeAction = { type: 'click', captureId: capture.captureId, windowTitle: capture.windowTitle, x: Math.round(candidate.x), y: Math.round(candidate.y), imageWidth: capture.width, imageHeight: capture.height };
-          } else if (candidate?.type === 'scroll' && capture &&
-              Number.isFinite(candidate.x) && Number.isFinite(candidate.y) && Number.isFinite(candidate.delta) &&
-              candidate.x >= 0 && candidate.y >= 0 && candidate.x < capture.width && candidate.y < capture.height &&
-              candidate.delta !== 0 && Math.abs(candidate.delta) <= 1200) {
-            safeAction = { type: 'scroll', captureId: capture.captureId, windowTitle: capture.windowTitle, x: Math.round(candidate.x), y: Math.round(candidate.y), delta: Math.round(candidate.delta), imageWidth: capture.width, imageHeight: capture.height };
-          } else if (candidate?.type === 'type' && capture && typeof candidate.text === 'string' && candidate.text.length > 0 && candidate.text.length <= 1500) {
-            safeAction = { type: 'type', captureId: capture.captureId, windowTitle: capture.windowTitle, text: candidate.text };
-          } else if (candidate?.type === 'key' && capture && typeof candidate.key === 'string' &&
-              ['ENTER','TAB','ESC','BACKSPACE','SPACE','DELETE','UP','DOWN','LEFT','RIGHT','HOME','END','PAGEUP','PAGEDOWN','F5','CTRL+A','CTRL+C','CTRL+V','CTRL+L','CTRL+S','CTRL+Z','CTRL+F','CTRL+W','CTRL+T','CTRL+R','CTRL+SHIFT+S','ALT+TAB','ALT+F4','ALT+LEFT','ALT+RIGHT'].includes(candidate.key.toUpperCase())) {
-            safeAction = { type: 'key', captureId: capture.captureId, windowTitle: capture.windowTitle, key: candidate.key.toUpperCase() };
-          }
-          if (safeAction) {
+               Number.isFinite(candidate.x) && Number.isFinite(candidate.y) &&
+               candidate.x >= 0 && candidate.y >= 0 &&
+               candidate.x < capture.width && candidate.y < capture.height) {
+             safeAction = { type: 'click', captureId: capture.captureId, windowTitle: capture.windowTitle, x: Math.round(candidate.x), y: Math.round(candidate.y), imageWidth: capture.width, imageHeight: capture.height };
+           } else if (candidate?.type === 'doubleClick' && capture &&
+               Number.isFinite(candidate.x) && Number.isFinite(candidate.y) &&
+               candidate.x >= 0 && candidate.y >= 0 && candidate.x < capture.width && candidate.y < capture.height) {
+             safeAction = { type: 'doubleClick', captureId: capture.captureId, windowTitle: capture.windowTitle, x: Math.round(candidate.x), y: Math.round(candidate.y), imageWidth: capture.width, imageHeight: capture.height };
+           } else if (candidate?.type === 'rightClick' && capture &&
+               Number.isFinite(candidate.x) && Number.isFinite(candidate.y) &&
+               candidate.x >= 0 && candidate.y >= 0 && candidate.x < capture.width && candidate.y < capture.height) {
+             safeAction = { type: 'rightClick', captureId: capture.captureId, windowTitle: capture.windowTitle, x: Math.round(candidate.x), y: Math.round(candidate.y), imageWidth: capture.width, imageHeight: capture.height };
+           } else if (candidate?.type === 'move' && capture &&
+               Number.isFinite(candidate.x) && Number.isFinite(candidate.y) &&
+               candidate.x >= 0 && candidate.y >= 0 && candidate.x < capture.width && candidate.y < capture.height) {
+             safeAction = { type: 'move', captureId: capture.captureId, windowTitle: capture.windowTitle, x: Math.round(candidate.x), y: Math.round(candidate.y), imageWidth: capture.width, imageHeight: capture.height };
+           } else if (candidate?.type === 'drag' && capture &&
+               Number.isFinite(candidate.x) && Number.isFinite(candidate.y) && Number.isFinite(candidate.endX) && Number.isFinite(candidate.endY) &&
+               candidate.x >= 0 && candidate.y >= 0 && candidate.endX >= 0 && candidate.endY >= 0 &&
+               candidate.x < capture.width && candidate.y < capture.height && candidate.endX < capture.width && candidate.endY < capture.height) {
+             safeAction = { type: 'drag', captureId: capture.captureId, windowTitle: capture.windowTitle, x: Math.round(candidate.x), y: Math.round(candidate.y), endX: Math.round(candidate.endX), endY: Math.round(candidate.endY), imageWidth: capture.width, imageHeight: capture.height };
+           } else if (candidate?.type === 'scroll' && capture &&
+               Number.isFinite(candidate.x) && Number.isFinite(candidate.y) && Number.isFinite(candidate.delta) &&
+               candidate.x >= 0 && candidate.y >= 0 && candidate.x < capture.width && candidate.y < capture.height &&
+               candidate.delta !== 0 && Math.abs(candidate.delta) <= 1200) {
+             safeAction = { type: 'scroll', captureId: capture.captureId, windowTitle: capture.windowTitle, x: Math.round(candidate.x), y: Math.round(candidate.y), delta: Math.round(candidate.delta), imageWidth: capture.width, imageHeight: capture.height };
+           } else if (candidate?.type === 'type' && capture && typeof candidate.text === 'string' && candidate.text.length > 0 && candidate.text.length <= 1500) {
+             safeAction = { type: 'type', captureId: capture.captureId, windowTitle: capture.windowTitle, text: candidate.text };
+           } else if (candidate?.type === 'key' && capture && typeof candidate.key === 'string' &&
+               ['ENTER','TAB','ESC','BACKSPACE','SPACE','DELETE','UP','DOWN','LEFT','RIGHT','HOME','END','PAGEUP','PAGEDOWN','F5','CTRL+A','CTRL+C','CTRL+V','CTRL+L','CTRL+S','CTRL+Z','CTRL+F','CTRL+W','CTRL+T','CTRL+R','CTRL+SHIFT+S','ALT+TAB','ALT+F4','ALT+LEFT','ALT+RIGHT'].includes(candidate.key.toUpperCase())) {
+             safeAction = { type: 'key', captureId: capture.captureId, windowTitle: capture.windowTitle, key: candidate.key.toUpperCase() };
+           }if (safeAction) {
             setPendingAction(safeAction);
             setChatOpen(true);
             answer = answer.replace(actionMatch[0], '').trim() + '\n\nPosso executar essa ação? Confira e confirme na janelinha.';
@@ -1070,11 +1087,19 @@ export default function App() {
           <strong>
             {pendingAction.type === 'click'
               ? `Clicar na posição aproximada ${pendingAction.x}, ${pendingAction.y} da captura`
-              : pendingAction.type === 'scroll'
-                ? `Rolar ${pendingAction.delta > 0 ? 'para baixo' : 'para cima'} na posição ${pendingAction.x}, ${pendingAction.y}`
-                : pendingAction.type === 'type'
-                ? `Digitar: “${pendingAction.text.slice(0, 160)}${pendingAction.text.length > 160 ? '…' : ''}”`
-                : `Pressionar ${pendingAction.key}`}
+              : pendingAction.type === 'doubleClick'
+                ? `Dar dois cliques em ${pendingAction.x}, ${pendingAction.y}`
+                : pendingAction.type === 'rightClick'
+                  ? `Clicar com o botão direito em ${pendingAction.x}, ${pendingAction.y}`
+                  : pendingAction.type === 'move'
+                    ? `Mover o cursor para ${pendingAction.x}, ${pendingAction.y}`
+                    : pendingAction.type === 'drag'
+                      ? `Arrastar de ${pendingAction.x}, ${pendingAction.y} até ${pendingAction.endX}, ${pendingAction.endY}`
+                      : pendingAction.type === 'scroll'
+                        ? `Rolar ${pendingAction.delta > 0 ? 'para baixo' : 'para cima'} na posição ${pendingAction.x}, ${pendingAction.y}`
+                        : pendingAction.type === 'type'
+                          ? `Digitar: “${pendingAction.text.slice(0, 160)}${pendingAction.text.length > 160 ? '…' : ''}”`
+                          : `Pressionar ${pendingAction.key}`}
           </strong>
           <p>Janela analisada: <strong>{pendingAction.windowTitle || 'não identificada'}</strong>. A confirmação vale para uma única ação e expira em 60 segundos. Confira antes de autorizar.</p>
           <div className="pet-action-buttons">
