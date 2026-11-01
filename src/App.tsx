@@ -186,6 +186,9 @@ export default function App() {
         void activeAudioContext.close().catch(() => undefined);
       }
       window.speechSynthesis?.cancel();
+      void window.aurora.endSpeakSession().catch((error) => {
+        console.warn('[Aurora TTS] Nao consegui encerrar a conexao de voz ao fechar a janela.', error);
+      });
     };
   }, []);
 
@@ -600,6 +603,8 @@ export default function App() {
         : Promise.resolve({ active: false });
       closeSpeechSession = async () => {
         await speechSessionPromise;
+        // Enquanto o modo de voz continuar ativo, mantem o WebSocket pronto para o proximo turno.
+        if (voiceModeRef.current) return;
         if (!speechSessionActive || speechSessionClosed) return;
         speechSessionClosed = true;
         speechSessionActive = false;
@@ -906,6 +911,9 @@ export default function App() {
     stopVoiceCaptureRef.current?.(false);
     setListening(false);
     setTranscribingVoice(false);
+    void window.aurora.endSpeakSession().catch((error) => {
+      console.warn('[Aurora TTS] Nao consegui encerrar a conexao ao desativar o modo de voz.', error);
+    });
     setNotice('Conversa por voz desativada. O microfone foi liberado.');
   };
 
