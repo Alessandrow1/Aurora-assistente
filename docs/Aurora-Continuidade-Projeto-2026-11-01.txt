@@ -210,7 +210,7 @@ TESTES PENDENTES:
 
 Estado do código após as mudanças:
 - Branch: feature/live2d-avatar
-- Último commit de código imediatamente anterior a este TXT: 9c6af8e378bea2c0b8f7f47f94e50b64423879c9
+- Último commit de código imediatamente anterior a este TXT: 769fd27d035665ad12aa23c2774cb4357ac859b0
 - As alterações foram publicadas no GitHub; ainda não foram compiladas nem testadas no Windows do usuário.
 
 13.1. MEMÓRIA PERSISTENTE LOCAL
@@ -221,6 +221,11 @@ Estado do código após as mudanças:
 - A recuperação atual é lexical, por sobreposição de termos normalizados, com até 5 memórias relevantes anexadas ao prompt. É uma primeira versão de RAG por palavras-chave; ainda NÃO usa embeddings/vetores nem aprendizado automático dos pesos do LLM.
 - Nunca afirmar que o LLM aprendeu ou foi retreinado. A persistência é memória externa local consultada no momento da resposta.
 - O usuário controla explicitamente o que é salvo e pode remover registros. Não gravar tudo automaticamente.
+- electron/main.cjs: arquivo de memória alterado de JSON aberto para aurora-memory.bin criptografado com Electron safeStorage/DPAPI do Windows. Se a criptografia do Windows não estiver disponível, o aplicativo não salva lembranças em texto aberto.
+- electron/main.cjs: falhas ao consultar a memória são registradas no console e não devem impedir uma resposta normal do Ollama.
+- src/App.tsx: comando de apagar memória aceita “esqueça que…”, “esqueca que…”, “esquece que…”, “apague da memória…” e “remova da memória…”, incluindo formas com e sem acentos.
+- electron/main.cjs: tarefas com termos de análise, comparação, cálculo, diagnóstico, causa/consequência ou explicação passam a pedir thinking do Ollama; cumprimentos e mensagens simples continuam com think=false. A detecção normaliza acentos antes de classificar.
+- Em tarefas complexas o limite de saída comum sobe para 420 tokens; pedidos longos mantêm 650; respostas comuns continuam em 180. O contexto foi aumentado para 6144 tokens.
 
 13.2. RESPOSTAS MAIS COERENTES
 - electron/main.cjs: temperature do Ollama reduzida para 0.35, mantendo a variação mais controlada.
@@ -233,6 +238,7 @@ Estado do código após as mudanças:
 - src/App.tsx: VAD reduzido de 1,4 s para 0,85 s de silêncio para encerrar o segmento de fala mais cedo.
 - TTS pode começar por frases completas recebidas no streaming do Ollama, antes que o LLM termine a resposta inteira.
 - As frases são sintetizadas/reproduzidas em sequência para evitar sobreposição. O fluxo de áudio parcial da ElevenLabs ainda não foi integrado numa única WebSocket persistente; atualmente há uma solicitação TTS por segmento/frase, portanto ainda existe latência de síntese entre segmentos.
+- src/App.tsx: extração de frases considera limite de pontuação e enfileira cada segmento sequencialmente; usa o TTS já integrado. Ainda é uma fase inicial de streaming de fala: não é reprodução de cada pacote de áudio recebido.
 - A captura/transcrição ainda usa Whisper Tiny offline não-streaming: o áudio completo do segmento é decodificado após o silêncio. O VAD de 0,85 s reduz espera, mas o reconhecimento em si ainda não produz parciais antes do fim.
 - Foi pesquisada a possibilidade de migrar para Sherpa-ONNX OnlineRecognizer com Nemotron 3.5 ASR streaming 0.6B, que suporta pt-BR e retorna transcrições parciais. O modelo multilingual de chunk 560 ms tem aproximadamente 627 MB de encoder, 14 MB de decoder, 9,1 MB de joiner e tokens. Não foi implementado: exige nova dependência de modelo, configuração OnlineRecognizer e pipeline de áudio em tempo real, além de teste em CPU. Consultar documentação oficial antes da migração.
 - Foi pesquisada também a API ElevenLabs Text-to-Dialogue WebSocket, que aceita segmentos incrementais e flush sem fechar a conexão. A implementação atual ainda abre uma sessão por frase; a conexão persistente e reprodução real de áudio em blocos ficam como próxima otimização.
