@@ -182,7 +182,7 @@ ESTADO DO TESTE: a correção foi publicada no GitHub. O usuário confirmou que 
 Commits de código:
 - b290a1ad993dad04889cef59f45b88d8fe0cfba3 — Define respostas concisas e português natural no prompt.
 - 725174605269db36843c2eb4088acc91ee1179d5 — Encurta saudação e respostas simples da Aurora.
-Commits posteriores desta etapa: 45b8777be1ca8763ded13ce1405067e1c2f48c4b (limite dinâmico de tokens) e 8ace5e6134e4e87f2b1ba75772903cf510a304fe (correção do detector de pedidos longos). HEAD de código antes deste commit documental: 8ace5e6134e4e87f2b1ba75772903cf510a304fe.
+Commits posteriores desta etapa: 45b8777be1ca8763ded13ce1405067e1c2f48c4b (limite dinâmico de tokens), 8ace5e6134e4e87f2b1ba75772903cf510a304fe (correção do detector de pedidos longos), 987a24e161bebbf8a6d89d53f337fd0d92af2e1a (tratamento de etiquetas não verbais no prompt), b6429613e5048cf08470a3fc4bb37bd774b84c26 (filtro inicial de etiquetas não verbais) e eafb83d70e15c4d7ccd2c8bf586c96bc652c8a3d (correção da expressão regular desse filtro). HEAD de código antes deste commit documental: eafb83d70e15c4d7ccd2c8bf586c96bc652c8a3d.
 
 Alterações realizadas:
 - electron/main.cjs: adicionadas regras prioritárias e explícitas de tamanho. Cumprimentos, confirmações e perguntas simples devem receber uma frase curta (preferencialmente até 12 palavras); conversa normal deve ficar em 1 a 3 frases e preferencialmente abaixo de 40 palavras. Respostas longas continuam permitidas quando o usuário pedir detalhes, explicação ou plano, ou quando a tarefa exigir.
@@ -190,6 +190,8 @@ Alterações realizadas:
 - Exemplos gramaticais adicionados ao prompt: “eu ouvi” (não “eu ouvei”) e “estou ouvindo” (não “estou ouço”).
 - src/App.tsx: saudação inicial reduzida para “Oi! Sou a Aurora. ✨ Manda aí, criatura.”
 - src/App.tsx: incluídas respostas rápidas determinísticas para cumprimentos e perguntas simples sobre se a mensagem chegou. Isso evita chamar o modelo Qwen para produzir uma palestra diante de um “oi”.
+- src/App.tsx: incluído tratamento direto para marcadores isolados como [MÚSICA], [APLAUSOS], [RISOS] e [INAUDÍVEL], respondendo brevemente que chegou um som, mas não uma fala clara.
+- electron/main.cjs: o prompt orienta a Aurora a tratar esses marcadores como rótulos não verbais do Whisper, sem inventar intenção nem fingir que ouviu uma conversa.
 
 - electron/main.cjs: o limite do Ollama agora é dinâmico: até 180 tokens para respostas comuns, 360 quando há captura de tela para análise/ação e até 650 quando o usuário pede explicitamente detalhes, passo a passo, plano completo ou guia detalhado. O objetivo é dar concisão por padrão sem impedir explicações quando solicitadas.
 - Personalidade sarcástica e brincalhona foi preservada; a mudança reduz o tamanho, não a atitude.
