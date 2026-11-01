@@ -676,9 +676,9 @@ export default function App() {
               candidate.x >= 0 && candidate.y >= 0 && candidate.x < capture.width && candidate.y < capture.height &&
               candidate.delta !== 0 && Math.abs(candidate.delta) <= 1200) {
             safeAction = { type: 'scroll', captureId: capture.captureId, windowTitle: capture.windowTitle, x: Math.round(candidate.x), y: Math.round(candidate.y), delta: Math.round(candidate.delta), imageWidth: capture.width, imageHeight: capture.height };
-          } else if (candidate?.type === 'type' && typeof candidate.text === 'string' && candidate.text.length > 0 && candidate.text.length <= 1500) {
+          } else if (candidate?.type === 'type' && capture && typeof candidate.text === 'string' && candidate.text.length > 0 && candidate.text.length <= 1500) {
             safeAction = { type: 'type', captureId: capture.captureId, windowTitle: capture.windowTitle, text: candidate.text };
-          } else if (candidate?.type === 'key' && typeof candidate.key === 'string' &&
+          } else if (candidate?.type === 'key' && capture && typeof candidate.key === 'string' &&
               ['ENTER','TAB','ESC','BACKSPACE','SPACE','DELETE','UP','DOWN','LEFT','RIGHT','HOME','END','PAGEUP','PAGEDOWN','F5','CTRL+A','CTRL+C','CTRL+V','CTRL+L','CTRL+S','CTRL+Z','CTRL+F','CTRL+W','CTRL+T','CTRL+R','CTRL+SHIFT+S','ALT+TAB','ALT+F4','ALT+LEFT','ALT+RIGHT'].includes(candidate.key.toUpperCase())) {
             safeAction = { type: 'key', captureId: capture.captureId, windowTitle: capture.windowTitle, key: candidate.key.toUpperCase() };
           }
