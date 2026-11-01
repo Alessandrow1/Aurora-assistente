@@ -1173,7 +1173,7 @@ export default function App() {
         <button className={'pet-action ' + (voiceMode ? 'selected' : '')} onClick={startListening} title={voiceMode ? 'Desligar microfone' : 'Ligar microfone'} aria-label={voiceMode ? 'Desligar microfone' : 'Ligar microfone'} aria-pressed={voiceMode}>🎙</button>
         <button className={'pet-action ' + (studyMode ? 'selected' : '')} onClick={() => setStudyMode((active) => !active)} title={studyMode ? 'Desativar Modo Estudo' : 'Ativar Modo Estudo'} aria-label={studyMode ? 'Desativar Modo Estudo' : 'Ativar Modo Estudo'} aria-pressed={studyMode}>📚</button>
         <button className="pet-action" onClick={() => void analyzeScreen()} title="Analisar o que está na tela">👁</button>
-        <button className={'pet-action ' + (appsOpen ? 'selected' : '')} onClick={() => { setAppsOpen(!appsOpen); setChatOpen(false); }} title="Abrir aplicativos e pastas">▦</button>
+        <button className={'pet-action ' + (appsOpen ? 'selected' : '')} onClick={() => { setAppsOpen(!appsOpen); setChatOpen(false); setMemoryHubOpen(false); }} title="Abrir aplicativos e pastas">▦</button>
         <button className="pet-action" onClick={() => setSettingsOpen(true)} title="Configurações">⚙</button>
         <button className="pet-action" onClick={() => window.aurora.minimize()} title="Minimizar">—</button>
         <button className="pet-action pet-close" onClick={() => window.aurora.close()} title="Fechar Aurora">×</button>
