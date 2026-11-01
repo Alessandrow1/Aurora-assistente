@@ -3,14 +3,20 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 
-type Props = { speaking: boolean; thinking: boolean; laughing: boolean };
+type Props = {
+  speaking: boolean;
+  thinking: boolean;
+  laughing: boolean;
+  /** Current normalized mouth opening; null enables the procedural fallback. */
+  mouthOpenRef: { current: number | null };
+};
 
 /** Renderiza a personagem anime VRM da Aurora e anima suas expressões. */
-export default function Avatar3D({ speaking, thinking, laughing }: Props) {
+export default function Avatar3D({ speaking, thinking, laughing, mouthOpenRef }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
-  const stateRef = useRef({ speaking, thinking, laughing });
+  const stateRef = useRef({ speaking, thinking, laughing, mouthOpenRef });
   const [modelFailed, setModelFailed] = useState(false);
-  stateRef.current = { speaking, thinking, laughing };
+  stateRef.current = { speaking, thinking, laughing, mouthOpenRef };
 
   useEffect(() => {
     const host = mountRef.current;
@@ -176,7 +182,13 @@ export default function Avatar3D({ speaking, thinking, laughing }: Props) {
         if (rightHand) rightHand.rotation.z = rightHandBaseZ + (isSpeaking ? Math.sin(time * 4.7) * 0.07 : Math.sin(time * 0.7) * 0.02);
         const blink = Math.sin(time * 0.72 + 0.4) > 0.994 ? 1 : 0;
         vrm.expressionManager?.setValue('blink', blink);
-        vrm.expressionManager?.setValue('aa', isSpeaking ? 0.16 + Math.abs(Math.sin(time * 9.5)) * 0.3 : 0);
+        const measuredMouthOpen = stateRef.current.mouthOpenRef.current;
+        const mouthOpen = isSpeaking
+          ? measuredMouthOpen === null
+            ? 0.16 + Math.abs(Math.sin(time * 9.5)) * 0.3
+            : measuredMouthOpen
+          : 0;
+        vrm.expressionManager?.setValue('aa', mouthOpen);
         vrm.expressionManager?.setValue('happy', isLaughing ? 0.82 : isThinking ? 0.08 : 0.16);
         vrm.expressionManager?.setValue('relaxed', isLaughing ? 0.25 : 0.08);
         vrm.update(delta);
