@@ -75,15 +75,14 @@ function extractImageGenerationPrompt(rawText: string): string | null {
   const hasImageNoun = /\b(?:imagem|ilustracao|desenho|arte|foto|retrato)\b/.test(normalized);
   if (!hasImageNoun && !drawingAction) return null;
 
+  const rawAction = /\b(?:gere|gerar|gera|crie|criar|cria|desenhe|desenhar|desenha|faça|faca|fazer|faz|produza|produzir|produz)\b/i.exec(rawText);
+  if (!rawAction) return null;
   const prompt = rawText
-    .replace(/^\s*(?:aurora[\s,]+)?/i, '')
-    .replace(/\b(?:gere|gerar|gera|crie|criar|cria|desenhe|desenhar|desenha|faca|fazer|faz|produza|produzir|produz)\b/i, '')
-    .replace(/^\s*(?:(?:uma?|um|o|a)\s+)?(?:imagem|ilustra[cç][aã]o|desenho|arte|foto|retrato)\s*(?:(?:de|do|da|dos|das|com|mostrando|representando)\s+)?/i, '')
-    .replace(/^\s*(?:por favor|pra mim|para mim)\s*/i, '')
+    .slice(rawAction.index + rawAction[0].length)
+    .replace(/^\s*(?:(?:por favor|pra mim|para mim)\s+)?(?:(?:uma?|um|o|a)\s+)?(?:imagem|ilustra[cç][aã]o|desenho|arte|foto|retrato)\s*(?:(?:de|do|da|dos|das|com|mostrando|representando)\s+)?/i, '')
     .trim();
   return prompt.length >= 3 ? prompt.slice(0, 1200) : null;
 }
-
 const greeting: Message = {
   role: 'assistant',
   content: 'E aí, seu malassombro. Sou a Aurora. Desembucha: qual é a missão?',
