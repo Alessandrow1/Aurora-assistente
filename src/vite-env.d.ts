@@ -15,7 +15,7 @@ declare global {
       getElevenLabsStatus: () => Promise<{ configured: boolean; storageAvailable: boolean; voiceId: string; modelId: string }>;
       saveElevenLabsKey: (apiKey: string) => Promise<{ configured: boolean }>;
       clearElevenLabsKey: () => Promise<{ configured: boolean }>;
-      chat: (payload: { message: string; history: AuroraMessage[]; voiceMode?: boolean; imageBase64?: string }, onChunk?: (content: string) => void) => Promise<{ text: string }>;
+      chat: (payload: { message: string; history: AuroraMessage[]; voiceMode?: boolean; studyMode?: boolean; imageBase64?: string }, onChunk?: (content: string) => void) => Promise<{ text: string }>;
       captureScreen: () => Promise<{ imageBase64: string; width: number; height: number; screenWidth: number; screenHeight: number }>;
       openApp: (appId: string) => Promise<{ success: boolean; label: string }>;
       openFolder: (folderId: string) => Promise<{ success: boolean; label: string }>;
