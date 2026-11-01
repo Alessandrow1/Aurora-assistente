@@ -861,6 +861,13 @@ export default function App() {
         : 'Isso já estava anotado. Tá vendo? Eu presto atenção, diferente de certas pessoas.';
     }
 
+    if (/\b(abra|abrir|abre|mostre|mostrar|gerenciar|ver)\b.*\b(historico|conversas antigas|memoria|lembrancas|biblioteca|documentos)\b/.test(text)) {
+      setMemoryHubOpen(true);
+      setChatOpen(false);
+      setAppsOpen(false);
+      return 'Abri minha área de memória. Lá você pode pesquisar conversas, revisar lembranças e adicionar materiais.';
+    }
+
     if (/\b(o que voce lembra de mim|quais memorias voce tem|o que esta guardado na memoria|mostre minhas memorias)\b/.test(text)) {
       const result = await window.aurora.listMemories();
       if (!result.memories.length) return 'Ainda não tenho lembranças salvas. Diga “lembre que…” quando quiser guardar alguma coisa.';
@@ -1190,7 +1197,7 @@ export default function App() {
           <div className="chat-heading">
             <div>
               <span className="chat-title">Conversa com Aurora</span>
-              <span className="chat-subtitle">{voiceMode ? 'Conversa contínua ativa · pode falar naturalmente' : 'Pode pedir para eu abrir programas e pastas'}</span>
+              <span className="chat-subtitle">{conversationTitle !== 'Nova conversa' ? conversationTitle : voiceMode ? 'Conversa contínua ativa · pode falar naturalmente' : 'Pode pedir para eu abrir programas e pastas'}</span>
             </div>
             <button className="text-button" onClick={clearConversation} title="Limpar conversa">Limpar</button>
           </div>
