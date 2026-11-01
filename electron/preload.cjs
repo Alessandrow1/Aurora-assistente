@@ -7,6 +7,22 @@ contextBridge.exposeInMainWorld('aurora', {
   saveMemory: (content) => ipcRenderer.invoke('aurora:memory-save', content),
   listMemories: () => ipcRenderer.invoke('aurora:memory-list'),
   deleteMemory: (query) => ipcRenderer.invoke('aurora:memory-delete', query),
+  createConversation: () => ipcRenderer.invoke('aurora:conversation-create'),
+  saveConversation: (payload) => ipcRenderer.invoke('aurora:conversation-save', payload),
+  listConversations: (query = '') => ipcRenderer.invoke('aurora:conversation-list', query),
+  loadConversation: (id) => ipcRenderer.invoke('aurora:conversation-load', id),
+  deleteConversation: (id) => ipcRenderer.invoke('aurora:conversation-delete', id),
+  importKnowledgeDocument: (payload) => ipcRenderer.invoke('aurora:knowledge-import', payload),
+  listKnowledgeDocuments: () => ipcRenderer.invoke('aurora:knowledge-list'),
+  deleteKnowledgeDocument: (id) => ipcRenderer.invoke('aurora:knowledge-delete', id),
+  searchKnowledge: (query) => ipcRenderer.invoke('aurora:knowledge-search', query),
+  getEmbeddingStatus: () => ipcRenderer.invoke('aurora:embedding-status'),
+  installEmbeddingModel: () => ipcRenderer.invoke('aurora:embedding-install'),
+  onEmbeddingStatus: (callback) => {
+    const listener = (_event, status) => callback(status);
+    ipcRenderer.on('aurora:embedding-status', listener);
+    return () => ipcRenderer.removeListener('aurora:embedding-status', listener);
+  },
   getElevenLabsStatus: () => ipcRenderer.invoke('aurora:elevenlabs-status'),
   saveElevenLabsKey: (apiKey) => ipcRenderer.invoke('aurora:save-elevenlabs-key', apiKey),
   clearElevenLabsKey: () => ipcRenderer.invoke('aurora:clear-elevenlabs-key'),
