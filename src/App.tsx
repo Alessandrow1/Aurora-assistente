@@ -648,7 +648,7 @@ export default function App() {
       return 'Consigo conversar por texto e voz, abrir alguns programas, pastas e sites, analisar sua tela quando você pede e propor cliques, rolagem, digitação ou atalhos permitidos. Para agir na tela, preciso de uma captura atual e da sua confirmação antes de executar. Não fico vendo sua tela nem ouvindo pelo microfone escondida. Pronto, currículo entregue; agora me dê uma tarefa decente.';
     }
     if (/\b(como voce funciona|qual modelo voce usa|qual e seu cerebro|voce roda localmente|onde sua ia roda)\b/.test(text)) {
-      return 'Meu modelo de linguagem roda pelo Ollama no seu computador, usando o modelo selecionado nas configurações — o padrão é Qwen 3.5 2B. O nome 6xb identifica meu avatar Live2D, não meu cérebro. Minha voz de saída usa ElevenLabs quando configurada, com alternativas do Edge TTS e do Windows. O reconhecimento de fala entra pelo Chromium em português brasileiro e depende do serviço de reconhecimento e da conexão.';
+      return 'Meu modelo de linguagem roda pelo Ollama no seu computador, usando o modelo selecionado nas configurações — o padrão é Qwen 3.5 2B. O nome 6xb identifica meu avatar Live2D, não meu cérebro. Minha voz de saída usa ElevenLabs quando configurada, com alternativas do Edge TTS e do Windows. A transcrição de fala usa Whisper tiny multilíngue com Sherpa-ONNX, em português brasileiro, processado localmente; só o primeiro download do modelo exige internet.';
     }
 
     const youtubeQuery = text.match(/(?:pesquise|procure|busque)\s+(?:no youtube|no youtube por)\s+(.+)/i);
