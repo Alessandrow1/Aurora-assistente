@@ -242,7 +242,7 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
       const text = ('Usuário: ' + user.content + '\nAurora: ' + assistant.content).slice(0, 9000);
       const id = conversation.id + ':' + i;
       const previous = data.index.find((item) => item.id === id);
-      if (previous?.text === text && Array.isArray(previous.embedding)) continue;
+      if (previous?.text === text) continue;
       const item = { id, sessionId: conversation.id, title: conversation.title, text, updatedAt: conversation.updatedAt, embedding: null };
       if (previous) Object.assign(previous, item);
       else data.index.push(item);
