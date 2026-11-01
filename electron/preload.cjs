@@ -20,7 +20,10 @@ contextBridge.exposeInMainWorld('aurora', {
       .finally(() => ipcRenderer.removeListener('aurora:chat-chunk', listener));
   },
   speak: (text) => ipcRenderer.invoke('aurora:speak', text),
+  startSpeakSession: () => ipcRenderer.invoke('aurora:speak-session-start'),
+  endSpeakSession: () => ipcRenderer.invoke('aurora:speak-session-end'),
   transcribeAudio: (samples) => ipcRenderer.invoke('aurora:transcribe-audio', samples),
+  warmupTranscription: () => ipcRenderer.invoke('aurora:warmup-transcription'),
   onSpeechRecognitionStatus: (callback) => {
     const listener = (_event, status) => callback(status);
     ipcRenderer.on('aurora:speech-recognition-status', listener);
