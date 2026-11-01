@@ -12,3 +12,31 @@ public/models/*.vrm
 public/models/booth-6xb/
 public/Core/
 vendor/live2d/
+
+# Live2D local runtime and BOOTH character assets (do not publish without checking licenses)
+/src/vendor/cubism-framework/
+/src/live2d/sdk/
+/src/live2d/types/live2dcubismcore.d.ts
+/public/live2d/
+# Aurora: recursos Live2D licenciados/local-only; nao enviar ao repositorio
+src/live2d/sdk/
+src/live2d/Core/
+public/live2d/Core/
+live2d/Core/
+**/live2d/Core/
+src/live2d/types/live2dcubismcore.d.ts
+src/vendor/cubism-framework/
+**/*.moc3
+**/*.model3.json
+**/*.exp3.json
+**/*.physics3.json
+**/*.cdi3.json
+**/*.userdata3.json
+**/*.pose3.json
+**/*.motion3.json
+**/*.4096/
+**/*.8192/
+**/6xb/
+**/xl/
+**/6xb.*
+**/xl.*

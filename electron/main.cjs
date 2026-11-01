@@ -1,4 +1,5 @@
-const { app, BrowserWindow, ipcMain, session, desktopCapturer, shell, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, session, desktopCapturer, shell, screen, globalShortcut } = require('electron');
+const { Menu: AuroraTrayMenu, Tray: AuroraSystemTray, nativeImage: AuroraNativeImage } = require('electron'); // AURORA_TRAY_ELECTRON_IMPORT
 const path = require('node:path');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
@@ -12,6 +13,8 @@ const ALLOWED_MODELS = new Set(['qwen3.5:2b', 'qwen3.5:4b', 'qwen3.5:9b']);
 
 let mainWindow;
 let capturedForegroundHandle = 0;
+let tray = null;
+let isQuitting = false; // AURORA_TRAY_V3
 const settingsPath = () => path.join(app.getPath('userData'), 'aurora-settings.json');
 
 function readSettings() {
@@ -40,10 +43,42 @@ async function getOllamaModels() {
   }
 }
 
+function showAuroraFromTray() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.setIgnoreMouseEvents(true, { forward: true });
+  mainWindow.setAlwaysOnTop(true, 'floating');
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function createTray() {
+  if (tray && !tray.isDestroyed()) return;
+  const trayIconPath = path.join(__dirname, 'aurora-tray.ico');
+  const trayImage = AuroraNativeImage.createFromPath(trayIconPath);
+  if (trayImage.isEmpty()) throw new Error('O ícone da bandeja da Aurora não pôde ser carregado.');
+  tray = new AuroraSystemTray(trayImage);
+  tray.setToolTip('Aurora — assistente de desktop');
+  tray.setContextMenu(AuroraTrayMenu.buildFromTemplate([
+    { label: 'Mostrar Aurora', click: showAuroraFromTray },
+    { type: 'separator' },
+    {
+      label: 'Encerrar Aurora',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      }
+    }
+  ]));
+  tray.on('click', showAuroraFromTray);
+}
 function createWindow() {
   const area = screen.getPrimaryDisplay().workArea;
-  const petWidth = 380;
-  const petHeight = Math.min(720, Math.max(560, area.height - 32));
+  const petWidth = 425;
+  const petHeight = 690;
   mainWindow = new BrowserWindow({
     width: petWidth,
     height: petHeight,
@@ -57,8 +92,9 @@ function createWindow() {
     transparent: true,
     backgroundColor: '#00000000',
     resizable: false,
+    minimizable: false,
     alwaysOnTop: true,
-    skipTaskbar: false,
+    skipTaskbar: true,
     show: false,
     hasShadow: false,
     webPreferences: {
@@ -70,6 +106,8 @@ function createWindow() {
   });
 
   mainWindow.setAlwaysOnTop(true, 'floating');
+  mainWindow.setSkipTaskbar(true);
+  mainWindow.setMinimizable(false);
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
 
   const distIndexPath = path.join(__dirname, '..', 'dist', 'index.html');
@@ -84,7 +122,28 @@ function createWindow() {
     mainWindow.loadFile(distIndexPath);
   }
 
-  mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    // AURORA_MOUSE_PASSTHROUGH: a janela comeÃ§a atravessÃ¡vel fora do hitbox.
+    mainWindow.setIgnoreMouseEvents(true, { forward: true });
+  });
+  // AURORA_TRAY_WINDOW_EVENTS: manter a mascote visível quando o Windows pede minimizar.
+  mainWindow.on('minimize', () => {
+    if (isQuitting) return;
+    setImmediate(() => {
+      if (!mainWindow || mainWindow.isDestroyed() || isQuitting) return;
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.setAlwaysOnTop(true, 'floating');
+      mainWindow.showInactive();
+    });
+  });
+
+  // Fechar a janela apenas a oculta na bandeja. Encerrar pelo menu encerra o processo.
+  mainWindow.on('close', (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    mainWindow.hide();
+  });
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
@@ -93,13 +152,18 @@ app.whenReady().then(() => {
     callback(permission === 'media');
   });
   createWindow();
-  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+  createTray();
+  // Atalho global: continua acessÃ­vel mesmo quando o mouse estÃ¡ passando para outro programa.
+  globalShortcut.register('Control+Shift+Space', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.setIgnoreMouseEvents(false);
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.webContents.send('aurora:toggle-clean-ui');
+  });  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
-
+app.on('window-all-closed', () => {});
 ipcMain.handle('aurora:version', () => app.getVersion());
 
 ipcMain.handle('aurora:get-config', async () => {
@@ -538,5 +602,27 @@ ipcMain.handle('aurora:open-url', async (_event, rawUrl) => {
   return { success: true };
 });
 
-ipcMain.on('aurora:minimize', () => mainWindow?.minimize());
+// AURORA_MOUSE_PASSTHROUGH: sÃ³ a prÃ³pria janela Aurora pode alterar seu modo de mouse.
+ipcMain.on('aurora:set-mouse-passthrough', (event, ignore) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return;
+  mainWindow.setIgnoreMouseEvents(ignore === true, { forward: true });
+});
+
+ipcMain.on('aurora:move-window-by', (event, payload = {}) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return;
+  const dx = Number(payload.deltaX);
+  const dy = Number(payload.deltaY);
+  if (!Number.isFinite(dx) || !Number.isFinite(dy) || Math.abs(dx) > 150 || Math.abs(dy) > 150) return;
+  const [x, y] = mainWindow.getPosition();
+  mainWindow.setPosition(x + Math.round(dx), y + Math.round(dy), false);
+});
+ipcMain.on('aurora:minimize', () => mainWindow?.hide());
 ipcMain.on('aurora:close', () => mainWindow?.close());
+
+app.on('will-quit', () => globalShortcut.unregisterAll());
+
+app.on('before-quit', () => {
+  isQuitting = true; // AURORA_TRAY_V3_BEFORE_QUIT
+  if (tray && !tray.isDestroyed()) tray.destroy();
+  tray = null;
+});

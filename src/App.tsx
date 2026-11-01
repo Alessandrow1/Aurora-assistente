@@ -586,6 +586,15 @@ export default function App() {
 
   const lastAssistantMessage = [...messages].reverse().find((message) => message.role === 'assistant')?.content || 'Oi! Clique em conversar para falar comigo.';
 
+  useEffect(() => {
+    return window.aurora.onToggleCleanUi(() => {
+      document.body.classList.toggle('aurora-ui-open');
+      if (document.body.classList.contains('aurora-ui-open')) {
+        setChatOpen(false);
+        setAppsOpen(false);
+      }
+    });
+  }, []);
   return (
     <main className="desktop-shell pet-shell">
       <div className="pet-avatar-wrap" title="Arraste a Aurora para mudar sua posição">

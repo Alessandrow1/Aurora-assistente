@@ -16,7 +16,9 @@ declare global {
       openFolder: (folderId: string) => Promise<{ success: boolean; label: string }>;
       openUrl: (url: string) => Promise<{ success: boolean }>;
       speak: (text: string) => Promise<{ audioBase64: string; voice: string }>;
-      minimize: () => void;
+      setMousePassthrough: (ignore: boolean) => void;
+      moveWindowBy: (deltaX: number, deltaY: number) => void;
+      onToggleCleanUi: (callback: () => void) => () => void;      minimize: () => void;
       close: () => void;
       version: () => Promise<string>;
     };

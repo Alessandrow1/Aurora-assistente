@@ -402,3 +402,40 @@ button { color: inherit; }
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: .55; transform: scale(.82); }
 }
+
+/* AURORA_CLEAN_AVATAR_MODE */
+/* PadrÃ£o: somente a personagem. Ctrl+Shift+EspaÃ§o revela os controles temporariamente. */
+body:not(.aurora-ui-open) .pet-status,
+body:not(.aurora-ui-open) .pet-bubble,
+body:not(.aurora-ui-open) .pet-toolbar,
+body:not(.aurora-ui-open) .pet-chat-card,
+body:not(.aurora-ui-open) .pet-apps-menu,
+body:not(.aurora-ui-open) .pet-action-confirm,
+body:not(.aurora-ui-open) .pet-notice,
+body:not(.aurora-ui-open) .modal-backdrop,
+body:not(.aurora-ui-open) .avatar-fallback-note {
+  display: none !important;
+}
+body:not(.aurora-ui-open) .pet-avatar-wrap {
+  inset: 0 !important;
+}
+body:not(.aurora-ui-open) .pet-shell {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: 0 !important;
+}
+/* AURORA_AVATAR_HIT_ZONE: somente a silhueta aproximada recebe mouse/zoom. */
+.pet-avatar-wrap .avatar-hit-zone {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  clip-path: ellipse(31.2% 32% at 50% 50%);
+  transform: scale(var(--aurora-hit-scale, 1));
+  transform-origin: center center;
+  background: transparent;
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-app-region: no-drag;
+  cursor: grab;
+}
+.pet-avatar-wrap .avatar-hit-zone:active { cursor: grabbing; }
