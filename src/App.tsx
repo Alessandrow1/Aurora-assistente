@@ -642,7 +642,7 @@ export default function App() {
       };
 
       setMessages((current) => [...current, { role: 'assistant', content: '' }]);
-      const response = await window.aurora.chat({ message: computerPrompt, history, ...(capture ? { imageBase64: capture.imageBase64 } : {}) }, (chunk) => {
+      const response = await window.aurora.chat({ message: computerPrompt, history, voiceMode: voiceModeRef.current, ...(capture ? { imageBase64: capture.imageBase64 } : {}) }, (chunk) => {
         setMessages((current) => {
           const updated = [...current];
           const last = updated[updated.length - 1];
