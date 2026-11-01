@@ -1,0 +1,31 @@
+name: Validate Aurora memory layer
+
+on:
+  push:
+    branches: [feature/live2d-avatar]
+    paths:
+      - 'electron/**'
+      - 'src/**'
+      - '.github/workflows/validate-memory.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  memory-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check Electron JavaScript syntax
+        run: |
+          node --check electron/main.cjs
+          node --check electron/preload.cjs
+          node --check electron/aurora-store.cjs
+      - name: Test persistent memory and knowledge store
+        run: node --test electron/aurora-store.test.cjs
