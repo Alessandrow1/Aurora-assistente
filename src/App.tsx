@@ -1004,7 +1004,7 @@ export default function App() {
 
       <div className="pet-status">
         <span className={'status-dot ' + (connected ? 'online' : '')} />
-        {thinking ? 'Pensando…' : laughing ? 'Rindo…' : speaking ? 'Falando…' : connected ? 'Aurora está aqui' : 'Configure minha IA'}
+        {thinking ? 'Pensando…' : laughing ? 'Rindo…' : speaking ? 'Falando…' : transcribingVoice ? 'Entendendo sua voz…' : listening ? 'Escutando você' : voiceMode ? 'Microfone ativado' : connected ? 'Aurora está aqui' : 'Configure minha IA'}
         <span className="pet-version">v{version}</span>
       </div>
 
@@ -1014,6 +1014,7 @@ export default function App() {
 
       <div className="pet-toolbar">
         <button className={'pet-action ' + (chatOpen ? 'selected' : '')} onClick={() => { setChatOpen(!chatOpen); setAppsOpen(false); }} title="Conversar com Aurora">💬</button>
+        <button className={'pet-action ' + (voiceMode ? 'selected' : '')} onClick={startListening} title={voiceMode ? 'Desligar microfone' : 'Ligar microfone'} aria-label={voiceMode ? 'Desligar microfone' : 'Ligar microfone'} aria-pressed={voiceMode}>🎙</button>
         <button className="pet-action" onClick={() => void analyzeScreen()} title="Analisar o que está na tela">👁</button>
         <button className={'pet-action ' + (appsOpen ? 'selected' : '')} onClick={() => { setAppsOpen(!appsOpen); setChatOpen(false); }} title="Abrir aplicativos e pastas">▦</button>
         <button className="pet-action" onClick={() => setSettingsOpen(true)} title="Configurações">⚙</button>
@@ -1190,7 +1191,7 @@ export default function App() {
                 </div>
                 <div>
                   <strong>Visão e privacidade</strong>
-                  <p>A tela só é capturada quando você toca no botão de olho ou pede para analisar a tela. A imagem vai para o Ollama local no seu PC; não é enviada a uma API na nuvem.</p>
+                  <p>A tela só é capturada quando você toca no botão de olho ou pede para analisar. A imagem é enviada apenas ao Ollama local no computador. O microfone inicia automaticamente ao abrir a Aurora; você pode desligá-lo pelo botão de microfone.</p>
                 </div>
                 <div>
                   <strong>Comandos disponíveis nesta versão</strong>
