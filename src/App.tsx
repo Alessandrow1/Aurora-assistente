@@ -640,6 +640,30 @@ export default function App() {
 
   const runQuickCommand = async (rawText: string): Promise<string | null> => {
     const text = rawText.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const rememberMatch = rawText.match(/^\s*(?:aurora[, ]+)?(?:lembre-se de que|lembre que|guarde que|anote que|aprenda que)\s+([\s\S]+)$/i);
+    if (rememberMatch?.[1]?.trim()) {
+      const saved = await window.aurora.saveMemory(rememberMatch[1].trim());
+      return saved.saved
+        ? 'Guardei isso na minha memória local. Não vou fingir que esqueci, criatura. 😏'
+        : 'Isso já estava anotado na minha memória. Estou prestando atenção, veja só. 😌';
+    }
+
+    if (/\b(o que voce lembra de mim|quais memorias voce tem|o que esta guardado na memoria|mostre minhas memorias)\b/.test(text)) {
+      const result = await window.aurora.listMemories();
+      if (!result.memories.length) return 'Ainda não tenho lembranças salvas. Diga “lembre que…” quando quiser guardar alguma coisa.';
+      return 'Estas são as coisas que você me pediu para guardar:\n' +
+        result.memories.slice(0, 10).map((item, index) => (index + 1) + '. ' + item.content).join('\n') +
+        (result.count > 10 ? '\n... e mais ' + (result.count - 10) + ' registro(s).' : '');
+    }
+
+    const forgetMatch = rawText.match(/^\s*(?:aurora[, ]+)?(?:esqueca que|apague da memoria|remova da memoria)\s+([\s\S]+)$/i);
+    if (forgetMatch?.[1]?.trim()) {
+      const result = await window.aurora.deleteMemory(forgetMatch[1].trim());
+      return result.deleted
+        ? 'Apaguei essa lembrança da memória local.'
+        : 'Não encontrei uma lembrança com esse conteúdo.';
+    }
+
     if (/^\s*\[(musica|music|aplausos|risos|inaudivel|som nao identificado)\]\s*$/.test(text)) {
       return 'Recebi um som, mas não uma fala clara. Fala perto do microfone. 😏';
     }
