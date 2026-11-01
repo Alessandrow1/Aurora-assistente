@@ -261,11 +261,32 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
   async function listConversations(query = '') {
     const data = await readConversations();
     const normalizedQuery = normalize(query);
-    const sessions = data.conversations
-      .filter((item) => !normalizedQuery || scoreText(normalizedQuery, item.title + ' ' + (item.messages || []).map((message) => message.content).join(' ')) > 0)
-      .sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)))
+    let queryVector = null;
+    if (normalizedQuery) {
+      try { [queryVector] = (await generateEmbeddings([query])) || []; } catch { /* busca lexical continua disponível */ }
+    }
+    const semanticScores = new Map();
+    if (queryVector) {
+      for (const item of data.index) {
+        if (!item.embedding) continue;
+        const score = cosineSimilarity(queryVector, item.embedding);
+        semanticScores.set(item.sessionId, Math.max(semanticScores.get(item.sessionId) || 0, score));
+      }
+    }
+    const ranked = data.conversations.map((item) => {
+      const lexical = normalizedQuery
+        ? scoreText(query, item.title + ' ' + (item.messages || []).map((message) => message.content).join(' '))
+        : 0;
+      const semantic = semanticScores.get(item.id) || 0;
+      return { item, score: normalizedQuery ? Math.max(lexical, semantic * 10) : 0 };
+    });
+    const sessions = ranked
+      .filter(({ score }) => !normalizedQuery || score >= 1.5)
+      .sort((left, right) => normalizedQuery
+        ? right.score - left.score || String(right.item.updatedAt).localeCompare(String(left.item.updatedAt))
+        : String(right.item.updatedAt).localeCompare(String(left.item.updatedAt)))
       .slice(0, 100)
-      .map((item) => ({
+      .map(({ item }) => ({
         id: item.id,
         title: item.title,
         createdAt: item.createdAt,
