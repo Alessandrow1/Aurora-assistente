@@ -20,6 +20,15 @@ contextBridge.exposeInMainWorld('aurora', {
   saveIdentityProfile: (profile) => ipcRenderer.invoke('aurora:identity-save', profile),
   getEmbeddingStatus: () => ipcRenderer.invoke('aurora:embedding-status'),
   installEmbeddingModel: () => ipcRenderer.invoke('aurora:embedding-install'),
+  getImageGeneratorStatus: () => ipcRenderer.invoke('aurora:image-status'),
+  generateImage: (payload) => ipcRenderer.invoke('aurora:image-generate', payload),
+  loadGeneratedImage: (id) => ipcRenderer.invoke('aurora:image-load', id),
+  openGeneratedImages: () => ipcRenderer.invoke('aurora:image-open-folder'),
+  onImageStatus: (callback) => {
+    const listener = (_event, status) => callback(status);
+    ipcRenderer.on('aurora:image-status', listener);
+    return () => ipcRenderer.removeListener('aurora:image-status', listener);
+  },
   onEmbeddingStatus: (callback) => {
     const listener = (_event, status) => callback(status);
     ipcRenderer.on('aurora:embedding-status', listener);
