@@ -630,7 +630,7 @@ export default function App() {
       const computerPrompt = capture
         ? `${text}\n\nEstou fornecendo uma captura atual do desktop. Analise somente o que estiver visível e explique o que aparece. A visão é somente de leitura: não proponha cliques, movimentos de mouse, digitação, atalhos ou blocos de ação. Se algo estiver ilegível, diga isso com clareza. ${studyPrompt}`
         : text;
-      const canStreamSpeech = autoSpeak && !capture;
+      const canStreamSpeech = autoSpeak && (studyMode || !capture);
       let speechSessionActive = false;
       let speechSessionClosed = false;
       const speechSessionPromise = canStreamSpeech
