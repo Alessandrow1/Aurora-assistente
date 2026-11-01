@@ -37,6 +37,7 @@ const DEFAULT_MODEL = 'qwen3.5:9b';
 const ALLOWED_MODELS = new Set(['qwen3.5:2b', 'qwen3.5:4b', 'qwen3.5:9b']);
 
 let mainWindow;
+let activeElevenLabsStreamSession = null;
 let capturedForegroundHandle = 0;
 let tray = null;
 let isQuitting = false; // AURORA_TRAY_V3
@@ -474,14 +475,25 @@ ipcMain.handle('aurora:transcribe-audio', async (_event, rawSamples) => {
   if (samples.length < 4000) return { text: '' };
   if (samples.length > 16000 * 45) throw new Error('A fala passou de 45 segundos. Divida a mensagem e tente novamente.');
 
+  const transcriptionStartedAt = Date.now();
   const { recognizer } = await getOfflineWhisperRecognizer();
   const stream = recognizer.createStream();
   stream.acceptWaveform({ sampleRate: 16000, samples });
   await recognizer.decodeAsync(stream);
   const result = recognizer.getResult(stream);
   const text = typeof result?.text === 'string' ? result.text.trim().slice(0, 4000) : '';
+  console.info('[Aurora Performance] Whisper', {
+    audioSeconds: Number((samples.length / 16000).toFixed(2)),
+    transcriptionMs: Date.now() - transcriptionStartedAt,
+    recognizedCharacters: text.length,
+  });
   reportSpeechStatus('ready', text ? 'Fala reconhecida localmente.' : 'Nao consegui identificar palavras. Tente falar um pouco mais perto do microfone.');
   return { text };
+});
+
+ipcMain.handle('aurora:warmup-transcription', async () => {
+  await getOfflineWhisperRecognizer();
+  return { ready: true };
 });
 
 ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
@@ -578,7 +590,7 @@ const chatMessages = [
           model: settings.model,
           stream: true,
           think: thinkEnabled,
-          keep_alive: '20m',
+          keep_alive: '2h',
           messages,
           options: { temperature: needsThinking ? 0.2 : needsExplanation ? 0.22 : 0.4, num_predict: tokenBudget, num_ctx: 6144 },
         }),
@@ -603,6 +615,9 @@ const chatMessages = [
     let buffer = '';
     let answer = '';
     let doneReason = '';
+    let usageStats = null;
+    const streamStartedAt = Date.now();
+    let firstTokenAt = null;
 
     const consumeLine = (line) => {
       if (!line.trim()) return;
@@ -614,9 +629,20 @@ const chatMessages = [
       }
       if (chunk.error) throw new Error('O Ollama interrompeu a geração: ' + String(chunk.error).slice(0, 240));
       if (typeof chunk.done_reason === 'string') doneReason = chunk.done_reason;
+      if (chunk.done === true) {
+        usageStats = {
+          totalDuration: Number(chunk.total_duration) || 0,
+          loadDuration: Number(chunk.load_duration) || 0,
+          promptEvalCount: Number(chunk.prompt_eval_count) || 0,
+          promptEvalDuration: Number(chunk.prompt_eval_duration) || 0,
+          evalCount: Number(chunk.eval_count) || 0,
+          evalDuration: Number(chunk.eval_duration) || 0,
+        };
+      }
       // O raciocínio chega em message.thinking; somente message.content é exibido e falado.
       const token = typeof chunk.message?.content === 'string' ? chunk.message.content : '';
       if (!token) return;
+      if (firstTokenAt === null) firstTokenAt = Date.now();
       answer += token;
       if (requestId && mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('aurora:chat-chunk', { requestId, content: token });
@@ -637,7 +663,19 @@ const chatMessages = [
     } finally {
       reader.releaseLock();
     }
-    return { text: answer.trim(), doneReason };
+    const elapsedMs = Date.now() - streamStartedAt;
+    const evalSeconds = usageStats?.evalDuration ? usageStats.evalDuration / 1e9 : 0;
+    console.info('[Aurora Performance] Ollama', {
+      firstTokenMs: firstTokenAt === null ? null : firstTokenAt - streamStartedAt,
+      totalMs: elapsedMs,
+      promptTokens: usageStats?.promptEvalCount ?? null,
+      generatedTokens: usageStats?.evalCount ?? null,
+      tokensPerSecond: evalSeconds > 0 ? Number((usageStats.evalCount / evalSeconds).toFixed(2)) : null,
+      modelLoadMs: usageStats?.loadDuration ? Math.round(usageStats.loadDuration / 1e6) : null,
+      promptEvalMs: usageStats?.promptEvalDuration ? Math.round(usageStats.promptEvalDuration / 1e6) : null,
+      doneReason: doneReason || null,
+    });
+    return { text: answer.trim(), doneReason, usageStats };
   };
 
   let result = await readChatStream(await sendChatRequest(needsThinking, numPredict));
@@ -788,6 +826,264 @@ async function synthesizeElevenLabsDialogue(text, apiKey) {
     });
   });
 }
+
+function pcm24KhzToWav(pcmBytes) {
+  const pcm = Buffer.from(pcmBytes);
+  const header = Buffer.alloc(44);
+  header.write('RIFF', 0);
+  header.writeUInt32LE(36 + pcm.length, 4);
+  header.write('WAVE', 8);
+  header.write('fmt ', 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(1, 22);
+  header.writeUInt32LE(24000, 24);
+  header.writeUInt32LE(48000, 28);
+  header.writeUInt16LE(2, 32);
+  header.writeUInt16LE(16, 34);
+  header.write('data', 36);
+  header.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([header, pcm]);
+}
+
+function createElevenLabsStreamSession(apiKey) {
+  let WebSocket;
+  try { WebSocket = require('ws'); }
+  catch { throw new Error('O pacote ws nao esta disponivel no processo principal do Electron.'); }
+
+  const query = new URLSearchParams({
+    model_id: ELEVENLABS_MODEL_ID,
+    output_format: 'pcm_24000',
+  });
+  const endpoint = 'wss://api.elevenlabs.io/v1/text-to-dialogue/stream-input?' + query.toString();
+
+  let socket;
+  let failure = null;
+  let closing = false;
+  let readySettled = false;
+  let pendingTurn = null;
+  let keepAliveTimer = null;
+  let resolveReady;
+  let rejectReady;
+  let resolveClosed;
+  const ready = new Promise((resolve, reject) => {
+    resolveReady = resolve;
+    rejectReady = reject;
+  });
+  const closed = new Promise((resolve) => { resolveClosed = resolve; });
+
+  const settleReady = (error) => {
+    if (readySettled) return;
+    readySettled = true;
+    if (error) rejectReady(error);
+    else resolveReady();
+  };
+
+  const clearKeepAlive = () => {
+    if (keepAliveTimer !== null) {
+      clearInterval(keepAliveTimer);
+      keepAliveTimer = null;
+    }
+  };
+
+  const rejectPendingTurn = (error) => {
+    if (!pendingTurn) return;
+    const turn = pendingTurn;
+    pendingTurn = null;
+    clearTimeout(turn.timeout);
+    turn.reject(error);
+  };
+
+  const failSession = (rawError) => {
+    if (failure) return;
+    failure = rawError instanceof Error ? rawError : new Error(String(rawError));
+    settleReady(failure);
+    rejectPendingTurn(failure);
+    clearKeepAlive();
+    closing = true;
+    try {
+      if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) socket.close();
+    } catch { /* conexao ja encerrada */ }
+    resolveClosed();
+  };
+
+  const sendFrame = (payload) => new Promise((resolve, reject) => {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      reject(new Error('WebSocket ElevenLabs nao esta aberto.'));
+      return;
+    }
+    socket.send(JSON.stringify(payload), (error) => error ? reject(error) : resolve());
+  });
+
+  const finishPendingTurn = () => {
+    if (!pendingTurn) return;
+    const turn = pendingTurn;
+    const pcm = Buffer.concat(turn.audioChunks);
+    if (pcm.length < 100) {
+      rejectPendingTurn(new Error('A ElevenLabs encerrou o trecho sem retornar audio PCM suficiente.'));
+      return;
+    }
+    pendingTurn = null;
+    clearTimeout(turn.timeout);
+    const audio = pcm24KhzToWav(pcm);
+    console.info('[Aurora Performance] ElevenLabs TTD', {
+      synthesisMs: Date.now() - turn.startedAt,
+      characters: turn.text.length,
+      audioBytes: audio.length,
+      transport: 'WebSocket persistente / PCM 24 kHz',
+    });
+    turn.resolve(audio);
+  };
+
+  try {
+    socket = new WebSocket(endpoint, {
+      headers: { 'xi-api-key': apiKey },
+      handshakeTimeout: 20000,
+      perMessageDeflate: false,
+    });
+  } catch (error) {
+    throw new Error('Nao consegui abrir a conexao persistente da ElevenLabs: ' + (error instanceof Error ? error.message : String(error)));
+  }
+
+  socket.on('open', () => {
+    void sendFrame({ voices: [ELEVENLABS_VOICE_ID] })
+      .then(() => {
+        settleReady();
+        keepAliveTimer = setInterval(() => {
+          if (failure || closing || pendingTurn || socket.readyState !== WebSocket.OPEN) return;
+          void sendFrame({ keep_alive: true }).catch(failSession);
+        }, 9000);
+        console.info('[Aurora Performance] ElevenLabs TTD conectado antes da primeira frase.');
+      })
+      .catch(failSession);
+  });
+
+  socket.on('message', (data) => {
+    if (failure) return;
+    try {
+      const raw = Buffer.isBuffer(data) ? data.toString('utf8') : String(data);
+      const message = JSON.parse(raw);
+      if (message.error) {
+        const detail = typeof message.error === 'string'
+          ? message.error
+          : (message.error.message || message.error.status || JSON.stringify(message.error));
+        failSession(new Error('ElevenLabs recusou o streaming: ' + String(detail).slice(0, 260)));
+        return;
+      }
+      if (typeof message.audio === 'string' && message.audio.length > 0 && pendingTurn) {
+        pendingTurn.audioChunks.push(Buffer.from(message.audio, 'base64'));
+      }
+      if (message.is_final_audio_for_turn === true) finishPendingTurn();
+      if (message.is_final === true) {
+        if (pendingTurn) finishPendingTurn();
+        closing = true;
+        clearKeepAlive();
+        resolveClosed();
+      }
+    } catch (error) {
+      failSession(error);
+    }
+  });
+
+  socket.on('error', (error) => {
+    failSession(new Error('Falha no WebSocket persistente da ElevenLabs: ' + (error instanceof Error ? error.message : String(error))));
+  });
+
+  socket.on('close', (code, reason) => {
+    clearKeepAlive();
+    if (pendingTurn) {
+      if (code === 1000 && pendingTurn.audioChunks.length > 0) finishPendingTurn();
+      else rejectPendingTurn(new Error('Conexao ElevenLabs fechada antes do fim do trecho (codigo ' + code + '): ' + (reason?.toString('utf8').slice(0, 140) || 'sem detalhe')));
+    }
+    if (code !== 1000 && !failure && !closing) {
+      failure = new Error('Conexao ElevenLabs encerrada inesperadamente (codigo ' + code + ').');
+      settleReady(failure);
+    }
+    closing = true;
+    resolveClosed();
+  });
+
+  return {
+    ready,
+    synthesize(text) {
+      const promise = new Promise((resolve, reject) => {
+        void ready.then(() => {
+          if (failure) throw failure;
+          if (closing || socket.readyState !== WebSocket.OPEN) throw new Error('A sessao de fala da ElevenLabs ja foi encerrada.');
+          if (pendingTurn) throw new Error('Ja existe um trecho aguardando audio da ElevenLabs.');
+          const turn = {
+            text,
+            audioChunks: [],
+            startedAt: Date.now(),
+            resolve,
+            reject,
+            timeout: null,
+            promise: null,
+          };
+          turn.promise = promise;
+          turn.timeout = setTimeout(() => {
+            failSession(new Error('Tempo esgotado aguardando a ElevenLabs sintetizar um trecho.'));
+          }, 60000);
+          pendingTurn = turn;
+          return sendFrame({
+            inputs: [{ text, voice_id: ELEVENLABS_VOICE_ID, new_turn: true }],
+            flush: true,
+          }).catch(failSession);
+        }).catch(reject);
+      });
+      return promise;
+    },
+    async close() {
+      if (pendingTurn?.promise) await pendingTurn.promise.catch(() => undefined);
+      if (!failure && socket && socket.readyState === WebSocket.OPEN) {
+        closing = true;
+        await sendFrame({ close_socket: true }).catch(() => undefined);
+        await Promise.race([closed, new Promise((resolve) => setTimeout(resolve, 2200))]);
+      }
+      clearKeepAlive();
+      try {
+        if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) socket.close();
+      } catch { /* conexao ja encerrada */ }
+      resolveClosed();
+    },
+  };
+}
+
+ipcMain.handle('aurora:speak-session-start', async () => {
+  if (activeElevenLabsStreamSession) {
+    const previous = activeElevenLabsStreamSession;
+    activeElevenLabsStreamSession = null;
+    await previous.close().catch(() => undefined);
+  }
+  let apiKey = null;
+  try { apiKey = await readElevenLabsApiKey(); }
+  catch (error) {
+    console.warn('[Aurora ElevenLabs] Nao consegui preparar o streaming persistente:', error instanceof Error ? error.message : String(error));
+    return { active: false };
+  }
+  if (!apiKey) return { active: false };
+
+  const startedAt = Date.now();
+  const session = createElevenLabsStreamSession(apiKey);
+  try {
+    await session.ready;
+    activeElevenLabsStreamSession = session;
+    console.info('[Aurora Performance] ElevenLabs conexao pronta', { connectMs: Date.now() - startedAt });
+    return { active: true };
+  } catch (error) {
+    await session.close().catch(() => undefined);
+    console.warn('[Aurora ElevenLabs] Streaming persistente indisponivel; usarei a sintese normal:', error instanceof Error ? error.message : String(error));
+    return { active: false };
+  }
+});
+
+ipcMain.handle('aurora:speak-session-end', async () => {
+  const session = activeElevenLabsStreamSession;
+  activeElevenLabsStreamSession = null;
+  if (session) await session.close().catch((error) => console.warn('[Aurora ElevenLabs] Nao consegui encerrar a sessao limpa:', error));
+  return { closed: true };
+});
+
 ipcMain.handle('aurora:speak', async (_event, rawText) => {
   const text = typeof rawText === 'string' ? rawText.trim().slice(0, 4200) : '';
   if (!text) throw new Error('Nao ha texto para transformar em fala.');
@@ -817,17 +1113,47 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
   }
 
   if (apiKey) {
-    try {
-      const audio = await synthesizeElevenLabsDialogue(cleanText, apiKey);
-      return {
-        audioBase64: audio.toString('base64'),
-        voice: ELEVENLABS_VOICE_ID,
-        provider: 'elevenlabs',
-      };
-    } catch (error) {
-      elevenLabsFailure = error instanceof Error ? error.message : String(error);
-      // Nunca registrar a chave ou o corpo de autenticacao no log.
-      console.error('[Aurora ElevenLabs] Falha na sessao TTD; usando voz de reserva:', elevenLabsFailure);
+    if (activeElevenLabsStreamSession) {
+      const session = activeElevenLabsStreamSession;
+      try {
+        const audio = await session.synthesize(cleanText);
+        return {
+          audioBase64: audio.toString('base64'),
+          audioMimeType: 'audio/wav',
+          voice: ELEVENLABS_VOICE_ID,
+          provider: 'elevenlabs',
+        };
+      } catch (error) {
+        elevenLabsFailure = error instanceof Error ? error.message : String(error);
+        if (activeElevenLabsStreamSession === session) activeElevenLabsStreamSession = null;
+        await session.close().catch(() => undefined);
+        console.warn('[Aurora ElevenLabs] Streaming persistente falhou; tentando uma conexao nova:', elevenLabsFailure);
+        try {
+          const retryAudio = await synthesizeElevenLabsDialogue(cleanText, apiKey);
+          return {
+            audioBase64: retryAudio.toString('base64'),
+            audioMimeType: 'audio/mpeg',
+            voice: ELEVENLABS_VOICE_ID,
+            provider: 'elevenlabs',
+          };
+        } catch (retryError) {
+          elevenLabsFailure += '; nova tentativa: ' + (retryError instanceof Error ? retryError.message : String(retryError));
+        }
+      }
+    } else {
+      try {
+        const audio = await synthesizeElevenLabsDialogue(cleanText, apiKey);
+        return {
+          audioBase64: audio.toString('base64'),
+          audioMimeType: 'audio/mpeg',
+          voice: ELEVENLABS_VOICE_ID,
+          provider: 'elevenlabs',
+        };
+      } catch (error) {
+        elevenLabsFailure = error instanceof Error ? error.message : String(error);
+        // Nunca registrar a chave ou o corpo de autenticacao no log.
+        console.error('[Aurora ElevenLabs] Falha na sessao TTD; usando voz de reserva:', elevenLabsFailure);
+      }
     }
   } else if (!elevenLabsFailure) {
     elevenLabsFailure = 'Nenhuma chave ElevenLabs foi cadastrada.';
