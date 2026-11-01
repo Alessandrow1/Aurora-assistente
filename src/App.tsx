@@ -794,7 +794,7 @@ export default function App() {
       return 'Meu visual é o avatar Live2D 6xb que aparece na sua tela. Posso comentar minha aparência quando você me mostrar uma captura ou imagem, mas não vou inventar detalhes que não consigo confirmar. E não, não vou fingir que me olhei pela câmera sem você me mandar uma imagem.';
     }
     if (/\b(o que voce consegue fazer|o que voce sabe fazer|quais sao suas capacidades|o que voce pode fazer)\b/.test(text)) {
-      return 'Consigo conversar por voz, abrir alguns programas, pastas, sites e pesquisas, além de analisar uma captura e propor cliques, rolagem, digitação ou atalhos. As ações na tela pedem sua confirmação. Posso fechar a janela ativa com um atalho depois de mostrar o que vou fazer, mas ainda não consigo organizar arquivos sozinha. Escolhe uma missão, em vez de ficar me fazendo entrevista.';
+      return 'Consigo conversar por voz, abrir alguns programas, pastas, sites e pesquisas, analisar sua tela e propor clique simples ou duplo, botão direito, arrastar, mover o cursor, rolar, digitar ou usar atalhos. Cada ação no computador pede sua confirmação. Posso fechar a janela ativa com um atalho depois de mostrar o que vou fazer, mas ainda não consigo organizar arquivos sozinha. Escolhe uma missão, em vez de ficar me fazendo entrevista.';
     }
     if (/\b(como voce funciona|qual modelo voce usa|qual e seu cerebro|voce roda localmente|onde sua ia roda)\b/.test(text)) {
       return 'Meu cérebro roda pelo Ollama no seu computador, e o padrão do projeto agora é Qwen 3.5 9B. O 6xb é meu avatar, não meu cérebro. Minha voz usa ElevenLabs quando está configurada, com alternativas do Edge TTS e do Windows. A transcrição do microfone é feita localmente pelo Whisper.';
