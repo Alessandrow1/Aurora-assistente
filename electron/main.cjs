@@ -7,6 +7,7 @@ const { spawn } = require('node:child_process');
 const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const { createAuroraStore } = require('./aurora-store.cjs');
+const { createAuroraImageGenerator } = require('./aurora-image-generator.cjs');
 
 const OLLAMA_URL = 'http://127.0.0.1:11434';
 const ELEVENLABS_VOICE_ID = '29BpZaywSObgMLvRvBhB';
@@ -48,6 +49,12 @@ const auroraStore = createAuroraStore({
   ollamaUrl: OLLAMA_URL,
   onEmbeddingStatus: (status) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('aurora:embedding-status', status);
+  },
+});
+const auroraImageGenerator = createAuroraImageGenerator({
+  app,
+  onStatus: (status) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('aurora:image-status', status);
   },
 });
 
@@ -401,6 +408,25 @@ ipcMain.handle('aurora:embedding-status', async () => await auroraStore.getEmbed
 ipcMain.handle('aurora:embedding-install', async () => {
   const memories = await readAuroraMemories();
   return await auroraStore.installEmbeddingModel(memories);
+});
+ipcMain.handle('aurora:image-status', async () => await auroraImageGenerator.getStatus());
+ipcMain.handle('aurora:image-generate', async (_event, payload = {}) => {
+  const status = await auroraImageGenerator.getStatus();
+  if (!status.available) {
+    throw new Error('O gerador de imagens não está aberto. Inicie o ComfyUI em http://127.0.0.1:8188 e tente novamente.');
+  }
+  if (!status.checkpointAvailable) {
+    throw new Error('O ComfyUI está aberto, mas não há modelo de imagem instalado. Coloque um checkpoint em ComfyUI/models/checkpoints.');
+  }
+  return await auroraImageGenerator.generate(payload);
+});
+ipcMain.handle('aurora:image-load', async (_event, id) => await auroraImageGenerator.loadImage(String(id || '')));
+ipcMain.handle('aurora:image-open-folder', async () => {
+  const directory = auroraImageGenerator.outputDirectory();
+  await fsp.mkdir(directory, { recursive: true });
+  const error = await shell.openPath(directory);
+  if (error) throw new Error(error);
+  return { success: true };
 });
 
 ipcMain.handle('aurora:elevenlabs-status', async () => {
