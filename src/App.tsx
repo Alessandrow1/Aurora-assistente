@@ -75,6 +75,9 @@ export default function App() {
   const listRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
   const recognitionRestartRef = useRef<number | null>(null);
+  const voiceResumeRef = useRef<number | null>(null);
+  const recognitionPausedRef = useRef(false);
+  const startRecognitionSessionRef = useRef<(() => void) | null>(null);
   const voiceModeRef = useRef(false);
   const thinkingRef = useRef(false);
   const pendingVoiceRef = useRef<string[]>([]);
@@ -97,6 +100,30 @@ export default function App() {
       });
   }, []);
   thinkingRef.current = thinking;
+
+  const pauseVoiceRecognitionForSpeech = () => {
+    if (!voiceModeRef.current) return;
+    recognitionPausedRef.current = true;
+    if (recognitionRestartRef.current !== null) {
+      window.clearTimeout(recognitionRestartRef.current);
+      recognitionRestartRef.current = null;
+    }
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
+    try { recognition?.stop?.(); } catch { /* a sessao pode ja ter terminado */ }
+    setListening(false);
+  };
+
+  const resumeVoiceRecognitionAfterSpeech = (delay = 750) => {
+    if (!voiceModeRef.current) return;
+    if (voiceResumeRef.current !== null) window.clearTimeout(voiceResumeRef.current);
+    voiceResumeRef.current = window.setTimeout(() => {
+      voiceResumeRef.current = null;
+      if (!voiceModeRef.current) return;
+      recognitionPausedRef.current = false;
+      if (!recognitionRef.current) startRecognitionSessionRef.current?.();
+    }, delay);
+  };
 
   const resetAudioAnalysis = () => {
     setAudioAnalyser(null);
@@ -122,6 +149,12 @@ export default function App() {
         window.clearTimeout(recognitionRestartRef.current);
         recognitionRestartRef.current = null;
       }
+      if (voiceResumeRef.current !== null) {
+        window.clearTimeout(voiceResumeRef.current);
+        voiceResumeRef.current = null;
+      }
+      recognitionPausedRef.current = false;
+      startRecognitionSessionRef.current = null;
       audioRef.current?.pause();
       const activeAudioContext = audioContextRef.current;
       audioContextRef.current = null;
@@ -144,6 +177,7 @@ export default function App() {
   }, [laughing]);
 
   const speak = async (text: string) => {
+    pauseVoiceRecognitionForSpeech();
     if (hasLaughingCue(text)) {
       setLaughing(true);
     }
@@ -194,13 +228,14 @@ export default function App() {
         setEmotion('neutral');
         audioRef.current = null;
         resetAudioAnalysis();
+        resumeVoiceRecognitionAfterSpeech();
       };
       audio.onerror = () => {
         setSpeaking(false);
         setEmotion('neutral');
         audioRef.current = null;
         resetAudioAnalysis();
-        setNotice('O áudio neural não pôde ser reproduzido.');
+        setNotice('O áudio neural não pôde ser reproduzido; vou tentar a voz de reserva.');
       };
       await audio.play();
     } catch (error) {
@@ -223,10 +258,12 @@ export default function App() {
         utterance.onend = () => {
           setSpeaking(false);
           setEmotion('neutral');
+          resumeVoiceRecognitionAfterSpeech();
         };
         utterance.onerror = () => {
           setSpeaking(false);
           setEmotion('neutral');
+          resumeVoiceRecognitionAfterSpeech();
         };
         const neuralDetail = error instanceof Error ? error.message : String(error);
         setNotice('A voz neural falhou: ' + neuralDetail.slice(0, 160) + '. Estou usando temporariamente a voz instalada no Windows.');
@@ -235,6 +272,7 @@ export default function App() {
       } catch (fallbackError) {
         setSpeaking(false);
         setEmotion('neutral');
+        resumeVoiceRecognitionAfterSpeech();
         const neuralDetail = error instanceof Error ? error.message : String(error);
         const fallbackDetail = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
         setNotice('Não consegui gerar áudio. Voz neural: ' + neuralDetail.slice(0, 150) + '. Voz do Windows: ' + fallbackDetail.slice(0, 100));
@@ -273,7 +311,8 @@ export default function App() {
         return;
       }
 
-      const asksForComputerAction = /\b(clique|clica|digite|escreva|pressione|aperte|selecione|marque|preencha|role|rolar|pagine|desça|suba|scroll|copie|cole|analise|analisa|olhe|olha|veja|observe|resolva|arrume|configure|configurar|explique|identifique|ajuda|ajude|corrija|conserte|feche|fechar|print|captura)\b/i.test(text);
+      const asksForComputerAction = /\b(clique|clica|clicar|digite|digita|escreva|pressione|aperte|selecione|marque|preencha|role|rolar|pagine|desça|suba|scroll|copie|copiar|cole|colar|analise|analisa|olhe|olha|veja|observe|resolva|arrume|configure|configurar|abra|abre|abrir|mova|mover|arraste|arrastar|redimensione|feche|fechar|print|captura)\b/i.test(text)
+        || /\b(minha tela|na tela|essa janela|nessa janela|este programa|este aplicativo|esse aplicativo)\b/i.test(text);
       const capture = asksForComputerAction ? await window.aurora.captureScreen() : null;
       const computerPrompt = capture
         ? `${text}\n\nEstou fornecendo uma captura atual do desktop. Analise-a e, se puder cumprir exatamente o pedido, retorne um único bloco [AURORA_ACTION]{JSON}[/AURORA_ACTION] com coordenadas relativas à imagem ou texto/atalho solicitado. Tipos aceitos: click com x/y, scroll com x/y/delta (-1200 a 1200; positivo desce, negativo sobe), type com text, key com key. Use apenas uma ação por vez. Se não conseguir identificar o alvo com clareza, não sugira ação.`
@@ -469,11 +508,17 @@ export default function App() {
 
   const stopVoiceMode = () => {
     voiceModeRef.current = false;
+    recognitionPausedRef.current = false;
     setVoiceMode(false);
     if (recognitionRestartRef.current !== null) {
       window.clearTimeout(recognitionRestartRef.current);
       recognitionRestartRef.current = null;
     }
+    if (voiceResumeRef.current !== null) {
+      window.clearTimeout(voiceResumeRef.current);
+      voiceResumeRef.current = null;
+    }
+    startRecognitionSessionRef.current = null;
     const recognition = recognitionRef.current;
     recognitionRef.current = null;
     recognition?.abort?.();
@@ -494,29 +539,30 @@ export default function App() {
     }
 
     voiceModeRef.current = true;
+    recognitionPausedRef.current = false;
     setVoiceMode(true);
-    setNotice('Conversa contínua ativada. O microfone ficará ligado até você tocar novamente no botão.');
+    setNotice('Conversa contínua ativada. O microfone pausa enquanto Aurora fala e volta a escutar quando ela termina.');
 
     let startRecognitionSession: () => void;
     const scheduleRestart = (delay = 850) => {
-      if (!voiceModeRef.current || recognitionRestartRef.current !== null) return;
+      if (!voiceModeRef.current || recognitionPausedRef.current || recognitionRestartRef.current !== null) return;
       recognitionRestartRef.current = window.setTimeout(() => {
         recognitionRestartRef.current = null;
-        startRecognitionSession();
+        if (voiceModeRef.current && !recognitionPausedRef.current) startRecognitionSession();
       }, delay);
     };
 
     startRecognitionSession = () => {
-      if (!voiceModeRef.current) return;
+      if (!voiceModeRef.current || recognitionPausedRef.current) return;
       const recognition = new Recognition();
       recognition.lang = 'pt-BR';
       recognition.interimResults = false;
       recognition.continuous = true;
       recognition.maxAlternatives = 1;
 
-      recognition.onstart = () => setListening(true);
+      recognition.onstart = () => setListening(!recognitionPausedRef.current);
       recognition.onresult = (event: any) => {
-        if (!voiceModeRef.current) return;
+        if (!voiceModeRef.current || recognitionPausedRef.current) return;
         const phrases: string[] = [];
         for (let index = event.resultIndex ?? 0; index < event.results.length; index += 1) {
           const result = event.results[index];
@@ -558,7 +604,7 @@ export default function App() {
       recognition.onend = () => {
         setListening(false);
         if (recognitionRef.current === recognition) recognitionRef.current = null;
-        if (voiceModeRef.current) scheduleRestart();
+        if (voiceModeRef.current && !recognitionPausedRef.current) scheduleRestart();
       };
 
       recognitionRef.current = recognition;
@@ -570,6 +616,7 @@ export default function App() {
       }
     };
 
+    startRecognitionSessionRef.current = startRecognitionSession;
     startRecognitionSession();
   };
 
