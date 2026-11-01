@@ -424,16 +424,17 @@ export default function App() {
   startVoiceCaptureRef.current = startVoiceCapture;
   stopVoiceCaptureRef.current = stopVoiceCapture;
 
-  const speak = async (text: string) => {
+  const speak = async (text: string, waitForPlayback = false, resumeAfterPlayback = true) => {
     pauseVoiceRecognitionForSpeech();
-    if (hasLaughingCue(text)) {
-      setLaughing(true);
-    }
+    if (hasLaughingCue(text)) setLaughing(true);
     audioRef.current?.pause();
     audioRef.current = null;
     resetAudioAnalysis();
     window.speechSynthesis?.cancel();
     setSpeaking(true);
+
+    let finishPlayback: (() => void) | null = null;
+    const playbackFinished = new Promise<void>((resolve) => { finishPlayback = resolve; });
 
     try {
       const result = await window.aurora.speak(text);
@@ -465,28 +466,25 @@ export default function App() {
           await context.close();
         }
       } catch (analysisError) {
-        if (context && context.state !== 'closed') {
-          void context.close().catch(() => undefined);
-        }
+        if (context && context.state !== 'closed') void context.close().catch(() => undefined);
         console.warn('[Aurora lip-sync] Não foi possível analisar o áudio; usando movimento de boca de reserva.', analysisError);
       }
 
-      audio.onended = () => {
+      const finishAudio = () => {
         setSpeaking(false);
         setEmotion('neutral');
-        audioRef.current = null;
+        if (audioRef.current === audio) audioRef.current = null;
         resetAudioAnalysis();
-        resumeVoiceRecognitionAfterSpeech();
+        if (resumeAfterPlayback) resumeVoiceRecognitionAfterSpeech();
+        finishPlayback?.();
       };
+      audio.onended = finishAudio;
       audio.onerror = () => {
-        setSpeaking(false);
-        setEmotion('neutral');
-        audioRef.current = null;
-        resetAudioAnalysis();
         setNotice('O áudio neural não pôde ser reproduzido. A escuta por voz será retomada.');
-        resumeVoiceRecognitionAfterSpeech();
+        finishAudio();
       };
       await audio.play();
+      if (waitForPlayback) await playbackFinished;
     } catch (error) {
       // Cancela qualquer retomada agendada antes de iniciar a voz de reserva.
       pauseVoiceRecognitionForSpeech();
@@ -509,22 +507,26 @@ export default function App() {
         utterance.onend = () => {
           setSpeaking(false);
           setEmotion('neutral');
-          resumeVoiceRecognitionAfterSpeech();
+          if (resumeAfterPlayback) resumeVoiceRecognitionAfterSpeech();
+          finishPlayback?.();
         };
         utterance.onerror = () => {
           setSpeaking(false);
           setEmotion('neutral');
-          resumeVoiceRecognitionAfterSpeech();
+          if (resumeAfterPlayback) resumeVoiceRecognitionAfterSpeech();
+          finishPlayback?.();
         };
         const neuralDetail = error instanceof Error ? error.message : String(error);
         setNotice('A voz neural falhou: ' + neuralDetail.slice(0, 160) + '. Estou usando temporariamente a voz instalada no Windows.');
         setSpeaking(true);
         synth.cancel();
         synth.speak(utterance);
+        if (waitForPlayback) await playbackFinished;
       } catch (fallbackError) {
         setSpeaking(false);
         setEmotion('neutral');
-        resumeVoiceRecognitionAfterSpeech();
+        if (resumeAfterPlayback) resumeVoiceRecognitionAfterSpeech();
+        finishPlayback?.();
         const neuralDetail = error instanceof Error ? error.message : String(error);
         const fallbackDetail = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
         setNotice('Não consegui gerar áudio. Voz neural: ' + neuralDetail.slice(0, 150) + '. Voz do Windows: ' + fallbackDetail.slice(0, 100));
