@@ -188,6 +188,215 @@ export default function App() {
     return () => window.clearTimeout(timeout);
   }, [laughing]);
 
+  const stopVoiceCapture = (transcribe: boolean) => {
+    const session = voiceCaptureRef.current;
+    if (!session || session.stopped) return;
+
+    const speechWasLongEnough = session.speechDetected ||
+      (session.firstSpeechAt !== null && Date.now() - session.firstSpeechAt >= 250);
+    session.transcribeOnStop = transcribe && speechWasLongEnough;
+    session.stopped = true;
+    window.clearInterval(session.timer);
+    setListening(false);
+
+    try {
+      if (session.recorder.state !== 'inactive') session.recorder.stop();
+      else {
+        session.stream.getTracks().forEach((track) => track.stop());
+        void session.audioContext.close().catch(() => undefined);
+        voiceCaptureRef.current = null;
+      }
+    } catch (error) {
+      voiceCaptureRef.current = null;
+      session.stream.getTracks().forEach((track) => track.stop());
+      void session.audioContext.close().catch(() => undefined);
+      if (voiceModeRef.current && !recognitionPausedRef.current) {
+        setNotice(error instanceof Error ? error.message : 'Nao consegui encerrar a captura do microfone.');
+        resumeVoiceRecognitionAfterSpeech(700);
+      }
+    }
+  };
+
+  const startVoiceCapture = async () => {
+    if (!voiceModeRef.current || recognitionPausedRef.current || voiceCaptureRef.current) return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      stopVoiceMode();
+      setNotice('Este ambiente do Electron nao oferece captura de audio. Atualize o aplicativo e verifique a permissao de microfone.');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+
+      if (!voiceModeRef.current || recognitionPausedRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
+      const audioContext = new AudioContext();
+      if (audioContext.state === 'suspended') await audioContext.resume();
+      const source = audioContext.createMediaStreamSource(stream);
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 1024;
+      analyser.smoothingTimeConstant = 0.35;
+      source.connect(analyser);
+
+      const preferredMime = 'audio/webm;codecs=opus';
+      const recorder = MediaRecorder.isTypeSupported(preferredMime)
+        ? new MediaRecorder(stream, { mimeType: preferredMime })
+        : new MediaRecorder(stream);
+      const session: VoiceCaptureSession = {
+        stream,
+        recorder,
+        chunks: [],
+        audioContext,
+        analyser,
+        samples: new Float32Array(analyser.fftSize),
+        timer: 0,
+        startedAt: Date.now(),
+        firstSpeechAt: null,
+        lastSpeechAt: 0,
+        speechDetected: false,
+        stopped: false,
+        transcribeOnStop: false,
+      };
+
+      recorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data && event.data.size > 0) session.chunks.push(event.data);
+      };
+
+      recorder.onerror = () => {
+        if (!session.stopped) stopVoiceCaptureRef.current?.(false);
+        setNotice('O gravador do microfone encontrou um erro. Confira o dispositivo de entrada do Windows.');
+      };
+
+      recorder.onstop = () => {
+        void (async () => {
+          if (voiceCaptureRef.current === session) voiceCaptureRef.current = null;
+          session.stream.getTracks().forEach((track) => track.stop());
+          await session.audioContext.close().catch(() => undefined);
+
+          if (!session.transcribeOnStop || session.chunks.length === 0) {
+            if (voiceModeRef.current && !recognitionPausedRef.current) {
+              resumeVoiceRecognitionAfterSpeech(450);
+            }
+            return;
+          }
+
+          recognitionPausedRef.current = true;
+          setListening(false);
+          setTranscribingVoice(true);
+          setNotice('Preparando a transcricao local…');
+          let decodingContext: AudioContext | null = null;
+
+          try {
+            const blob = new Blob(session.chunks, { type: recorder.mimeType || 'audio/webm' });
+            decodingContext = new AudioContext();
+            const decoded = await decodingContext.decodeAudioData(await blob.arrayBuffer());
+            const frameCount = decoded.length;
+            const channelCount = decoded.numberOfChannels;
+            const mono = new Float32Array(frameCount);
+
+            for (let channel = 0; channel < channelCount; channel += 1) {
+              const channelData = decoded.getChannelData(channel);
+              for (let index = 0; index < frameCount; index += 1) {
+                mono[index] += channelData[index] / channelCount;
+              }
+            }
+
+            const sourceStep = decoded.sampleRate / 16000;
+            const outputLength = Math.floor(mono.length / sourceStep);
+            if (outputLength < 4000) throw new Error('A fala ficou muito curta. Tente falar um pouco mais.');
+            if (outputLength > 16000 * 45) throw new Error('A fala passou de 45 segundos. Divida a mensagem.');
+
+            const pcm16k = new Float32Array(outputLength);
+            for (let index = 0; index < outputLength; index += 1) {
+              const position = index * sourceStep;
+              const left = Math.floor(position);
+              const right = Math.min(left + 1, mono.length - 1);
+              const fraction = position - left;
+              pcm16k[index] = mono[left] + (mono[right] - mono[left]) * fraction;
+            }
+
+            setNotice('Transcrevendo no proprio computador…');
+            const result = await window.aurora.transcribeAudio(pcm16k);
+            const transcript = result?.text?.trim() || '';
+
+            if (!transcript) {
+              setNotice('Nao consegui entender essa fala. Fale um pouco mais perto do microfone.');
+              resumeVoiceRecognitionAfterSpeech(800);
+              return;
+            }
+
+            setNotice('');
+            void sendMessageRef.current(transcript);
+          } catch (error) {
+            setNotice(error instanceof Error ? error.message : 'Nao consegui transcrever o audio localmente.');
+            resumeVoiceRecognitionAfterSpeech(1000);
+          } finally {
+            if (decodingContext && decodingContext.state !== 'closed') {
+              await decodingContext.close().catch(() => undefined);
+            }
+            setTranscribingVoice(false);
+          }
+        })();
+      };
+
+      voiceCaptureRef.current = session;
+      recorder.start(250);
+      setListening(true);
+      setNotice('');
+
+      session.timer = window.setInterval(() => {
+        if (session.stopped) return;
+        try {
+          session.analyser.getFloatTimeDomainData(session.samples);
+          let sumSquares = 0;
+          for (let index = 0; index < session.samples.length; index += 1) {
+            const sample = session.samples[index];
+            sumSquares += sample * sample;
+          }
+          const rms = Math.sqrt(sumSquares / session.samples.length);
+          const now = Date.now();
+
+          // Detecta fala pelo volume; 1,15 s de silencio encerra a frase automaticamente.
+          if (rms >= 0.014) {
+            if (session.firstSpeechAt === null) session.firstSpeechAt = now;
+            session.lastSpeechAt = now;
+            if (now - session.firstSpeechAt >= 250) session.speechDetected = true;
+          }
+
+          if (session.speechDetected && now - session.lastSpeechAt >= 1150) {
+            stopVoiceCaptureRef.current?.(true);
+          } else if (now - session.startedAt >= 25000) {
+            stopVoiceCaptureRef.current?.(true);
+          }
+        } catch {
+          stopVoiceCaptureRef.current?.(false);
+          setNotice('A leitura do microfone foi interrompida. Tente ativar a escuta novamente.');
+        }
+      }, 100);
+    } catch (error) {
+      stopVoiceMode();
+      const message = error instanceof Error ? error.message : String(error);
+      if (/notallowed|permission|denied/i.test(message)) {
+        setNotice('O acesso ao microfone foi negado. Libere a permissao de microfone para a Aurora no Windows.');
+      } else {
+        setNotice('Nao consegui acessar o microfone: ' + message.slice(0, 180));
+      }
+    }
+  };
+
+  startVoiceCaptureRef.current = startVoiceCapture;
+  stopVoiceCaptureRef.current = stopVoiceCapture;
+
   const speak = async (text: string) => {
     pauseVoiceRecognitionForSpeech();
     if (hasLaughingCue(text)) {
