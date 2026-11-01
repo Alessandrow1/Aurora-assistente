@@ -174,6 +174,21 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
     return data.embeddings;
   }
 
+  async function generateEmbeddingsInBatches(texts, batchSize = 24) {
+    const embeddings = [];
+    for (let offset = 0; offset < texts.length; offset += batchSize) {
+      const batch = await generateEmbeddings(texts.slice(offset, offset + batchSize));
+      if (!batch) return null;
+      embeddings.push(...batch);
+      onEmbeddingStatus({
+        state: 'indexing',
+        completed: Math.min(offset + batch.length, texts.length),
+        total: texts.length,
+      });
+    }
+    return embeddings;
+  }
+
   async function createConversation() {
     const data = await readConversations();
     const now = new Date().toISOString();
@@ -253,7 +268,7 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
     // Primeiro persiste o texto pesquisável; a busca lexical funciona mesmo sem embeddings.
     await writeEncrypted(conversationsPath(), data, 'conversations');
     try {
-      const vectors = await generateEmbeddings(pairs.map((item) => item.text));
+      const vectors = await generateEmbeddingsInBatches(pairs.map((item) => item.text));
       if (!vectors) return;
       // Reabre o arquivo para não sobrescrever mensagens novas gravadas enquanto o Ollama calcula vetores.
       const latest = await readConversations();
@@ -434,7 +449,7 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
       embedding: null,
     }));
     try {
-      const vectors = await generateEmbeddings(chunks.map((chunk) => chunk.content));
+      const vectors = await generateEmbeddingsInBatches(chunks.map((chunk) => chunk.content));
       if (vectors) chunks.forEach((chunk, index) => { chunk.embedding = vectors[index]; });
     } catch (error) {
       console.warn('[Aurora Knowledge] Documento salvo sem vetores semânticos:', error instanceof Error ? error.message : String(error));
