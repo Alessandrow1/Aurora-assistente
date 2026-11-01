@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld('aurora', {
   listKnowledgeDocuments: () => ipcRenderer.invoke('aurora:knowledge-list'),
   deleteKnowledgeDocument: (id) => ipcRenderer.invoke('aurora:knowledge-delete', id),
   searchKnowledge: (query) => ipcRenderer.invoke('aurora:knowledge-search', query),
+  getIdentityProfile: () => ipcRenderer.invoke('aurora:identity-get'),
+  saveIdentityProfile: (profile) => ipcRenderer.invoke('aurora:identity-save', profile),
   getEmbeddingStatus: () => ipcRenderer.invoke('aurora:embedding-status'),
   installEmbeddingModel: () => ipcRenderer.invoke('aurora:embedding-install'),
   onEmbeddingStatus: (callback) => {
