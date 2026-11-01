@@ -182,9 +182,10 @@ function createAuroraImageGenerator({
     }
     const mimeType = imageMime(buffer, response.headers?.get?.('content-type'));
     const id = crypto.randomUUID();
+    const extension = mimeType === 'image/jpeg' ? 'jpg' : mimeType === 'image/webp' ? 'webp' : 'png';
     const directory = outputDirectory();
     await fs.mkdir(directory, { recursive: true });
-    await fs.writeFile(path.join(directory, `${id}.img`), buffer, { flag: 'wx', mode: 0o600 });
+    await fs.writeFile(path.join(directory, `${id}.${extension}`), buffer, { flag: 'wx', mode: 0o600 });
 
     onStatus({ state: 'complete', message: 'Imagem criada e salva na pasta local da Aurora.' });
     return {
@@ -201,12 +202,13 @@ function createAuroraImageGenerator({
       throw new Error('O identificador da imagem é inválido.');
     }
     let buffer;
-    try {
-      buffer = await fs.readFile(path.join(outputDirectory(), `${id}.img`));
-    } catch {
-      return { found: false };
+    for (const extension of ['png', 'jpg', 'webp']) {
+      try {
+        buffer = await fs.readFile(path.join(outputDirectory(), `${id}.${extension}`));
+        break;
+      } catch { /* tenta a próxima extensão permitida */ }
     }
-    if (!buffer.length || buffer.length > MAX_IMAGE_BYTES) return { found: false };
+    if (!buffer || !buffer.length || buffer.length > MAX_IMAGE_BYTES) return { found: false };
     const mimeType = imageMime(buffer);
     return { found: true, dataUrl: `data:${mimeType};base64,${buffer.toString('base64')}` };
   }
