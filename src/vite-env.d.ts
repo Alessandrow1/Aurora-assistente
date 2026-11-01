@@ -9,6 +9,9 @@ declare global {
       getConfig: () => Promise<AuroraStatus & { model: string }>;
       checkOllama: () => Promise<AuroraStatus>;
       saveSettings: (payload: { model: string }) => Promise<{ model: string }>;
+      saveMemory: (content: string) => Promise<{ saved: boolean; memory: { id: string; content: string; createdAt: string }; count: number }>;
+      listMemories: () => Promise<{ memories: Array<{ id: string; content: string; createdAt: string }>; count: number }>;
+      deleteMemory: (query: string) => Promise<{ deleted: boolean; memory?: string; count: number }>;
       getElevenLabsStatus: () => Promise<{ configured: boolean; storageAvailable: boolean; voiceId: string; modelId: string }>;
       saveElevenLabsKey: (apiKey: string) => Promise<{ configured: boolean }>;
       clearElevenLabsKey: () => Promise<{ configured: boolean }>;
