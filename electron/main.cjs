@@ -522,6 +522,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
     ? payload.imageBase64.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, '')
     : '';
   const asksForLongResponse = /\b(detalhes?|detalhad[oa]s?|passo a passo|aprofundad[oa]s?|plano completo|guia completo|explique detalhadamente|analise completa|compare em detalhes)\b/i.test(message);
+  const needsReasoning = /\b(por que|porque|explique|compare|analise|calcule|calcular|resolva|resolver|planeje|planejar|estrategia|diagnostique|depure|debug|vantagens|desvantagens|qual compensa|qual e melhor|como funciona|causa|consequencia)\b/i.test(message);
 
   let response;
   try {
@@ -532,7 +533,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
       body: JSON.stringify({
         model: settings.model,
         stream: true,
-        think: false,
+        think: needsReasoning,
         keep_alive: '20m',
         messages: [
           {
@@ -584,7 +585,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
           ...history,
           { role: 'user', content: message, ...(imageBase64 ? { images: [imageBase64] } : {}) },
         ],
-        options: { temperature: 0.35, num_predict: imageBase64 ? 360 : asksForLongResponse ? 650 : 180, num_ctx: 6144 },
+        options: { temperature: 0.35, num_predict: imageBase64 ? 360 : asksForLongResponse ? 650 : needsReasoning ? 420 : 180, num_ctx: 6144 },
       }),
     });
   } catch (error) {
