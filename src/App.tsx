@@ -389,14 +389,14 @@ export default function App() {
           const rms = Math.sqrt(sumSquares / session.samples.length);
           const now = Date.now();
 
-          // Detecta fala pelo volume; 1,15 s de silencio encerra a frase automaticamente.
+          // Detecta fala pelo volume; 0,85 s de silencio encerra a frase automaticamente.
           if (rms >= 0.012) {
             if (session.firstSpeechAt === null) session.firstSpeechAt = now;
             session.lastSpeechAt = now;
             if (now - session.firstSpeechAt >= 250) session.speechDetected = true;
           }
 
-          if (session.speechDetected && now - session.lastSpeechAt >= 1400) {
+          if (session.speechDetected && now - session.lastSpeechAt >= 850) {
             stopVoiceCaptureRef.current?.(true);
           } else if (now - session.startedAt >= 25000) {
             stopVoiceCaptureRef.current?.(true);
