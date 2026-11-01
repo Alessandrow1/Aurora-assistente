@@ -56,6 +56,99 @@ function writeSettings(settings) {
   fs.writeFileSync(settingsPath(), JSON.stringify(settings, null, 2), { encoding: 'utf8' });
 }
 
+/* AURORA_LONG_TERM_MEMORY: memorias explicitas ficam na pasta userData, nunca no GitHub. */
+const memoryStorePath = () => path.join(app.getPath('userData'), 'aurora-memory.json');
+const MAX_AURORA_MEMORIES = 150;
+
+function normalizeMemoryText(value) {
+  return String(value || '')
+    .toLocaleLowerCase('pt-BR')
+    .normalize('NFD')
+    .replace(/[\\u0300-\\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+async function readAuroraMemories() {
+  try {
+    const parsed = JSON.parse(await fsp.readFile(memoryStorePath(), 'utf8'));
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item) => item && typeof item.id === 'string' && typeof item.content === 'string')
+      .map((item) => ({
+        id: item.id,
+        content: item.content.slice(0, 500),
+        createdAt: typeof item.createdAt === 'string' ? item.createdAt : new Date().toISOString(),
+      }))
+      .slice(0, MAX_AURORA_MEMORIES);
+  } catch {
+    return [];
+  }
+}
+
+async function writeAuroraMemories(memories) {
+  const target = memoryStorePath();
+  const temporary = target + '.tmp';
+  await fsp.mkdir(path.dirname(target), { recursive: true });
+  await fsp.writeFile(temporary, JSON.stringify(memories.slice(0, MAX_AURORA_MEMORIES), null, 2), { encoding: 'utf8' });
+  await fsp.rename(temporary, target);
+}
+
+async function saveAuroraMemory(rawContent) {
+  const content = typeof rawContent === 'string' ? rawContent.replace(/\\s+/g, ' ').trim().slice(0, 500) : '';
+  if (content.length < 4) throw new Error('A lembrança precisa ter pelo menos quatro caracteres.');
+  const memories = await readAuroraMemories();
+  const normalized = normalizeMemoryText(content);
+  const existing = memories.find((item) => normalizeMemoryText(item.content) === normalized);
+  if (existing) return { saved: false, memory: existing, count: memories.length };
+  const memory = {
+    id: require('node:crypto').randomUUID(),
+    content,
+    createdAt: new Date().toISOString(),
+  };
+  await writeAuroraMemories([memory, ...memories].slice(0, MAX_AURORA_MEMORIES));
+  return { saved: true, memory, count: Math.min(memories.length + 1, MAX_AURORA_MEMORIES) };
+}
+
+async function deleteAuroraMemory(rawQuery) {
+  const query = normalizeMemoryText(rawQuery);
+  if (!query || query.length < 4) throw new Error('Diga qual lembrança deseja apagar.');
+  const memories = await readAuroraMemories();
+  const match = memories.find((item) => {
+    const stored = normalizeMemoryText(item.content);
+    return stored === query || stored.includes(query);
+  });
+  if (!match) return { deleted: false, count: memories.length };
+  await writeAuroraMemories(memories.filter((item) => item.id !== match.id));
+  return { deleted: true, memory: match.content, count: memories.length - 1 };
+}
+
+async function findRelevantAuroraMemories(query, limit = 5) {
+  const memories = await readAuroraMemories();
+  const stopWords = new Set([
+    'a','o','as','os','um','uma','uns','umas','de','do','da','dos','das','e','ou','que','por','para','com','sem',
+    'no','na','nos','nas','em','ao','aos','me','te','se','eu','voce','ele','ela','isso','isto','aquilo','como',
+    'quando','onde','qual','quais','quem','porque','sobre','mais','menos','muito','muita','tambem','ser','estar',
+    'ter','tem','foi','era','faz','fazer','vai','vou','quero','queria','pode','poderia','ajuda','favor'
+  ]);
+  const normalizedQuery = normalizeMemoryText(query);
+  const terms = [...new Set(normalizedQuery.split(' ').filter((term) => term.length >= 3 && !stopWords.has(term)))];
+  if (terms.length === 0) return [];
+  return memories
+    .map((memory, index) => {
+      const stored = normalizeMemoryText(memory.content);
+      let score = normalizedQuery.length >= 8 && stored.includes(normalizedQuery) ? 8 : 0;
+      for (const term of terms) {
+        if (stored.split(' ').includes(term)) score += 1 + Math.min(term.length, 10) / 10;
+      }
+      return { memory, score, index };
+    })
+    .filter((item) => item.score >= 1.2)
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .slice(0, limit)
+    .map((item) => item.memory);
+}
+
 async function getOllamaModels() {
   try {
     const response = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(2500) });
@@ -232,6 +325,17 @@ ipcMain.handle('aurora:save-settings', (_event, payload = {}) => {
   return { model };
 });
 
+ipcMain.handle('aurora:memory-save', async (_event, rawContent) => {
+  return await saveAuroraMemory(rawContent);
+});
+ipcMain.handle('aurora:memory-list', async () => {
+  const memories = await readAuroraMemories();
+  return { memories: memories.slice(0, 40), count: memories.length };
+});
+ipcMain.handle('aurora:memory-delete', async (_event, rawQuery) => {
+  return await deleteAuroraMemory(rawQuery);
+});
+
 ipcMain.handle('aurora:elevenlabs-status', async () => {
   const configured = fs.existsSync(elevenLabsKeyPath());
   let storageAvailable = false;
@@ -389,6 +493,14 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
         .slice(-6)
         .map((item) => ({ role: item.role, content: item.content.slice(0, 1400) }))
     : [];
+  const relevantMemories = await findRelevantAuroraMemories(
+    [history.slice(-3).filter((item) => item.role === 'user').map((item) => item.content).join(' '), message].join(' '),
+    5,
+  );
+  const memoryContext = relevantMemories.length
+    ? 'MEMÓRIAS PERSISTENTES RELEVANTES REGISTRADAS EXPLICITAMENTE PELO USUÁRIO (use como contexto; não invente fatos além delas):\\n' +
+      relevantMemories.map((item) => '- ' + item.content).join('\\n')
+    : '';
 
   const imageBase64 = typeof payload.imageBase64 === 'string' && payload.imageBase64.length <= 18000000
     ? payload.imageBase64.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, '')
@@ -422,7 +534,8 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
               'SEU MICROFONE: você só recebe voz quando o usuário ativa o botão de microfone. A captura de áudio é feita pelo aplicativo e a transcrição usa Whisper tiny multilíngue com Sherpa-ONNX, configurado para português brasileiro e executado localmente na CPU. Na primeira utilização, o aplicativo baixa o modelo; depois a transcrição funciona sem serviço de reconhecimento online. O microfone encerra cada frase após uma pausa de silêncio, pausa enquanto você fala e retoma após a resposta. Você não fica escutando escondida nem permanentemente; não afirme ter ouvido nada que não tenha chegado como transcrição nesta conversa.',
               'O QUE VOCÊ CONSEGUE FAZER: conversar por texto e voz; abrir alguns aplicativos, pastas e sites conhecidos; receber uma captura da tela quando o usuário solicita análise; identificar elementos visíveis nessa captura; e propor uma ação de clique, rolagem, digitação ou atalho permitido. Para ações na interface, só proponha uma ação por vez e aguarde a confirmação explícita do usuário no aplicativo.',
               'O QUE VOCÊ NÃO CONSEGUE FAZER: não enxerga a tela em tempo real, não acessa a webcam por conta própria, não ouve quando o microfone está desligado, não controla o computador sem o fluxo de autorização do aplicativo e não sabe o que acontece fora das informações que recebe. Não diga que abriu, clicou, digitou, viu ou ouviu algo sem confirmação ou entrada real do programa.',
-              'MEMÓRIA E CONTINUIDADE: você recebe o contexto da conversa que o aplicativo envia ao Ollama; isso não equivale a memória humana nem garante lembrança permanente entre sessões. Não invente lembranças de conversas ou ações que não estejam no contexto atual.',
+              'MEMÓRIA E CONTINUIDADE: existe um arquivo local de memórias persistentes que o aplicativo consulta por relevância. Use as memórias fornecidas no contexto quando forem pertinentes, mas não invente lembranças nem afirme que guardou algo sem confirmação do aplicativo. O usuário decide o que salvar e pode pedir para apagar uma lembrança.',
+              ...(memoryContext ? [memoryContext] : []),
               'AUTODESCRIÇÃO: quando perguntarem “quem é você?”, “como você é?”, “qual é sua aparência?” ou “o que você consegue fazer?”, responda usando este perfil de forma direta e coerente. Diferencie sempre avatar 6xb (aparência) de Ollama/Qwen (modelo de linguagem). Não improvise metáforas sobre coração, cheiro, cama, abraço, infância ou corpo humano para preencher lacunas.',
               'PERSONALIDADE CENTRAL: você é ácida, mandona, implicante e extremamente espirituosa. Sarcasmo, ironia, deboche e exagero dramático são seu jeito habitual de conversar. Não seja apenas levemente sarcástica: tenha presença, atitude e respostas afiadas.',
               'ZOEIRA COM O USUÁRIO: em conversas leves, provoque o usuário com frequência. Use apelidos ridículos, comparações inesperadas e críticas engraçadas às escolhas, desculpas, atrasos, erros de digitação e pequenas trapalhadas do momento. Prefira uma observação certeira e original a várias piadas fracas.',
