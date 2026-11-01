@@ -574,6 +574,37 @@ export default function App() {
         ? `${text}\n\nEstou fornecendo uma captura atual do desktop. Analise-a e, se puder cumprir exatamente o pedido, retorne um único bloco [AURORA_ACTION]{JSON}[/AURORA_ACTION] com coordenadas relativas à imagem ou texto/atalho solicitado. Tipos aceitos: click com x/y, scroll com x/y/delta (-1200 a 1200; positivo desce, negativo sobe), type com text, key com key. Use apenas uma ação por vez. Se não conseguir identificar o alvo com clareza, não sugira ação.`
         : text;
 
+      const canStreamSpeech = autoSpeak && !capture;
+      let speechBuffer = '';
+      let speechStarted = false;
+      let speechQueue = Promise.resolve();
+      const enqueueSpeech = (segment: string) => {
+        const cleanSegment = segment.trim();
+        if (!cleanSegment) return;
+        speechStarted = true;
+        speechQueue = speechQueue
+          .then(() => speak(cleanSegment, true, false))
+          .catch((error) => {
+            setNotice(error instanceof Error ? error.message : 'Não consegui reproduzir um trecho da resposta.');
+          });
+      };
+      const collectCompleteSpeech = (chunk: string) => {
+        speechBuffer += chunk;
+        const boundary = /[.!?…]+\\s+/g;
+        let cursor = 0;
+        let match: RegExpExecArray | null;
+        while ((match = boundary.exec(speechBuffer)) !== null) {
+          const end = match.index + match[0].length;
+          const candidate = speechBuffer.slice(cursor, end).trim();
+          const wordCount = candidate.split(/\\s+/).filter(Boolean).length;
+          if (candidate.length >= 18 || wordCount >= 5) {
+            enqueueSpeech(candidate);
+            cursor = end;
+          }
+        }
+        if (cursor > 0) speechBuffer = speechBuffer.slice(cursor);
+      };
+
       setMessages((current) => [...current, { role: 'assistant', content: '' }]);
       const response = await window.aurora.chat({ message: computerPrompt, history, ...(capture ? { imageBase64: capture.imageBase64 } : {}) }, (chunk) => {
         setMessages((current) => {
@@ -582,6 +613,8 @@ export default function App() {
           if (last?.role === 'assistant') updated[updated.length - 1] = { ...last, content: last.content + chunk };
           return updated;
         });
+        // A voz começa quando chega uma frase completa, sem esperar o restante da resposta do LLM.
+        if (canStreamSpeech) collectCompleteSpeech(chunk);
       });
       let answer = response.text?.trim() || 'Não consegui responder agora.';
       setEmotion(inferAvatarEmotion(text, answer));
@@ -623,7 +656,19 @@ export default function App() {
         else updated.push({ role: 'assistant', content: answer });
         return updated;
       });
-      if (autoSpeak) void speak(answer);
+      if (autoSpeak) {
+        if (canStreamSpeech) {
+          if (speechBuffer.trim()) enqueueSpeech(speechBuffer);
+          if (speechStarted) {
+            await speechQueue;
+            if (voiceModeRef.current) resumeVoiceRecognitionAfterSpeech(750);
+          } else {
+            void speak(answer);
+          }
+        } else {
+          void speak(answer);
+        }
+      }
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Ocorreu um erro ao conversar com a IA.');
       if (voiceModeRef.current && recognitionPausedRef.current) {
