@@ -5,6 +5,8 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const { spawn, execFile } = require('node:child_process');
 const { promisify } = require('node:util');
+const { Readable } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
 const execFileAsync = promisify(execFile);
 
 const OLLAMA_URL = 'http://127.0.0.1:11434';
@@ -258,6 +260,115 @@ ipcMain.handle('aurora:clear-elevenlabs-key', async () => {
   await fsp.rm(elevenLabsKeyPath(), { force: true });
   return { configured: false };
 });
+
+// AURORA_OFFLINE_ASR: Whisper tiny multilingue via sherpa-onnx; o modelo fica no userData, nunca no Git.
+const speechModelDirectory = () => path.join(app.getPath('userData'), 'speech-recognition', 'sherpa-onnx-whisper-tiny');
+let offlineWhisperPromise = null;
+
+function reportSpeechStatus(state, message) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send('aurora:speech-recognition-status', { state, message });
+}
+
+async function downloadSpeechModelFile(filename, minimumBytes) {
+  const directory = speechModelDirectory();
+  const targetPath = path.join(directory, filename);
+  try {
+    const stat = await fsp.stat(targetPath);
+    if (stat.isFile() && stat.size >= minimumBytes) return targetPath;
+  } catch { /* arquivo ainda nao existe */ }
+
+  await fsp.mkdir(directory, { recursive: true });
+  const temporaryPath = targetPath + '.part';
+  await fsp.rm(temporaryPath, { force: true }).catch(() => undefined);
+  reportSpeechStatus('downloading', 'Baixando componente ' + filename + ' do reconhecimento offline…');
+
+  const url = 'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main/' + encodeURIComponent(filename);
+  const response = await fetch(url, { signal: AbortSignal.timeout(15 * 60 * 1000) });
+  if (!response.ok || !response.body) {
+    throw new Error('Nao consegui baixar ' + filename + ' (HTTP ' + response.status + '). Confira a internet e tente novamente.');
+  }
+
+  try {
+    await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(temporaryPath));
+    const stat = await fsp.stat(temporaryPath);
+    if (!stat.isFile() || stat.size < minimumBytes) {
+      throw new Error('O arquivo baixado ' + filename + ' veio incompleto.');
+    }
+    await fsp.rename(temporaryPath, targetPath);
+    return targetPath;
+  } catch (error) {
+    await fsp.rm(temporaryPath, { force: true }).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function getOfflineWhisperRecognizer() {
+  if (offlineWhisperPromise) return offlineWhisperPromise;
+
+  offlineWhisperPromise = (async () => {
+    const directory = speechModelDirectory();
+    reportSpeechStatus('loading', 'Preparando o reconhecimento de voz local…');
+    const encoder = await downloadSpeechModelFile('tiny-encoder.int8.onnx', 5 * 1024 * 1024);
+    const decoder = await downloadSpeechModelFile('tiny-decoder.int8.onnx', 40 * 1024 * 1024);
+    const tokens = await downloadSpeechModelFile('tiny-tokens.txt', 100 * 1024);
+
+    let sherpa;
+    try {
+      sherpa = require('sherpa-onnx-node');
+    } catch (error) {
+      throw new Error('O motor de voz local nao esta instalado. Feche a Aurora, execute npm install na pasta do projeto e abra novamente. Detalhe: ' + (error instanceof Error ? error.message : String(error)).slice(0, 180));
+    }
+
+    reportSpeechStatus('loading', 'Carregando Whisper em portugues na memoria…');
+    const recognizer = await sherpa.OfflineRecognizer.createAsync({
+      featConfig: { sampleRate: 16000, featureDim: 80 },
+      modelConfig: {
+        whisper: { encoder, decoder, language: 'pt', task: 'transcribe' },
+        tokens,
+        numThreads: 2,
+        provider: 'cpu',
+        debug: 0,
+      },
+    });
+    reportSpeechStatus('ready', 'Reconhecimento offline pronto. Sua fala sera processada neste computador.');
+    return { sherpa, recognizer };
+  })();
+
+  try {
+    return await offlineWhisperPromise;
+  } catch (error) {
+    offlineWhisperPromise = null;
+    reportSpeechStatus('error', error instanceof Error ? error.message : String(error));
+    throw error;
+  }
+}
+
+ipcMain.handle('aurora:transcribe-audio', async (_event, rawSamples) => {
+  let samples;
+  if (rawSamples instanceof Float32Array) {
+    samples = rawSamples;
+  } else if (rawSamples instanceof ArrayBuffer) {
+    samples = new Float32Array(rawSamples);
+  } else if (ArrayBuffer.isView(rawSamples) && rawSamples.BYTES_PER_ELEMENT === 4) {
+    samples = new Float32Array(rawSamples.buffer, rawSamples.byteOffset, rawSamples.byteLength / 4);
+  } else {
+    throw new Error('O audio recebido esta em um formato invalido.');
+  }
+
+  if (samples.length < 4000) return { text: '' };
+  if (samples.length > 16000 * 45) throw new Error('A fala passou de 45 segundos. Divida a mensagem e tente novamente.');
+
+  const { recognizer } = await getOfflineWhisperRecognizer();
+  const stream = recognizer.createStream();
+  stream.acceptWaveform({ sampleRate: 16000, samples });
+  await recognizer.decodeAsync(stream);
+  const result = recognizer.getResult(stream);
+  const text = typeof result?.text === 'string' ? result.text.trim().slice(0, 4000) : '';
+  reportSpeechStatus('ready', text ? 'Fala reconhecida localmente.' : 'Nao consegui identificar palavras. Tente falar um pouco mais perto do microfone.');
+  return { text };
+});
+
 ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   const message = typeof payload.message === 'string' ? payload.message.trim() : '';
   if (!message) throw new Error('Escreva uma mensagem para a Aurora.');
