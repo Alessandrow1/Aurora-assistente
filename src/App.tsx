@@ -93,6 +93,7 @@ export default function App() {
       mouthAnalyserRef.current = analyser;
 
       const samples = new Uint8Array(analyser.fftSize);
+      let smoothedMouthOpen = 0;
       const animateMouth = () => {
         if (mouthAnalyserRef.current !== analyser) return;
         analyser.getByteTimeDomainData(samples);
@@ -103,8 +104,10 @@ export default function App() {
           energy += sample * sample;
         }
         const rms = Math.sqrt(energy / samples.length);
-        // Ignore low-level background noise and turn speech energy into a subtle jaw opening.
-        mouthOpenRef.current = Math.max(0, Math.min(0.9, (rms - 0.012) * 9.5));
+        // Ignore low-level background noise and smooth the jaw movement across syllables.
+        const targetMouthOpen = Math.max(0, Math.min(0.9, (rms - 0.012) * 9.5));
+        smoothedMouthOpen += (targetMouthOpen - smoothedMouthOpen) * 0.25;
+        mouthOpenRef.current = smoothedMouthOpen;
         mouthFrameRef.current = window.requestAnimationFrame(animateMouth);
       };
 
