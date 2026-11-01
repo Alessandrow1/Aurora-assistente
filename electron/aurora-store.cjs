@@ -504,7 +504,7 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
       .filter((result) => result.score >= (queryVector ? 0.2 : 1.5))
       .sort((left, right) => right.score - left.score)
       .slice(0, limit)
-      .map(({ item }) => ({ type: item.type, title: item.title, source: item.source, content: item.content.slice(0, 1150) }));
+      .map(({ item }) => ({ type: item.type, title: item.title, source: item.source, content: item.content.slice(0, 900) }));
   }
 
   async function reindexAll(memories = []) {
