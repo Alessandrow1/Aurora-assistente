@@ -34,9 +34,9 @@ type AppConfig = {
 type AvatarEmotion = 'neutral' | 'happy' | 'sad' | 'surprised' | 'curious' | 'angry' | 'affectionate' | 'laughing';
 
 function detectMemorySuggestion(text: string): string | null {
-  const normalized = text.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');
-  const sensitive = /\\b(doenca|medicamento|remedio|diagnostico|terapia|depressao|ansiedade|religiao|igreja|politica|partido|eleicao|orientacao sexual|sexualidade|gravidez|salario|senha|documento|cpf)\\b/i;
-  const durable = /\\b(meu objetivo e|minha meta e|meu projeto e|estou desenvolvendo|estou construindo|prefiro|nao gosto de|gosto de|quero que voce sempre|minha preferencia e|estou estudando para|decidi que)\\b/i;
+  const normalized = text.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const sensitive = /\b(doenca|medicamento|remedio|diagnostico|terapia|depressao|ansiedade|religiao|igreja|politica|partido|eleicao|orientacao sexual|sexualidade|gravidez|salario|senha|documento|cpf)\b/i;
+  const durable = /\b(meu objetivo e|minha meta e|meu projeto e|estou desenvolvendo|estou construindo|prefiro|nao gosto de|gosto de|quero que voce sempre|minha preferencia e|estou estudando para|decidi que)\b/i;
   if (text.trim().length < 18 || text.trim().length > 420 || sensitive.test(normalized) || !durable.test(normalized)) return null;
   return text.trim();
 }
