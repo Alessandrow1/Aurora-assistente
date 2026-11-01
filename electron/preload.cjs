@@ -17,6 +17,12 @@ contextBridge.exposeInMainWorld('aurora', {
       .finally(() => ipcRenderer.removeListener('aurora:chat-chunk', listener));
   },
   speak: (text) => ipcRenderer.invoke('aurora:speak', text),
+  transcribeAudio: (samples) => ipcRenderer.invoke('aurora:transcribe-audio', samples),
+  onSpeechRecognitionStatus: (callback) => {
+    const listener = (_event, status) => callback(status);
+    ipcRenderer.on('aurora:speech-recognition-status', listener);
+    return () => ipcRenderer.removeListener('aurora:speech-recognition-status', listener);
+  },
   captureScreen: () => ipcRenderer.invoke('aurora:capture-screen'),
   openApp: (appId) => ipcRenderer.invoke('aurora:open-app', appId),
   openFolder: (folderId) => ipcRenderer.invoke('aurora:open-folder', folderId),
