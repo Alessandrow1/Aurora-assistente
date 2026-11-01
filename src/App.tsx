@@ -34,6 +34,7 @@ type AppConfig = {
 type AvatarEmotion = 'neutral' | 'happy' | 'sad' | 'surprised' | 'curious' | 'angry' | 'affectionate' | 'laughing';
 
 function detectMemorySuggestion(text: string): string | null {
+  if (/^\\s*(?:aurora[, ]+)?(?:lembre-se de que|lembre que|guarde que|anote que|aprenda que)\\s+/i.test(text)) return null;
   const normalized = text.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const sensitive = /\b(saude|doenca|medicamento|remedio|diagnostico|terapia|depressao|ansiedade|medico|sintoma|emagrecer|peso|dieta|treino|religiao|igreja|politica|partido|eleicao|orientacao sexual|sexualidade|gravidez|salario|senha|documento|cpf)\b/i;
   const durable = /\b(meu objetivo e|minha meta e|meu projeto e|estou desenvolvendo|estou construindo|prefiro|nao gosto de|gosto de|quero que voce sempre|minha preferencia e|estou estudando para|decidi que)\b/i;
