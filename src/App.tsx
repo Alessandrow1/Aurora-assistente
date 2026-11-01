@@ -267,6 +267,7 @@ export default function App() {
         };
         const neuralDetail = error instanceof Error ? error.message : String(error);
         setNotice('A voz neural falhou: ' + neuralDetail.slice(0, 160) + '. Estou usando temporariamente a voz instalada no Windows.');
+        setSpeaking(true);
         synth.cancel();
         synth.speak(utterance);
       } catch (fallbackError) {
