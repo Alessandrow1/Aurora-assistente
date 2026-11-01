@@ -510,8 +510,9 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
     throw new Error(`O modelo ${settings.model} ainda não foi baixado. Feche a Aurora e execute INSTALAR-IA-GRATUITA.bat na pasta do projeto.`);
   }
 
-  const preserveConversationContext = Boolean(payload.imageBase64) ||
-    /\b(compare|comparar|analise|analisar|calcule|calcular|resolva|resolver|planeje|planejar|estrategia|vantagens|desvantagens|explica|explique|detalhad[oa]s?|passo a passo|lembra|lembre|antes|conversamos|historico|retomar|continuar|voltar)\b/i.test(normalizeMemoryText(message));
+  const voiceMode = payload.voiceMode === true;
+  const preserveConversationContext = !voiceMode || Boolean(payload.imageBase64) ||
+    /\b(compare|comparar|analise|analisar|calcule|calcular|resolva|resolver|planeje|planejar|estrategia|vantagens|desvantagens|explica|explique|porque|por que|como funciona|qual diferenca|o que significa|consequencia|detalhad[oa]s?|passo a passo|lembra|lembre|antes|conversamos|historico|retomar|continuar|voltar)\b/i.test(normalizeMemoryText(message));
   const historyLimit = preserveConversationContext ? 6 : 4;
   const historyCharacterLimit = preserveConversationContext ? 1400 : 900;
   const history = Array.isArray(payload.history)
@@ -520,7 +521,6 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
         .slice(-historyLimit)
         .map((item) => ({ role: item.role, content: item.content.slice(0, historyCharacterLimit) }))
     : [];
-  const voiceMode = payload.voiceMode === true;
   let relevantMemories = [];
   try {
     relevantMemories = await findRelevantAuroraMemories(
