@@ -1373,7 +1373,7 @@ export default function App() {
               aria-label="Criar imagem"
             >▧</button>
             <button
-              className={'mic-button ' + (voiceMode ? 'listening' : '')
+              className={'mic-button ' + (voiceMode ? 'listening' : '')}
               type="button"
               onClick={startListening}
               title={voiceMode ? 'Desativar conversa por voz offline' : 'Ativar conversa por voz offline'}
