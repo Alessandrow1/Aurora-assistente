@@ -215,7 +215,10 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
     data.conversations = [conversation, ...data.conversations.filter((item) => item.id !== id)]
       .slice(0, MAX_CONVERSATIONS);
     await writeEncrypted(conversationsPath(), data, 'conversations');
-    await indexConversationPairs(conversation, data);
+    // A indexação é assíncrona: a gravação do histórico não espera o modelo de embeddings.
+    void indexConversationPairs(conversation).catch((error) => {
+      console.warn('[Aurora History] Não consegui atualizar o índice da conversa:', error instanceof Error ? error.message : String(error));
+    });
     return {
       saved: true,
       conversation: {
@@ -228,9 +231,8 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
     };
   }
 
-  async function indexConversationPairs(conversation, currentData = null) {
-    const data = currentData || await readConversations();
-    let changed = false;
+  async function indexConversationPairs(conversation) {
+    const data = await readConversations();
     const pairs = [];
     for (let i = 0; i < conversation.messages.length; i += 1) {
       const user = conversation.messages[i];
@@ -240,22 +242,29 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
       const text = ('Usuário: ' + user.content + '\nAurora: ' + assistant.content).slice(0, 9000);
       const id = conversation.id + ':' + i;
       const previous = data.index.find((item) => item.id === id);
-      if (previous?.text === text) continue;
+      if (previous?.text === text && Array.isArray(previous.embedding)) continue;
       const item = { id, sessionId: conversation.id, title: conversation.title, text, updatedAt: conversation.updatedAt, embedding: null };
       if (previous) Object.assign(previous, item);
       else data.index.push(item);
       pairs.push(item);
-      changed = true;
     }
-    if (!changed) return;
+    if (!pairs.length) return;
     data.index = data.index.slice(-1600);
+    // Primeiro persiste o texto pesquisável; a busca lexical funciona mesmo sem embeddings.
+    await writeEncrypted(conversationsPath(), data, 'conversations');
     try {
       const vectors = await generateEmbeddings(pairs.map((item) => item.text));
-      if (vectors) pairs.forEach((item, index) => { item.embedding = vectors[index]; });
+      if (!vectors) return;
+      // Reabre o arquivo para não sobrescrever mensagens novas gravadas enquanto o Ollama calcula vetores.
+      const latest = await readConversations();
+      pairs.forEach((item, index) => {
+        const current = latest.index.find((stored) => stored.id === item.id && stored.text === item.text);
+        if (current) current.embedding = vectors[index];
+      });
+      await writeEncrypted(conversationsPath(), latest, 'conversations');
     } catch (error) {
       console.warn('[Aurora Memory] Não consegui indexar a conversa semanticamente:', error instanceof Error ? error.message : String(error));
     }
-    await writeEncrypted(conversationsPath(), data, 'conversations');
   }
 
   async function listConversations(query = '') {
