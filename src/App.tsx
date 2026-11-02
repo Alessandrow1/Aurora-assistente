@@ -33,6 +33,9 @@ type AppConfig = {
 
 type AvatarEmotion = 'neutral' | 'happy' | 'sad' | 'surprised' | 'curious' | 'angry' | 'affectionate' | 'laughing';
 
+// Tempo de silêncio após a última sílaba antes de encerrar o áudio e chamar o Whisper.
+const VOICE_END_SILENCE_MS = 750;
+
 function detectMemorySuggestion(text: string): string | null {
   if (/^\\s*(?:aurora[, ]+)?(?:lembre-se de que|lembre que|guarde que|anote que|aprenda que)\\s+/i.test(text)) return null;
   const normalized = text.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -541,7 +544,7 @@ export default function App() {
             if (now - session.firstSpeechAt >= 200) session.speechDetected = true;
           }
 
-          if (session.speechDetected && rms < session.speechThresholdRms * 0.68 && now - session.lastSpeechAt >= 950) {
+          if (session.speechDetected && rms < session.speechThresholdRms * 0.68 && now - session.lastSpeechAt >= VOICE_END_SILENCE_MS) {
             stopVoiceCaptureRef.current?.(true);
           } else if (now - session.startedAt >= 25000) {
             stopVoiceCaptureRef.current?.(true);
