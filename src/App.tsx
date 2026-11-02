@@ -145,6 +145,7 @@ export default function App() {
   const sendMessageRef = useRef<(rawText: string) => Promise<void>>(async () => undefined);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const activeSpeechFinishRef = useRef<(() => void) | null>(null);
   const [localTtsStatus, setLocalTtsStatus] = useState<LocalTtsStatus | null>(null);
   const [localTtsProgress, setLocalTtsProgress] = useState('');
   const [localTtsInstalling, setLocalTtsInstalling] = useState(false);
@@ -214,6 +215,7 @@ export default function App() {
     voiceResponseActiveRef.current = false;
     thinkingRef.current = false;
     setThinking(false);
+    activeSpeechFinishRef.current?.();
     const currentAudio = audioRef.current;
     if (currentAudio) {
       currentAudio.pause();
@@ -546,15 +548,17 @@ export default function App() {
     let pendingStream: MediaStream | null = null;
     let pendingAudioContext: AudioContext | null = null;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: { ideal: 1 },
-          sampleRate: { ideal: 48000 },
-          echoCancellation: { ideal: true },
-          noiseSuppression: { ideal: true },
-          autoGainControl: { ideal: true },
-        },
-      });
+      const fallbackAudioConstraints: MediaTrackConstraints = {
+        channelCount: { ideal: 1 },
+        sampleRate: { ideal: 48000 },
+        echoCancellation: { ideal: true },
+        noiseSuppression: { ideal: true },
+        autoGainControl: { ideal: true },
+      };
+      if (microphoneIdRef.current && microphoneIdRef.current !== 'default') {
+        fallbackAudioConstraints.deviceId = { exact: microphoneIdRef.current };
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: fallbackAudioConstraints });
 
       pendingStream = stream;
       if (!voiceModeRef.current || recognitionPausedRef.current) {
@@ -709,6 +713,7 @@ export default function App() {
       recorder.start(250);
       setListening(true);
       setNotice('');
+      void refreshAudioInputs();
 
       session.timer = window.setInterval(() => {
         if (session.stopped) return;
@@ -779,7 +784,13 @@ export default function App() {
     setSpeaking(true);
 
     let finishPlayback!: () => void;
-    const playbackFinished = new Promise<void>((resolve) => { finishPlayback = resolve; });
+    const playbackFinished = new Promise<void>((resolve) => {
+      finishPlayback = () => {
+        if (activeSpeechFinishRef.current === finishPlayback) activeSpeechFinishRef.current = null;
+        resolve();
+      };
+      activeSpeechFinishRef.current = finishPlayback;
+    });
 
     try {
       const result = await window.aurora.speak(text);
@@ -1401,7 +1412,14 @@ export default function App() {
       vad.pause();
       await Promise.resolve(vad.destroy()).catch(() => undefined);
     }
-    stopVoiceCaptureRef.current?.(false);
+    const activeRecorder = voiceCaptureRef.current?.recorder;
+    if (activeRecorder && activeRecorder.state !== 'inactive') {
+      const stopped = new Promise<void>((resolve) => activeRecorder.addEventListener('stop', () => resolve(), { once: true }));
+      stopVoiceCaptureRef.current?.(false);
+      await Promise.race([stopped, new Promise<void>((resolve) => window.setTimeout(resolve, 1000))]);
+    } else {
+      stopVoiceCaptureRef.current?.(false);
+    }
     voiceVadFailedRef.current = false;
     recognitionPausedRef.current = false;
     if (wasVoiceModeActive) {
@@ -1413,40 +1431,6 @@ export default function App() {
     }
   };
 
-  const saveSettings = async (event: FormEvent) => {
-    const key = elevenLabsKeyInput.trim();
-    if (!key) {
-      setNotice('Cole sua chave API da ElevenLabs antes de salvar.');
-      return;
-    }
-    setElevenLabsSaving(true);
-    setNotice('');
-    try {
-      const result = await window.aurora.saveElevenLabsKey(key);
-      setElevenLabsConfigured(result.configured);
-      setElevenLabsKeyInput('');
-      setNotice('Chave da ElevenLabs salva com criptografia protegida pelo Windows.');
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Nao consegui salvar a chave da ElevenLabs.');
-    } finally {
-      setElevenLabsSaving(false);
-    }
-  };
-
-  const removeElevenLabsKey = async () => {
-    setElevenLabsSaving(true);
-    setNotice('');
-    try {
-      await window.aurora.clearElevenLabsKey();
-      setElevenLabsConfigured(false);
-      setElevenLabsKeyInput('');
-      setNotice('Chave da ElevenLabs removida. A Aurora usara a voz de reserva.');
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Nao consegui remover a chave da ElevenLabs.');
-    } finally {
-      setElevenLabsSaving(false);
-    }
-  };
   const saveSettings = async (event: FormEvent) => {
     event.preventDefault();
     setSaving(true);
