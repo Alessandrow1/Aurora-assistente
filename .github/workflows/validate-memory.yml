@@ -1,11 +1,14 @@
-name: Validate Aurora memory layer
+name: Validate Aurora local voice and memory
 
 on:
   push:
     branches: [feature/live2d-avatar]
     paths:
-      - 'electron/**'
       - 'src/**'
+      - 'electron/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/validate-memory.yml'
   workflow_dispatch:
 
@@ -13,7 +16,7 @@ permissions:
   contents: read
 
 jobs:
-  memory-tests:
+  validate:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -22,12 +25,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Check Electron JavaScript syntax
-        run: |
-          node --check electron/main.cjs
-          node --check electron/preload.cjs
-          node --check electron/aurora-store.cjs
-          node --check electron/aurora-image-generator.cjs
-          node --check electron/aurora-local-tts.cjs
-      - name: Test persistent memory, image generation and local voice
-        run: node --test electron/aurora-store.test.cjs electron/aurora-image-generator.test.cjs electron/aurora-local-tts.test.cjs
+          cache: npm
+      - name: Install dependencies
+        run: npm install
+      - name: Build renderer and check Electron code
+        run: npm run build
+      - name: Run memory, image, voice and asset tests
+        run: npm test
