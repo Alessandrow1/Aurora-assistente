@@ -45,7 +45,9 @@ contextBridge.exposeInMainWorld('aurora', {
   saveElevenLabsKey: (apiKey) => ipcRenderer.invoke('aurora:save-elevenlabs-key', apiKey),
   clearElevenLabsKey: () => ipcRenderer.invoke('aurora:clear-elevenlabs-key'),
   chat: (payload, onChunk) => {
-    const requestId = Date.now().toString(36) + Math.random().toString(36).slice(2);
+    const requestId = typeof payload?.requestId === 'string' && payload.requestId
+      ? payload.requestId
+      : Date.now().toString(36) + Math.random().toString(36).slice(2);
     const listener = (_event, data) => {
       if (data?.requestId === requestId && typeof data.content === 'string') onChunk?.(data.content);
     };
@@ -53,6 +55,7 @@ contextBridge.exposeInMainWorld('aurora', {
     return ipcRenderer.invoke('aurora:chat', { ...payload, requestId })
       .finally(() => ipcRenderer.removeListener('aurora:chat-chunk', listener));
   },
+  cancelChat: (requestId) => ipcRenderer.send('aurora:chat-cancel', requestId),
   speak: (text) => ipcRenderer.invoke('aurora:speak', text),
   startSpeakSession: () => ipcRenderer.invoke('aurora:speak-session-start'),
   endSpeakSession: () => ipcRenderer.invoke('aurora:speak-session-end'),
