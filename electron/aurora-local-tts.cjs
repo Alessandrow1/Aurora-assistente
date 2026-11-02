@@ -339,8 +339,22 @@ function createAuroraLocalTts(options = {}) {
       ? new sherpa.GenerationConfig({ sid: 42, speed: 1.04, silenceScale: 0.18 })
       : { sid: 42, speed: 1.04, silenceScale: 0.18 };
     const audio = typeof loaded.instance.generateAsync === 'function'
-      ? await loaded.instance.generateAsync({ text, generationConfig, enableExternalBuffer: true })
+      ? await loaded.instance.generateAsync({
+        text,
+        generationConfig,
+        enableExternalBuffer: true,
+        // sherpa-onnx usa o retorno 1 para continuar a geração assíncrona.
+        // Sem esse callback, algumas versões encerram a geração sem amostras.
+        onProgress: () => 1,
+      })
       : loaded.instance.generate({ text, generationConfig });
+
+    if (!audio || !audio.samples || audio.samples.length === 0) {
+      throw new Error(
+        'O Kokoro finalizou a geração sem retornar amostras de áudio. ' +
+        'Verifique a configuração do modelo, o idioma pt e a voz pf_dora (sid 42).',
+      );
+    }
     const wav = makeWavBuffer(audio.samples, audio.sampleRate);
     emitStatus('ready', 'Voz Kokoro gerada localmente.', {
       synthesisMs: Date.now() - startedAt,
