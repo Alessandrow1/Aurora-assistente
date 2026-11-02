@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,41 @@ def validate_avatar(source: Path) -> dict[str, Any]:
     return model
 
 
+def enable_lipsync_on_test_copy(model_directory: Path) -> None:
+    """The original 6xb file has an empty LipSync group; map its known mouth parameter."""
+    model_path = model_directory / "6xb.model3.json"
+    model = json.loads(model_path.read_text(encoding="utf-8"))
+    references = model.get("FileReferences", {})
+    display_info_path = model_directory / references.get("DisplayInfo", "6xb.cdi3.json")
+    display_info = json.loads(display_info_path.read_text(encoding="utf-8"))
+    parameter_ids = {
+        item.get("Id")
+        for item in display_info.get("Parameters", [])
+        if isinstance(item, dict)
+    }
+    if "ParamMouthOpenY" not in parameter_ids:
+        raise ValueError("O avatar 6xb não declara ParamMouthOpenY; não é possível preparar o lipsync com segurança.")
+
+    groups = model.setdefault("Groups", [])
+    lip_sync_group = next(
+        (
+            item
+            for item in groups
+            if item.get("Target") == "Parameter" and item.get("Name") == "LipSync"
+        ),
+        None,
+    )
+    if lip_sync_group is None:
+        groups.append({"Target": "Parameter", "Name": "LipSync", "Ids": ["ParamMouthOpenY"]})
+    else:
+        lip_sync_group["Ids"] = ["ParamMouthOpenY"]
+
+    model_path.write_text(
+        json.dumps(model, ensure_ascii=False, indent=4) + "\n",
+        encoding="utf-8",
+    )
+
+
 def main() -> None:
     args = parse_args()
     project = args.project_root.resolve()
@@ -71,9 +107,11 @@ def main() -> None:
         raise FileExistsError(f"O destino do avatar já existe; não vou sobrescrever: {avatar_destination}")
 
     shutil.copytree(avatar_source, avatar_destination)
+    original_model_dict = model_dict_path.read_text(encoding="utf-8")
 
     try:
-        model_dict = json.loads(model_dict_path.read_text(encoding="utf-8"))
+        enable_lipsync_on_test_copy(avatar_destination)
+        model_dict = json.loads(original_model_dict)
         if not isinstance(model_dict, list):
             raise ValueError("O model_dict.json não contém uma lista.")
         if any(item.get("name") == model_name for item in model_dict if isinstance(item, dict)):
@@ -88,10 +126,12 @@ def main() -> None:
                 "initialYshift": 0,
             }
         )
-        model_dict_path.write_text(
+        model_dict_temp = model_dict_path.with_suffix(".json.tmp")
+        model_dict_temp.write_text(
             json.dumps(model_dict, ensure_ascii=False, indent=4) + "\n",
             encoding="utf-8",
         )
+        os.replace(model_dict_temp, model_dict_path)
 
         yaml = YAML()
         yaml.preserve_quotes = True
@@ -151,9 +191,15 @@ def main() -> None:
         vad["silero_vad"]["required_hits"] = 3
         vad["silero_vad"]["required_misses"] = 24
 
-        with config_path.open("w", encoding="utf-8", newline="\n") as handle:
+        config_temp = config_path.with_suffix(".yaml.tmp")
+        with config_temp.open("w", encoding="utf-8", newline="\n") as handle:
             yaml.dump(config, handle)
+        os.replace(config_temp, config_path)
     except Exception:
+        model_dict_path.write_text(original_model_dict, encoding="utf-8")
+        config_path.unlink(missing_ok=True)
+        config_path.with_suffix(".yaml.tmp").unlink(missing_ok=True)
+        model_dict_path.with_suffix(".json.tmp").unlink(missing_ok=True)
         shutil.rmtree(avatar_destination, ignore_errors=True)
         raise
 
@@ -165,6 +211,7 @@ def main() -> None:
     print("  ASR: Faster-Whisper base / CPU int8 / português")
     print("  VAD: Silero")
     print("  TTS: Edge TTS pt-BR-LeticiaNeural")
+    print("  Lipsync: ParamMouthOpenY habilitado na cópia do modelo")
     print("  Memória de longo prazo externa: não habilitada neste primeiro teste")
 
 
