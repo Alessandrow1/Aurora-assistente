@@ -9,6 +9,7 @@ on:
       - 'scripts/**'
       - 'package.json'
       - 'package-lock.json'
+      - 'vite.config.ts'
       - '.github/workflows/validate-memory.yml'
   workflow_dispatch:
 
