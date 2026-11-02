@@ -1257,7 +1257,37 @@ ipcMain.handle('aurora:tts-install', async () => {
 });
 
 // O modo de voz não abre conexões externas: o Kokoro local sintetiza cada frase.
-ipcMain.handle('aurora:speak-session-start', async () => ({ active: false, provider: 'kokoro-local' }));
+// ElevenLabs é a voz principal. Kokoro continua disponível como fallback local.
+ipcMain.handle('aurora:speak-session-start', async () => {
+  const previous = activeElevenLabsStreamSession;
+  activeElevenLabsStreamSession = null;
+  if (previous) await previous.close().catch(() => undefined);
+
+  let apiKey = null;
+  try {
+    apiKey = await readElevenLabsApiKey();
+  } catch (error) {
+    console.warn('[Aurora TTS] Não consegui ler a chave protegida da ElevenLabs:', error);
+  }
+  if (!apiKey) return { active: false, provider: 'kokoro-local' };
+
+  let session = null;
+  try {
+    session = createElevenLabsStreamSession(apiKey);
+    await session.ready;
+    activeElevenLabsStreamSession = session;
+    console.info('[Aurora TTS] Voz ElevenLabs pronta para streaming.', {
+      voiceId: ELEVENLABS_VOICE_ID,
+      modelId: ELEVENLABS_MODEL_ID,
+    });
+    return { active: true, provider: 'elevenlabs' };
+  } catch (error) {
+    if (session) await session.close().catch(() => undefined);
+    const detail = error instanceof Error ? error.message : String(error);
+    console.warn('[Aurora TTS] Não consegui preparar o streaming persistente; usarei uma conexão por trecho:', detail);
+    return { active: false, provider: 'elevenlabs', error: detail.slice(0, 220) };
+  }
+});
 
 ipcMain.handle('aurora:speak-session-end', async () => {
   const session = activeElevenLabsStreamSession;
@@ -1274,18 +1304,97 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
   if (!cleanText) throw new Error('O texto ficou vazio depois de remover a formatação.');
 
   const startedAt = Date.now();
-  const audio = await getAuroraLocalTts().synthesize(cleanText);
-  console.info('[Aurora Performance] Kokoro local', {
-    synthesisMs: Date.now() - startedAt,
-    characters: cleanText.length,
-    audioBytes: audio.length,
-  });
-  return {
-    audioBase64: audio.toString('base64'),
-    audioMimeType: 'audio/wav',
-    voice: 'pf_dora',
-    provider: 'kokoro-local',
-  };
+  let apiKey = null;
+  let keyError = null;
+  try {
+    apiKey = await readElevenLabsApiKey();
+  } catch (error) {
+    keyError = error instanceof Error ? error.message : String(error);
+    console.warn('[Aurora TTS] Não consegui ler a chave protegida da ElevenLabs:', keyError);
+  }
+
+  if (apiKey) {
+    const activeSession = activeElevenLabsStreamSession;
+    if (activeSession?.isReady()) {
+      try {
+        const audio = await activeSession.synthesize(cleanText);
+        console.info('[Aurora Performance] ElevenLabs persistente', {
+          synthesisMs: Date.now() - startedAt,
+          characters: cleanText.length,
+          audioBytes: audio.length,
+          voiceId: ELEVENLABS_VOICE_ID,
+          modelId: ELEVENLABS_MODEL_ID,
+        });
+        return {
+          audioBase64: audio.toString('base64'),
+          audioMimeType: 'audio/wav',
+          voice: ELEVENLABS_VOICE_ID,
+          provider: 'elevenlabs',
+        };
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        console.warn('[Aurora TTS] O streaming persistente falhou; tentando uma conexão nova:', detail);
+        if (activeElevenLabsStreamSession === activeSession) activeElevenLabsStreamSession = null;
+        await activeSession.close().catch(() => undefined);
+      }
+    }
+
+    try {
+      const audio = await synthesizeElevenLabsDialogue(cleanText, apiKey);
+      console.info('[Aurora Performance] ElevenLabs', {
+        synthesisMs: Date.now() - startedAt,
+        characters: cleanText.length,
+        audioBytes: audio.length,
+        voiceId: ELEVENLABS_VOICE_ID,
+        modelId: ELEVENLABS_MODEL_ID,
+      });
+      return {
+        audioBase64: audio.toString('base64'),
+        audioMimeType: 'audio/mpeg',
+        voice: ELEVENLABS_VOICE_ID,
+        provider: 'elevenlabs',
+      };
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      console.warn('[Aurora TTS] ElevenLabs indisponível; tentando Kokoro local:', detail);
+      try {
+        const localEngine = getAuroraLocalTts();
+        const localStatus = await localEngine.getStatus();
+        if (!localStatus.installed) throw new Error('Kokoro local não está instalado.');
+        const localAudio = await localEngine.synthesize(cleanText);
+        return {
+          audioBase64: localAudio.toString('base64'),
+          audioMimeType: 'audio/wav',
+          voice: 'pf_dora',
+          provider: 'kokoro-local',
+          fallbackReason: detail.slice(0, 220),
+        };
+      } catch (localError) {
+        const localDetail = localError instanceof Error ? localError.message : String(localError);
+        throw new Error('ElevenLabs falhou: ' + detail.slice(0, 220) +
+          '. Kokoro local também não pôde gerar áudio: ' + localDetail.slice(0, 180));
+      }
+    }
+  }
+
+  try {
+    const audio = await getAuroraLocalTts().synthesize(cleanText);
+    console.info('[Aurora Performance] Kokoro local (sem chave ElevenLabs)', {
+      synthesisMs: Date.now() - startedAt,
+      characters: cleanText.length,
+      audioBytes: audio.length,
+    });
+    return {
+      audioBase64: audio.toString('base64'),
+      audioMimeType: 'audio/wav',
+      voice: 'pf_dora',
+      provider: 'kokoro-local',
+    };
+  } catch (localError) {
+    const localDetail = localError instanceof Error ? localError.message : String(localError);
+    const prefix = keyError ? 'A chave da ElevenLabs não pôde ser lida: ' + keyError + '. ' : '';
+    throw new Error(prefix + localDetail);
+  }
 });
 
 ipcMain.handle('aurora:capture-screen', async () => {
