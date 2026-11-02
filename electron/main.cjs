@@ -1224,20 +1224,7 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
   const text = typeof rawText === 'string' ? rawText.trim().slice(0, 4200) : '';
   if (!text) throw new Error('Não há texto para transformar em fala.');
 
-  const cleanText = text
-    .replace(/```[sS]*?```/g, ' ')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/[([^]]+)]([^)]+)/g, '$1')
-    .replace(/https?://S+/g, '')
-    .replace(/[s*laughs?s*]/gi, ' hahaha ')
-    .replace(/[#*_>|]/g, ' ')
-    .replace(/kkkk+/gi, 'hahaha')
-    .replace(/kkk/gi, 'ha ha ha')
-    .replace(/lol/gi, 'hahaha')
-    .replace(/hehe+/gi, 'he he he')
-    .replace(/rsrs+/gi, 'he he he')
-    .replace(/s+/g, ' ')
-    .trim();
+  const cleanText = text.replace(/[\\r\\n\\t]+/g, ' ').replace(/[#*_>|]/g, ' ').replace(/\\s+/g, ' ').trim();
   if (!cleanText) throw new Error('O texto ficou vazio depois de remover a formatação.');
 
   const startedAt = Date.now();
