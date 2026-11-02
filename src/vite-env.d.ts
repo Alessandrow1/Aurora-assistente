@@ -26,6 +26,9 @@ declare global {
       getEmbeddingStatus: () => Promise<{ checkedAt?: number; installed: boolean; model: string }>;
       installEmbeddingModel: () => Promise<{ installed: boolean; indexed: number; documents: number; conversations: number }>;
       getImageGeneratorStatus: () => Promise<{ available: boolean; checkpointAvailable: boolean; checkpoints: string[]; checkpointCount: number; message: string }>;
+      getLocalTtsStatus: () => Promise<{ installed: boolean; ready: boolean; modelDirectory: string; voice: string; language: string; provider: string }>;
+      installLocalTts: () => Promise<{ installed: boolean; ready: boolean; modelDirectory: string; voice: string; language: string; provider: string }>;
+      onTtsStatus: (callback: (status: { state: string; message: string; synthesisMs?: number; audioSeconds?: number }) => void) => () => void;
       generateImage: (payload: { prompt: string }) => Promise<{ id: string; dataUrl: string; prompt: string; checkpoint: string }>;
       loadGeneratedImage: (id: string) => Promise<{ found: boolean; dataUrl?: string }>;
       openGeneratedImages: () => Promise<{ success: boolean }>;
@@ -39,7 +42,7 @@ declare global {
       openApp: (appId: string) => Promise<{ success: boolean; label: string }>;
       openFolder: (folderId: string) => Promise<{ success: boolean; label: string }>;
       openUrl: (url: string) => Promise<{ success: boolean }>;
-      speak: (text: string) => Promise<{ audioBase64: string; audioMimeType?: string; voice: string; provider: 'elevenlabs' | 'edge'; fallbackReason?: string }>;
+      speak: (text: string) => Promise<{ audioBase64: string; audioMimeType?: string; voice: string; provider: 'kokoro-local' }>;
       startSpeakSession: () => Promise<{ active: boolean }>;
       endSpeakSession: () => Promise<{ closed: boolean }>;
       transcribeAudio: (samples: Float32Array) => Promise<{ text: string }>;
