@@ -1256,8 +1256,7 @@ ipcMain.handle('aurora:tts-install', async () => {
   return await engine.getStatus();
 });
 
-// O modo de voz não abre conexões externas: o Kokoro local sintetiza cada frase.
-// ElevenLabs é a voz principal. Kokoro continua disponível como fallback local.
+// A voz neural principal usa ElevenLabs; o Kokoro fica como alternativa local.
 ipcMain.handle('aurora:speak-session-start', async () => {
   const previous = activeElevenLabsStreamSession;
   activeElevenLabsStreamSession = null;
