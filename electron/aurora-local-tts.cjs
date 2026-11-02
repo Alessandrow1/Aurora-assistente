@@ -49,7 +49,7 @@ function makeWavBuffer(samples, sampleRate) {
   return wav;
 }
 
-async function findFile(root, fileName, maxDepth = 5) {
+async function findFile(root, fileName, maxDepth = 12) {
   if (maxDepth < 0) return null;
   let entries;
   try { entries = await fsp.readdir(root, { withFileTypes: true }); } catch { return null; }
@@ -65,7 +65,7 @@ async function findFile(root, fileName, maxDepth = 5) {
   return null;
 }
 
-async function findDirectory(root, directoryName, maxDepth = 5) {
+async function findDirectory(root, directoryName, maxDepth = 12) {
   if (maxDepth < 0) return null;
   let entries;
   try { entries = await fsp.readdir(root, { withFileTypes: true }); } catch { return null; }
@@ -114,19 +114,69 @@ function createAuroraLocalTts(options = {}) {
 
   const emitStatus = (state, message, extra = {}) => statusCallback({ state, message, ...extra });
 
-  async function getModelFiles() {
+  async function inspectModelFiles(rootDirectory = modelDirectory) {
     const [model, voices, tokens, espeakData] = await Promise.all([
-      findFile(modelDirectory, 'model.onnx'),
-      findFile(modelDirectory, 'voices.bin'),
-      findFile(modelDirectory, 'tokens.txt'),
-      findDirectory(modelDirectory, 'espeak-ng-data'),
+      findFile(rootDirectory, 'model.onnx'),
+      findFile(rootDirectory, 'voices.bin'),
+      findFile(rootDirectory, 'tokens.txt'),
+      findDirectory(rootDirectory, 'espeak-ng-data'),
     ]);
-    if (!model || !voices || !tokens || !espeakData) return null;
-    const [modelStat, voicesStat, tokensStat] = await Promise.all([
-      fsp.stat(model), fsp.stat(voices), fsp.stat(tokens),
+    const problems = [];
+    const sizes = {};
+    const inspectFile = async (label, filePath, minimumBytes) => {
+      if (!filePath) {
+        problems.push(label + ' não encontrado');
+        return;
+      }
+      try {
+        const stat = await fsp.stat(filePath);
+        sizes[label] = stat.size;
+        if (!stat.isFile()) problems.push(label + ' não é um arquivo');
+        else if (stat.size < minimumBytes) {
+          problems.push(label + ' incompleto (' + stat.size + ' bytes; esperado pelo menos ' + minimumBytes + ')');
+        }
+      } catch {
+        problems.push(label + ' não pôde ser lido');
+      }
+    };
+    await Promise.all([
+      inspectFile('model.onnx', model, 250 * 1024 * 1024),
+      inspectFile('voices.bin', voices, 1024 * 1024),
+      inspectFile('tokens.txt', tokens, 1024),
     ]);
-    if (modelStat.size < 250 * 1024 * 1024 || voicesStat.size < 1024 * 1024 || tokensStat.size < 1024) return null;
-    return { model, voices, tokens, espeakData };
+    if (!espeakData) {
+      problems.push('pasta espeak-ng-data não encontrada');
+    } else {
+      try {
+        const entries = await fsp.readdir(espeakData);
+        if (entries.length === 0) problems.push('pasta espeak-ng-data está vazia');
+      } catch {
+        problems.push('pasta espeak-ng-data não pôde ser lida');
+      }
+    }
+    return {
+      installed: problems.length === 0,
+      files: model && voices && tokens && espeakData ? { model, voices, tokens, espeakData } : null,
+      problems,
+      sizes,
+      rootDirectory,
+    };
+  }
+
+  function describeModelInspection(inspection) {
+    const details = inspection.problems.length
+      ? inspection.problems.join('; ')
+      : 'todos os arquivos essenciais foram encontrados';
+    const sizes = Object.entries(inspection.sizes)
+      .map(([name, size]) => name + ': ' + (size / (1024 * 1024)).toFixed(2) + ' MB')
+      .join(', ');
+    return 'Pasta analisada: ' + inspection.rootDirectory + '. ' + details +
+      (sizes ? '. Tamanhos: ' + sizes : '');
+  }
+
+  async function getModelFiles(rootDirectory = modelDirectory) {
+    const inspection = await inspectModelFiles(rootDirectory);
+    return inspection.installed ? inspection.files : null;
   }
 
   async function isInstalled() {
@@ -136,21 +186,40 @@ function createAuroraLocalTts(options = {}) {
   async function install() {
     if (installPromise) return installPromise;
     installPromise = (async () => {
+      const stagingDirectory = modelDirectory + '.installing';
+      const archivePath = modelDirectory + '.download.zip';
       const installed = await getModelFiles();
       if (installed) {
         emitStatus('ready', 'Modelo de voz Kokoro pt-BR encontrado em ' + modelDirectory + '.');
         return installed;
       }
+
+      // Recupera uma extração completa que tenha sobrado de uma tentativa anterior,
+      // evitando baixar novamente os ~329 MB.
+      const stagedInspection = await inspectModelFiles(stagingDirectory);
+      if (stagedInspection.installed) {
+        emitStatus('installing', 'Extração anterior do Kokoro validada. Finalizando a instalação sem novo download…');
+        await fsp.rm(modelDirectory, { recursive: true, force: true });
+        await fsp.rename(stagingDirectory, modelDirectory);
+        const recovered = await getModelFiles();
+        if (recovered) {
+          await fsp.rm(archivePath, { force: true }).catch(() => undefined);
+          emitStatus('installed', 'Kokoro pt-BR recuperado e validado em ' + modelDirectory + '.');
+          return recovered;
+        }
+        const afterRecovery = await inspectModelFiles();
+        throw new Error('A extração recuperada foi movida, mas a validação final falhou. ' + describeModelInspection(afterRecovery));
+      }
+
       if (typeof fetchImpl !== 'function') throw new Error('Este ambiente não oferece suporte a downloads HTTPS.');
       await fsp.mkdir(path.dirname(modelDirectory), { recursive: true });
-      const stagingDirectory = modelDirectory + '.installing';
-      const archivePath = modelDirectory + '.download.zip';
       await fsp.rm(stagingDirectory, { recursive: true, force: true }).catch(() => undefined);
       await fsp.rm(archivePath, { force: true }).catch(() => undefined);
       await fsp.mkdir(stagingDirectory, { recursive: true });
 
-      emitStatus('downloading', 'Baixando o modelo neural Kokoro para português brasileiro (~329 MB). O arquivo ficará em ' + modelDirectory + '.');
+      let extractionCompleted = false;
       try {
+        emitStatus('downloading', 'Baixando o modelo neural Kokoro para português brasileiro (~329 MB). O arquivo ficará em ' + modelDirectory + '.');
         const response = await fetchImpl(KOKORO_ARCHIVE_URL, { signal: AbortSignal.timeout(30 * 60 * 1000) });
         if (!response.ok || !response.body) throw new Error('Não consegui baixar o Kokoro (HTTP ' + response.status + ').');
         let downloaded = 0;
@@ -173,38 +242,43 @@ function createAuroraLocalTts(options = {}) {
         await pipeline(Readable.fromWeb(response.body), progress, fs.createWriteStream(archivePath));
         const archiveStat = await fsp.stat(archivePath);
         if (archiveStat.size < 200 * 1024 * 1024) {
-          throw new Error('O pacote Kokoro baixado parece incompleto (' + archiveStat.size + ' bytes).');
+          throw new Error('O pacote Kokoro baixado parece incompleto (' + archiveStat.size + ' bytes). O arquivo ZIP precisa ter pelo menos 200 MB.');
         }
 
         emitStatus('extracting', 'Download concluído. Extraindo o modelo Kokoro e os dados de pronúncia…');
         await extractArchive(archivePath, stagingDirectory);
-        const model = await findFile(stagingDirectory, 'model.onnx');
-        const voices = await findFile(stagingDirectory, 'voices.bin');
-        const tokens = await findFile(stagingDirectory, 'tokens.txt');
-        const espeakData = await findDirectory(stagingDirectory, 'espeak-ng-data');
-        if (!model || !voices || !tokens || !espeakData) {
-          throw new Error('O pacote Kokoro foi extraído, mas faltam arquivos necessários (model.onnx, voices.bin, tokens.txt ou espeak-ng-data).');
-        }
-        const modelStat = await fsp.stat(model);
-        if (modelStat.size < 250 * 1024 * 1024) throw new Error('O arquivo principal do Kokoro está incompleto.');
+        extractionCompleted = true;
 
+        // O pacote oficial pode vir com uma pasta-raiz. Mantemos sua estrutura e
+        // resolvemos os caminhos recursivamente, em vez de copiar 330 MB arquivo a arquivo.
+        const extractedInspection = await inspectModelFiles(stagingDirectory);
+        if (!extractedInspection.installed) {
+          throw new Error('O ZIP foi extraído, mas os arquivos não passaram na validação. ' +
+            describeModelInspection(extractedInspection) +
+            '. A pasta .installing foi preservada para diagnóstico; não é necessário repetir o download ainda.');
+        }
+
+        emitStatus('installing', 'Arquivos do Kokoro validados. Finalizando a instalação…');
         await fsp.rm(modelDirectory, { recursive: true, force: true });
-        await fsp.mkdir(modelDirectory, { recursive: true });
-        await Promise.all([
-          fsp.copyFile(model, path.join(modelDirectory, 'model.onnx')),
-          fsp.copyFile(voices, path.join(modelDirectory, 'voices.bin')),
-          fsp.copyFile(tokens, path.join(modelDirectory, 'tokens.txt')),
-          fsp.cp(espeakData, path.join(modelDirectory, 'espeak-ng-data'), { recursive: true }),
-        ]);
-        await fsp.rm(archivePath, { force: true }).catch(() => undefined);
-        await fsp.rm(stagingDirectory, { recursive: true, force: true }).catch(() => undefined);
+        // stagingDirectory e modelDirectory ficam no mesmo volume; rename evita
+        // recópia demorada e reduz o risco de instalação parcial no disco D:.
+        await fsp.rename(stagingDirectory, modelDirectory);
+
         const result = await getModelFiles();
-        if (!result) throw new Error('Não consegui validar a instalação do modelo Kokoro.');
-        emitStatus('installed', 'Kokoro pt-BR instalado. Preparando a voz local…');
+        if (!result) {
+          const finalInspection = await inspectModelFiles();
+          throw new Error('A instalação foi movida, mas não passou na validação final. ' +
+            describeModelInspection(finalInspection));
+        }
+
+        await fsp.rm(archivePath, { force: true }).catch(() => undefined);
+        emitStatus('installed', 'Kokoro pt-BR instalado e validado. Preparando a voz local…');
         return result;
       } catch (error) {
         await fsp.rm(archivePath, { force: true }).catch(() => undefined);
-        await fsp.rm(stagingDirectory, { recursive: true, force: true }).catch(() => undefined);
+        if (!extractionCompleted) {
+          await fsp.rm(stagingDirectory, { recursive: true, force: true }).catch(() => undefined);
+        }
         throw error;
       }
     })();
