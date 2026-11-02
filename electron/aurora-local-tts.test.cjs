@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const os = require('node:os');
 const path = require('node:path');
 const fs = require('node:fs/promises');
+const fsSync = require('node:fs');
 const {
   createAuroraLocalTts,
   makeWavBuffer,
@@ -53,7 +54,7 @@ test('Kokoro WAV writer returns valid 16-bit mono PCM', () => {
 });
 
 test('Kokoro stores voice assets on D: by default when the drive exists on Windows', () => {
-  if (process.platform !== 'win32') return;
+  if (process.platform !== 'win32' || !fsSync.existsSync('D:\\\\')) return;
   const directory = chooseModelDirectory('C:\\Users\\Test\\AppData\\Roaming\\Aurora');
   assert.equal(directory.toLowerCase(), 'd:\\auroravoicemodels\\kokoro-pt-br'.toLowerCase());
 });
