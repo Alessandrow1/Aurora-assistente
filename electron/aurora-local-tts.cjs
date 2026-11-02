@@ -142,7 +142,8 @@ function createAuroraLocalTts(options = {}) {
     await Promise.all([
       inspectFile('model.onnx', model, 250 * 1024 * 1024),
       inspectFile('voices.bin', voices, 1024 * 1024),
-      inspectFile('tokens.txt', tokens, 1024),
+      // O tokens.txt upstream do Kokoro multi-lang v1.0 tem 687 bytes; 1 KiB rejeita o arquivo válido.
+      inspectFile('tokens.txt', tokens, 512),
     ]);
     if (!espeakData) {
       problems.push('pasta espeak-ng-data não encontrada');
