@@ -628,14 +628,34 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   if (!ollama.available) {
     throw new Error('Não encontrei o Ollama em execução. Instale o Ollama e abra o programa; a Aurora usa a IA local do seu computador, sem API paga.');
   }
-  const modelInstalled = ollama.models.some((name) => name === settings.model || name.startsWith(`${settings.model}-`));
-  if (!modelInstalled) {
-    throw new Error(`O modelo ${settings.model} ainda não foi baixado. Feche a Aurora e execute INSTALAR-IA-GRATUITA.bat na pasta do projeto.`);
-  }
 
   const voiceMode = payload.voiceMode === true;
   const studyMode = payload.studyMode === true;
-  await warmupOllamaModel(settings.model).catch((error) => {
+  const imageBase64 = typeof payload.imageBase64 === 'string' && payload.imageBase64.length <= 18000000
+    ? payload.imageBase64.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, '')
+    : '';
+  const normalizedRequest = normalizeMemoryText(message);
+  const asksForLongResponse = /\b(detalhes?|detalhad[oa]s?|passo a passo|aprofundad[oa]s?|plano completo|guia completo|explique detalhadamente|analise completa|compare em detalhes)\b/i.test(normalizedRequest);
+  const needsReasoning = /\b(compare|comparar|analise|analisar|calcule|calcular|resolva|resolver|planeje|planejar|questione|questionar|questionamento|conclusoes|premissas|pressupostos|critique|criticar|avaliar|avalie|alternativas|estrategia|diagnostique|depure|debug|vantagens|desvantagens|qual compensa|qual e melhor|decida|decidir|decisao|tradeoff|consequencias)\b/i.test(normalizedRequest);
+  const needsExplanation = /\b(por que|porque|explique|explicar|como funciona|o que significa|qual a diferenca|como acontece|causa|consequencia)\b/i.test(normalizedRequest);
+  const needsThinking = studyMode || needsReasoning || asksForLongResponse;
+  const quickVoiceTurn = voiceMode && !studyMode && !imageBase64 && !needsThinking && !needsExplanation;
+  const preferredModel = quickVoiceTurn
+    ? 'qwen3.5:2b'
+    : (needsThinking || needsExplanation || studyMode ? 'qwen3.5:9b' : settings.model);
+  const modelInstalled = (name) => ollama.models.some((installed) => installed === name || installed.startsWith(name + '-'));
+  const activeModel = modelInstalled(preferredModel) ? preferredModel : settings.model;
+  if (!modelInstalled(activeModel)) {
+    throw new Error('O modelo ' + activeModel + ' ainda não foi baixado. Feche a Aurora e execute INSTALAR-IA-GRATUITA.bat na pasta do projeto.');
+  }
+  if (activeModel !== settings.model) {
+    console.info('[Aurora Performance] Roteamento de modelo', {
+      configuredModel: settings.model,
+      activeModel,
+      reason: quickVoiceTurn ? 'voz casual: menor latência' : needsThinking || needsExplanation ? 'tarefa complexa: maior capacidade' : 'modelo configurado',
+    });
+  }
+  await warmupOllamaModel(activeModel).catch((error) => {
     console.warn('[Aurora Performance] Nao consegui aquecer o Ollama antes da conversa:', error instanceof Error ? error.message : String(error));
   });
   const preserveConversationContext = studyMode || !voiceMode || Boolean(payload.imageBase64) ||
@@ -675,15 +695,6 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
           retrievedContext.map((item) => '[' + item.source + ']\n' + item.content).join('\n\n')]
       : []),
   ].join('\n\n');
-
-  const imageBase64 = typeof payload.imageBase64 === 'string' && payload.imageBase64.length <= 18000000
-    ? payload.imageBase64.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, '')
-    : '';
-  const normalizedRequest = normalizeMemoryText(message);
-  const asksForLongResponse = /\b(detalhes?|detalhad[oa]s?|passo a passo|aprofundad[oa]s?|plano completo|guia completo|explique detalhadamente|analise completa|compare em detalhes)\b/i.test(normalizedRequest);
-  const needsReasoning = /\b(compare|comparar|analise|analisar|calcule|calcular|resolva|resolver|planeje|planejar|questione|questionar|questionamento|conclusoes|premissas|pressupostos|critique|criticar|avaliar|avalie|alternativas|estrategia|diagnostique|depure|debug|vantagens|desvantagens|qual compensa|qual e melhor|decida|decidir|decisao|tradeoff|consequencias)\b/i.test(normalizedRequest);
-  const needsExplanation = /\b(por que|porque|explique|explicar|como funciona|o que significa|qual a diferenca|como acontece|causa|consequencia)\b/i.test(normalizedRequest);
-  const needsThinking = studyMode || needsReasoning || asksForLongResponse;
 
   const numPredict = studyMode ? (imageBase64 ? 800 : asksForLongResponse ? 1200 : 900) : imageBase64 ? 650 : asksForLongResponse ? 1500 : needsReasoning ? 1100 : needsExplanation ? 520 : voiceMode ? 80 : 200;
 
@@ -728,7 +739,7 @@ const chatMessages = [
         headers: { 'Content-Type': 'application/json' },
         signal: AbortSignal.timeout(180000),
         body: JSON.stringify({
-          model: settings.model,
+          model: activeModel,
           stream: true,
           think: thinkEnabled,
           keep_alive: '2h',
@@ -829,7 +840,7 @@ const chatMessages = [
   let result = await readChatStream(await sendChatRequest(needsThinking, numPredict));
   if (!result.text) {
     console.warn('[Aurora Ollama] O fluxo terminou sem texto final. Tentando novamente sem think.', {
-      model: settings.model,
+      model: activeModel,
       reasoningWasEnabled: needsReasoning,
       doneReason: result.doneReason || 'não informado',
     });
@@ -839,7 +850,7 @@ const chatMessages = [
 
   if (!result.text) {
     console.error('[Aurora Ollama] A segunda tentativa também terminou sem texto final.', {
-      model: settings.model,
+      model: activeModel,
       doneReason: result.doneReason || 'não informado',
     });
     return { text: 'Não consegui gerar uma resposta final. Tente novamente; se persistir, confira se o modelo selecionado está funcionando no Ollama.' };
