@@ -477,27 +477,17 @@ ipcMain.handle('aurora:clear-elevenlabs-key', async () => {
   return { configured: false };
 });
 
-// AURORA_OFFLINE_ASR: Whisper Tiny/Base INT8 multilingue via sherpa-onnx; os modelos ficam no userData, nunca no Git.
-// Tiny INT8 reduz a latência de transcrição em máquinas modestas; Base continua disponível como fallback configurável.
-const WHISPER_MODEL_SIZE = (() => {
-  const requested = process.env.AURORA_WHISPER_MODEL;
-  if (requested === 'tiny' || requested === 'base') return requested;
-  try {
-    const disk = fs.statfsSync(app.getPath('userData'));
-    const freeBytes = Number(disk.bavail) * Number(disk.bsize);
-    return freeBytes >= 160 * 1024 * 1024 ? 'tiny' : 'base';
-  } catch {
-    return 'base';
-  }
-})();
-const speechModelDirectory = () => {
+// AURORA_OFFLINE_ASR: Whisper Tiny/Base INT8 multilingue via sherpa-onnx; modelos não são armazenados no Git.
+const WHISPER_MODEL_SIZE = process.env.AURORA_WHISPER_MODEL === 'base' ? 'base' : 'tiny';
+const whisperModelBaseDirectory = () => {
   const override = process.env.AURORA_WHISPER_MODELS_DIR;
-  if (override && override.trim()) return path.resolve(override.trim(), `whisper-${WHISPER_MODEL_SIZE}`);
+  if (override && override.trim()) return path.resolve(override.trim());
   if (process.platform === 'win32' && fs.existsSync('D:\\\\')) {
-    return path.join('D:\\\\', 'AuroraVoiceModels', `whisper-${WHISPER_MODEL_SIZE}`);
+    return path.join('D:\\\\', 'AuroraVoiceModels');
   }
-  return path.join(app.getPath('userData'), 'speech-recognition', `sherpa-onnx-whisper-${WHISPER_MODEL_SIZE}`);
+  return path.join(app.getPath('userData'), 'speech-recognition');
 };
+const speechModelDirectory = () => path.join(whisperModelBaseDirectory(), `whisper-${WHISPER_MODEL_SIZE}`);
 let offlineWhisperPromise = null;
 
 function reportSpeechStatus(state, message) {
