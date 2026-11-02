@@ -94,6 +94,41 @@ test('Kokoro recognizes the official archive layout when it has a wrapper direct
   }
 });
 
+test('Kokoro refuses to synthesize when the native runtime reports an invalid sample rate', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'aurora-kokoro-samplerate-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const modelDirectory = path.join(root, 'kokoro-pt-br');
+  await createCompleteKokoroFixture(modelDirectory, 'letrinhas-kokoro-pt');
+
+  const engine = createAuroraLocalTts({
+    modelDirectory,
+    loadSherpa: () => ({
+      GenerationConfig: class {
+        constructor(options) { Object.assign(this, options); }
+      },
+      OfflineTts: {
+        createAsync: async () => ({
+          sampleRate: 2,
+          numSpeakers: 53,
+          lang: 'en-us',
+          generateAsync: async () => {
+            throw new Error('generation must not run with invalid sample rate');
+          },
+        }),
+      },
+    }),
+  });
+
+  try {
+    await assert.rejects(
+      () => engine.synthesize('Olá, tudo bem?'),
+      /sampleRate=2.*1\.13\.8/i,
+    );
+  } finally {
+    await engine.dispose();
+  }
+});
+
 test('Kokoro async inference copies audio buffers and does not use streaming callbacks in Electron', async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'aurora-kokoro-electron-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
