@@ -490,7 +490,14 @@ const WHISPER_MODEL_SIZE = (() => {
     return 'base';
   }
 })();
-const speechModelDirectory = () => path.join(app.getPath('userData'), 'speech-recognition', `sherpa-onnx-whisper-${WHISPER_MODEL_SIZE}`);
+const speechModelDirectory = () => {
+  const override = process.env.AURORA_WHISPER_MODELS_DIR;
+  if (override && override.trim()) return path.resolve(override.trim(), `whisper-${WHISPER_MODEL_SIZE}`);
+  if (process.platform === 'win32' && fs.existsSync('D:\\\\')) {
+    return path.join('D:\\\\', 'AuroraVoiceModels', `whisper-${WHISPER_MODEL_SIZE}`);
+  }
+  return path.join(app.getPath('userData'), 'speech-recognition', `sherpa-onnx-whisper-${WHISPER_MODEL_SIZE}`);
+};
 let offlineWhisperPromise = null;
 
 function reportSpeechStatus(state, message) {
