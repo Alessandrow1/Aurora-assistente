@@ -316,6 +316,15 @@ function createAuroraLocalTts(options = {}) {
       const instance = typeof sherpa.OfflineTts.createAsync === 'function'
         ? await sherpa.OfflineTts.createAsync(config)
         : new sherpa.OfflineTts(config);
+
+      const runtimeSampleRate = Number(instance.sampleRate);
+      if (!Number.isFinite(runtimeSampleRate) || runtimeSampleRate < 8000) {
+        throw new Error(
+          'O runtime Sherpa informou sampleRate=' + runtimeSampleRate +
+          ', valor incompatível com o Kokoro (esperado 24000 Hz). ' +
+          'Confirme que sherpa-onnx-node e sherpa-onnx-win-x64 estão ambos na versão 1.13.8.',
+        );
+      }
       ttsInstance = { instance, sherpa };
       emitStatus('ready', 'Voz neural Kokoro pt-BR pronta. Processamento totalmente local.');
       return ttsInstance;
