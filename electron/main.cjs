@@ -687,6 +687,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   await warmupOllamaModel(activeModel).catch((error) => {
     console.warn('[Aurora Performance] Nao consegui aquecer o Ollama antes da conversa:', error instanceof Error ? error.message : String(error));
   });
+  throwIfChatCancelled();
   const preserveConversationContext = studyMode || !voiceMode || Boolean(payload.imageBase64) ||
     /\b(compare|comparar|analise|analisar|calcule|calcular|resolva|resolver|planeje|planejar|estrategia|vantagens|desvantagens|explica|explique|porque|por que|como funciona|qual diferenca|o que significa|consequencia|detalhad[oa]s?|passo a passo|lembra|lembre|antes|conversamos|historico|retomar|continuar|voltar)\b/i.test(normalizeMemoryText(message));
   const historyLimit = studyMode ? 6 : preserveConversationContext ? 6 : 2;
