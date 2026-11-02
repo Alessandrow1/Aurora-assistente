@@ -3,6 +3,9 @@ import Avatar3D from './components/Avatar3D';
 import MemoryHub from './components/MemoryHub';
 
 type Message = { role: 'user' | 'assistant'; content: string; imageId?: string; imageUrl?: string };
+type VoiceVadController = { start: () => void; pause: () => void; destroy: () => void | Promise<void> };
+type LocalTtsStatus = { installed: boolean; ready: boolean; modelDirectory: string; voice: string; language: string; provider: string };
+type AudioInputOption = { deviceId: string; label: string };
 
 type VoiceCaptureSession = {
   stream: MediaStream;
@@ -128,25 +131,60 @@ export default function App() {
   const recognitionPausedRef = useRef(false);
   const startVoiceCaptureRef = useRef<(() => Promise<void>) | null>(null);
   const stopVoiceCaptureRef = useRef<((transcribe: boolean) => void) | null>(null);
+  const voiceVadRef = useRef<VoiceVadController | null>(null);
+  const voiceVadActiveRef = useRef(false);
+  const voiceVadInitializingRef = useRef(false);
+  const voiceVadFailedRef = useRef(false);
+  const microphoneIdRef = useRef('default');
+  const activeChatRequestIdRef = useRef('');
+  const chatTurnRef = useRef(0);
+  const voiceOutputTurnRef = useRef(0);
+  const voiceResponseActiveRef = useRef(false);
   const voiceModeRef = useRef(false);
   const thinkingRef = useRef(false);
   const sendMessageRef = useRef<(rawText: string) => Promise<void>>(async () => undefined);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const [elevenLabsConfigured, setElevenLabsConfigured] = useState(false);
-  const [elevenLabsStorageAvailable, setElevenLabsStorageAvailable] = useState(false);
-  const [elevenLabsKeyInput, setElevenLabsKeyInput] = useState('');
-  const [elevenLabsSaving, setElevenLabsSaving] = useState(false);
+  const [localTtsStatus, setLocalTtsStatus] = useState<LocalTtsStatus | null>(null);
+  const [localTtsProgress, setLocalTtsProgress] = useState('');
+  const [localTtsInstalling, setLocalTtsInstalling] = useState(false);
+  const [audioInputs, setAudioInputs] = useState<AudioInputOption[]>([]);
+  const [microphoneId, setMicrophoneId] = useState('default');
+  const refreshLocalTtsStatus = async () => {
+    try {
+      setLocalTtsStatus(await window.aurora.getLocalTtsStatus());
+    } catch (error) {
+      console.warn('[Aurora TTS] Não consegui consultar o Kokoro local:', error);
+    }
+  };
+  const refreshAudioInputs = async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const inputs = devices
+        .filter((device) => device.kind === 'audioinput')
+        .map((device, index) => ({
+          deviceId: device.deviceId || 'default',
+          label: device.label || 'Microfone ' + (index + 1),
+        }));
+      setAudioInputs(inputs);
+      if (microphoneIdRef.current !== 'default' && !inputs.some((device) => device.deviceId === microphoneIdRef.current)) {
+        microphoneIdRef.current = 'default';
+        setMicrophoneId('default');
+      }
+    } catch (error) {
+      console.warn('[Aurora Microphone] Não consegui listar dispositivos de entrada:', error);
+    }
+  };
+  microphoneIdRef.current = microphoneId;
+
   useEffect(() => {
-    window.aurora.getElevenLabsStatus()
-      .then((status) => {
-        setElevenLabsConfigured(status.configured);
-        setElevenLabsStorageAvailable(status.storageAvailable);
-      })
-      .catch(() => {
-        setElevenLabsConfigured(false);
-        setElevenLabsStorageAvailable(false);
-      });
+    void refreshLocalTtsStatus();
+    return window.aurora.onTtsStatus((status) => {
+      setLocalTtsProgress(status.message || '');
+      if (status.state === 'installed' || status.state === 'ready' || status.state === 'error') {
+        void refreshLocalTtsStatus();
+      }
+    });
   }, []);
   thinkingRef.current = thinking;
 
@@ -157,8 +195,36 @@ export default function App() {
       window.clearTimeout(voiceResumeRef.current);
       voiceResumeRef.current = null;
     }
-    stopVoiceCaptureRef.current?.(false);
+    if (voiceVadRef.current) {
+      if (voiceVadActiveRef.current) voiceVadRef.current.pause();
+      voiceVadActiveRef.current = false;
+    } else {
+      stopVoiceCaptureRef.current?.(false);
+    }
     setListening(false);
+  };
+
+  const interruptVoiceResponse = () => {
+    if (!voiceResponseActiveRef.current) return;
+    const requestId = activeChatRequestIdRef.current;
+    if (requestId) window.aurora.cancelChat(requestId);
+    activeChatRequestIdRef.current = '';
+    chatTurnRef.current += 1;
+    voiceOutputTurnRef.current += 1;
+    voiceResponseActiveRef.current = false;
+    thinkingRef.current = false;
+    setThinking(false);
+    const currentAudio = audioRef.current;
+    if (currentAudio) {
+      currentAudio.pause();
+      currentAudio.onended?.(new Event('ended'));
+    }
+    audioRef.current = null;
+    window.speechSynthesis?.cancel();
+    resetAudioAnalysis();
+    setSpeaking(false);
+    setEmotion('curious');
+    setNotice('Te ouvi! Pode continuar.');
   };
 
   const resumeVoiceRecognitionAfterSpeech = (delay = 400) => {
@@ -225,6 +291,13 @@ export default function App() {
       }
       recognitionPausedRef.current = false;
       stopVoiceCaptureRef.current?.(false);
+      if (voiceVadRef.current) {
+        const vad = voiceVadRef.current;
+        voiceVadRef.current = null;
+        voiceVadActiveRef.current = false;
+        vad.pause();
+        void Promise.resolve(vad.destroy()).catch(() => undefined);
+      }
       startVoiceCaptureRef.current = null;
       stopVoiceCaptureRef.current = null;
       audioRef.current?.pause();
@@ -309,6 +382,43 @@ export default function App() {
     return () => window.clearTimeout(timeout);
   }, [laughing]);
 
+  const transcribeVoiceSamples = (samples: Float32Array) => {
+    if (!voiceModeRef.current || recognitionPausedRef.current) return;
+    recognitionPausedRef.current = true;
+    if (voiceVadRef.current && voiceVadActiveRef.current) {
+      voiceVadRef.current.pause();
+      voiceVadActiveRef.current = false;
+    }
+    setListening(false);
+    setTranscribingVoice(true);
+    setNotice('Transcrevendo sua fala localmente…');
+    console.info('[Aurora Performance] Silero VAD', {
+      audioSeconds: Number((samples.length / 16000).toFixed(2)),
+      sampleRate: 16000,
+    });
+    void (async () => {
+      try {
+        if (samples.length < 4000) throw new Error('A fala ficou muito curta. Tente falar um pouco mais.');
+        if (samples.length > 16000 * 45) throw new Error('A fala passou de 45 segundos. Divida a mensagem.');
+        const result = await window.aurora.transcribeAudio(samples);
+        const transcript = result?.text?.trim() || '';
+        if (!voiceModeRef.current) return;
+        if (!transcript) {
+          setNotice('Não consegui entender essa fala. Confira o microfone ou fale um pouco mais perto dele.');
+          resumeVoiceRecognitionAfterSpeech(650);
+          return;
+        }
+        setNotice('');
+        void sendMessageRef.current(transcript);
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : 'Não consegui transcrever o áudio localmente.');
+        resumeVoiceRecognitionAfterSpeech(900);
+      } finally {
+        setTranscribingVoice(false);
+      }
+    })();
+  };
+
   const stopVoiceCapture = (transcribe: boolean) => {
     const session = voiceCaptureRef.current;
     if (!session || session.stopped) return;
@@ -340,9 +450,96 @@ export default function App() {
 
   const startVoiceCapture = async () => {
     if (!voiceModeRef.current || recognitionPausedRef.current || voiceCaptureRef.current) return;
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+    if (!navigator.mediaDevices?.getUserMedia) {
       stopVoiceMode();
-      setNotice('Este ambiente do Electron nao oferece captura de audio. Atualize o aplicativo e verifique a permissao de microfone.');
+      setNotice('Este ambiente do Electron não oferece captura de áudio. Verifique a permissão do microfone.');
+      return;
+    }
+
+    if (voiceVadRef.current) {
+      if (!voiceVadActiveRef.current) {
+        voiceVadRef.current.start();
+        voiceVadActiveRef.current = true;
+      }
+      setListening(true);
+      return;
+    }
+    if (voiceVadInitializingRef.current) return;
+
+    if (!voiceVadFailedRef.current) {
+      voiceVadInitializingRef.current = true;
+      try {
+        setNotice('Carregando detector neural de fala…');
+        const { MicVAD } = await import('@ricky0123/vad-web');
+        const assetBasePath = new URL(`${import.meta.env.BASE_URL}aurora-vad/`, window.location.href).toString();
+        const getVoiceStream = () => {
+          const audio: MediaTrackConstraints = {
+            channelCount: { ideal: 1 },
+            sampleRate: { ideal: 48000 },
+            echoCancellation: { ideal: true },
+            noiseSuppression: { ideal: true },
+            autoGainControl: { ideal: true },
+          };
+          if (microphoneIdRef.current && microphoneIdRef.current !== 'default') {
+            audio.deviceId = { exact: microphoneIdRef.current };
+          }
+          return navigator.mediaDevices.getUserMedia({ audio });
+        };
+        const vad = await MicVAD.new({
+          startOnLoad: false,
+          model: 'v5',
+          processorType: 'AudioWorklet',
+          baseAssetPath: assetBasePath,
+          onnxWASMBasePath: assetBasePath,
+          positiveSpeechThreshold: 0.42,
+          negativeSpeechThreshold: 0.30,
+          redemptionMs: 620,
+          preSpeechPadMs: 450,
+          minSpeechMs: 250,
+          getStream: getVoiceStream,
+          resumeStream: getVoiceStream,
+          onSpeechStart: () => {
+            if (voiceModeRef.current && !recognitionPausedRef.current) setListening(true);
+          },
+          onSpeechRealStart: () => {
+            if (!voiceModeRef.current || recognitionPausedRef.current) return;
+            setListening(true);
+            if (voiceResponseActiveRef.current) interruptVoiceResponse();
+          },
+          onVADMisfire: () => setListening(false),
+          onSpeechEnd: (audio: Float32Array) => transcribeVoiceSamples(audio),
+        });
+        voiceVadRef.current = vad;
+        if (!voiceModeRef.current || recognitionPausedRef.current) {
+          vad.pause();
+          return;
+        }
+        vad.start();
+        voiceVadActiveRef.current = true;
+        setListening(true);
+        setNotice('');
+        void refreshAudioInputs();
+        console.info('[Aurora Voice] Silero VAD v5 pronto; Whisper recebe áudio 16 kHz diretamente.');
+        return;
+      } catch (error) {
+        voiceVadFailedRef.current = true;
+        const failedVad = voiceVadRef.current;
+        voiceVadRef.current = null;
+        voiceVadActiveRef.current = false;
+        if (failedVad) {
+          failedVad.pause();
+          void Promise.resolve(failedVad.destroy()).catch(() => undefined);
+        }
+        console.warn('[Aurora VAD] Não consegui iniciar o detector neural; usando captura RMS de reserva:', error);
+        setNotice('Detector neural indisponível; usando captura de voz de reserva.');
+      } finally {
+        voiceVadInitializingRef.current = false;
+      }
+    }
+
+    if (typeof MediaRecorder === 'undefined') {
+      stopVoiceMode();
+      setNotice('O gravador de áudio não está disponível neste ambiente do Electron.');
       return;
     }
 
@@ -587,11 +784,7 @@ export default function App() {
     try {
       const result = await window.aurora.speak(text);
       if (!result?.audioBase64) throw new Error('A voz neural nao retornou audio.');
-      if (result.provider === 'edge' && result.fallbackReason) {
-        setNotice('ElevenLabs indisponivel: ' + result.fallbackReason.slice(0, 150) + '. Usando Edge TTS temporariamente.');
-      } else if (result.provider === 'elevenlabs') {
-        setNotice('');
-      }
+      if (result.provider === 'kokoro-local') setNotice('');
 
       const audio = new Audio('data:' + (result.audioMimeType || 'audio/mpeg') + ';base64,' + result.audioBase64);
       audioRef.current = audio;
@@ -632,6 +825,10 @@ export default function App() {
         finishAudio();
       };
       await audio.play();
+      if (voiceModeRef.current && voiceResponseActiveRef.current && voiceVadRef.current) {
+        recognitionPausedRef.current = false;
+        void startVoiceCaptureRef.current?.();
+      }
       if (waitForPlayback) await playbackFinished;
     } catch (error) {
       // Cancela qualquer retomada agendada antes de iniciar a voz de reserva.
@@ -669,6 +866,10 @@ export default function App() {
         setSpeaking(true);
         synth.cancel();
         synth.speak(utterance);
+        if (voiceModeRef.current && voiceResponseActiveRef.current && voiceVadRef.current) {
+          recognitionPausedRef.current = false;
+          void startVoiceCaptureRef.current?.();
+        }
         if (waitForPlayback) await playbackFinished;
       } catch (fallbackError) {
         setSpeaking(false);
@@ -722,6 +923,11 @@ export default function App() {
   const sendMessage = async (rawText: string) => {
     const text = rawText.trim();
     if (!text || thinkingRef.current) return;
+    const turnId = ++chatTurnRef.current;
+    const requestId = 'aurora-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+    const speechTurnId = ++voiceOutputTurnRef.current;
+    activeChatRequestIdRef.current = requestId;
+    voiceResponseActiveRef.current = voiceModeRef.current && autoSpeak;
     setMemorySuggestion(detectMemorySuggestion(text));
 
     // Enquanto a IA pensa, evita capturar outra frase por cima da mensagem atual.
@@ -803,7 +1009,10 @@ export default function App() {
         setEmotion(inferAvatarEmotion(text, quickReply));
         if (hasLaughingCue(text + " " + quickReply)) setLaughing(true);
         setMessages((current) => [...current, { role: 'assistant', content: quickReply }]);
-        if (autoSpeak) void speak(quickReply);
+        if (autoSpeak) {
+          if (voiceModeRef.current) await speak(quickReply, true);
+          else void speak(quickReply);
+        }
         return;
       }
 
@@ -870,7 +1079,9 @@ export default function App() {
         speechStarted = true;
         speechQueue = speechQueue
           .then(async () => {
+            if (voiceOutputTurnRef.current !== speechTurnId) return;
             await speechSessionPromise;
+            if (voiceOutputTurnRef.current !== speechTurnId) return;
             await speak(cleanSegment, true, false);
           })
           .catch((error) => {
@@ -895,7 +1106,7 @@ export default function App() {
       };
 
       setMessages((current) => [...current, { role: 'assistant', content: '' }]);
-      const response = await window.aurora.chat({ message: computerPrompt, history, voiceMode: voiceModeRef.current, studyMode, ...(imageBase64 ? { imageBase64 } : {}) }, (chunk) => {
+      const response = await window.aurora.chat({ message: computerPrompt, history, voiceMode: voiceModeRef.current, studyMode, requestId, ...(imageBase64 ? { imageBase64 } : {}) }, (chunk) => {
         setMessages((current) => {
           const updated = [...current];
           const last = updated[updated.length - 1];
@@ -903,7 +1114,7 @@ export default function App() {
           return updated;
         });
         // A voz começa quando chega uma frase completa, sem esperar o restante da resposta do LLM.
-        if (canStreamSpeech) collectCompleteSpeech(chunk);
+        if (canStreamSpeech && voiceOutputTurnRef.current === speechTurnId) collectCompleteSpeech(chunk);
       });
       let answer = response.text?.trim() || 'Não consegui responder agora.';
       setEmotion(inferAvatarEmotion(text, answer));
@@ -925,23 +1136,27 @@ export default function App() {
             await speak(answer, true, false);
           }
           await closeSpeechSession?.();
-          if (voiceModeRef.current) resumeVoiceRecognitionAfterSpeech(400);
+          if (voiceModeRef.current && voiceOutputTurnRef.current === speechTurnId) resumeVoiceRecognitionAfterSpeech(250);
         } else {
           void speak(answer);
         }
       }
     } catch (error) {
       if (closeSpeechSession) await closeSpeechSession();
-      setNotice(error instanceof Error ? error.message : 'Ocorreu um erro ao conversar com a IA.');
-      if (voiceModeRef.current && recognitionPausedRef.current) {
-        resumeVoiceRecognitionAfterSpeech(500);
+      if (!(error instanceof Error && error.name === 'AbortError')) {
+        setNotice(error instanceof Error ? error.message : 'Ocorreu um erro ao conversar com a IA.');
+        if (voiceModeRef.current && recognitionPausedRef.current) resumeVoiceRecognitionAfterSpeech(500);
       }
     } finally {
       if (closeSpeechSession) await closeSpeechSession();
-      thinkingRef.current = false;
-      setThinking(false);
-      if (!autoSpeak && voiceModeRef.current && recognitionPausedRef.current) {
-        resumeVoiceRecognitionAfterSpeech(500);
+      if (chatTurnRef.current === turnId) {
+        if (activeChatRequestIdRef.current === requestId) activeChatRequestIdRef.current = '';
+        voiceResponseActiveRef.current = false;
+        thinkingRef.current = false;
+        setThinking(false);
+        if (!autoSpeak && voiceModeRef.current && recognitionPausedRef.current) {
+          resumeVoiceRecognitionAfterSpeech(500);
+        }
       }
     }
   };
@@ -1012,7 +1227,7 @@ export default function App() {
       return 'Consigo conversar por voz, abrir programas e pastas conhecidos, acessar sites e analisar sua tela. No Modo Estudo, leio uma captura nova a cada pergunta e explico questões do ENEM e de concursos. Minha visão é somente de leitura: não controlo mouse nem teclado.';
     }
     if (/\b(como voce funciona|qual modelo voce usa|qual e seu cerebro|voce roda localmente|onde sua ia roda)\b/.test(text)) {
-      return 'Meu cérebro roda pelo Ollama no seu computador, e o padrão do projeto agora é Qwen 3.5 9B. O 6xb é meu avatar, não meu cérebro. Minha voz usa ElevenLabs quando está configurada, com alternativas do Edge TTS e do Windows. A transcrição do microfone é feita localmente pelo Whisper.';
+      return 'Meu cérebro roda pelo Ollama no seu computador, com Qwen 2B nas conversas rápidas e Qwen 9B nas tarefas complexas. Minha voz neural é Kokoro pt-BR, processada localmente, com a voz do Windows como reserva. A escuta usa Silero VAD e a transcrição local é feita pelo Whisper.';
     }
 
     const youtubeQuery = text.match(/(?:pesquise|procure|busque)\s+(?:no youtube|no youtube por)\s+(.+)/i);
@@ -1127,7 +1342,13 @@ export default function App() {
       window.clearTimeout(voiceResumeRef.current);
       voiceResumeRef.current = null;
     }
-    stopVoiceCaptureRef.current?.(false);
+    if (voiceVadRef.current) {
+      if (voiceVadActiveRef.current) voiceVadRef.current.pause();
+      voiceVadActiveRef.current = false;
+    } else {
+      stopVoiceCaptureRef.current?.(false);
+    }
+    voiceResponseActiveRef.current = false;
     setListening(false);
     setTranscribingVoice(false);
     void window.aurora.endSpeakSession().catch((error) => {
@@ -1145,14 +1366,54 @@ export default function App() {
     voiceModeRef.current = true;
     recognitionPausedRef.current = false;
     setVoiceMode(true);
-    setNotice('Escuta offline ativada. Fale naturalmente; o Whisper encerra sua frase apos uma pausa.');
+    setNotice('Escuta local ativada. Silero detecta sua fala e o Whisper transcreve.');
     void window.aurora.warmupTranscription().catch((error) => {
-      console.warn('[Aurora Whisper] Nao consegui aquecer o reconhecimento antecipadamente.', error);
+      console.warn('[Aurora Whisper] Não consegui aquecer o reconhecimento antecipadamente.', error);
     });
     void startVoiceCaptureRef.current?.();
   };
 
-  const saveElevenLabsKey = async () => {
+  const installLocalVoice = async () => {
+    setLocalTtsInstalling(true);
+    setLocalTtsProgress('Preparando a instalação do Kokoro pt-BR…');
+    setNotice('Instalando e preparando a voz neural gratuita no disco D…');
+    try {
+      const status = await window.aurora.installLocalTts();
+      setLocalTtsStatus(status);
+      setLocalTtsProgress(status.ready ? 'Kokoro pt-BR instalado e pronto.' : 'Kokoro instalado; será carregado na primeira fala.');
+      setNotice('Voz Kokoro pt-BR instalada e preparada localmente.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Não consegui instalar a voz Kokoro.';
+      setLocalTtsProgress(message);
+      setNotice(message);
+    } finally {
+      setLocalTtsInstalling(false);
+    }
+  };
+
+  const applyMicrophone = async () => {
+    const wasVoiceModeActive = voiceModeRef.current;
+    recognitionPausedRef.current = true;
+    if (voiceVadRef.current) {
+      const vad = voiceVadRef.current;
+      voiceVadRef.current = null;
+      voiceVadActiveRef.current = false;
+      vad.pause();
+      await Promise.resolve(vad.destroy()).catch(() => undefined);
+    }
+    stopVoiceCaptureRef.current?.(false);
+    voiceVadFailedRef.current = false;
+    recognitionPausedRef.current = false;
+    if (wasVoiceModeActive) {
+      setNotice('Aplicando o microfone selecionado…');
+      await startVoiceCaptureRef.current?.();
+      setNotice('Microfone atualizado. Fale normalmente para testar a captação.');
+    } else {
+      setNotice('Microfone selecionado; ele será usado quando a escuta for ativada.');
+    }
+  };
+
+  const saveSettings = async (event: FormEvent) => {
     const key = elevenLabsKeyInput.trim();
     if (!key) {
       setNotice('Cole sua chave API da ElevenLabs antes de salvar.');
@@ -1450,34 +1711,42 @@ export default function App() {
               <div className="modal-divider" />
               <div className="settings-bottom">
                 <div className="elevenlabs-voice-settings">
-                  <strong>Voz ElevenLabs da Aurora</strong>
-                  <p>Vamos usar a voz que voce testou no laboratorio NOVAAURORA. A sintese usa sua conta ElevenLabs e pode consumir os creditos do seu plano.</p>
+                  <strong>Voz neural local Kokoro pt-BR</strong>
+                  <p>Voz feminina brasileira processada no seu computador, sem API, assinatura ou créditos. O pacote fica fora da pasta do projeto para não ocupar espaço no Git.</p>
                   <div className="secure-note">
-                    <span>{elevenLabsConfigured ? 'âœ“' : '!'}</span>
-                    <span>{elevenLabsConfigured ? 'Chave cadastrada e armazenada de forma criptografada pelo Windows.' : 'Nenhuma chave ElevenLabs cadastrada. A voz atual de reserva continua disponivel.'}</span>
+                    <span>{localTtsStatus?.installed ? '✓' : '!'}</span>
+                    <span>{localTtsStatus
+                      ? localTtsStatus.installed
+                        ? (localTtsStatus.ready ? 'Kokoro instalado e carregado na memória.' : 'Kokoro instalado; ainda não foi carregado nesta sessão.')
+                        : 'A voz local ainda precisa ser instalada.'
+                      : 'Verificando a instalação da voz local…'}</span>
                   </div>
-                  {!elevenLabsStorageAvailable && <p className="field-help">O armazenamento seguro ainda nao esta disponivel. Feche e abra a Aurora novamente antes de salvar a chave.</p>}
-                  <label className="field-label" htmlFor="elevenlabs-api-key">Chave API da ElevenLabs</label>
-                  <input
-                    id="elevenlabs-api-key"
-                    className="settings-input"
-                    type="password"
-                    value={elevenLabsKeyInput}
-                    onChange={(event) => setElevenLabsKeyInput(event.target.value)}
-                    placeholder={elevenLabsConfigured ? 'Chave ja cadastrada â€” cole outra para substituir' : 'Cole sua xi-api-key aqui'}
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
+                  {localTtsStatus?.modelDirectory && <p className="field-help">Pasta do modelo: {localTtsStatus.modelDirectory}</p>}
+                  {localTtsProgress && <p className="field-help">{localTtsProgress}</p>}
                   <div className="elevenlabs-key-actions">
-                    <button className="pet-voice-test" type="button" onClick={() => void saveElevenLabsKey()} disabled={elevenLabsSaving || !elevenLabsStorageAvailable || !elevenLabsKeyInput.trim()}>
-                      {elevenLabsSaving ? 'Salvando...' : 'Salvar chave protegida'}
+                    <button className="pet-voice-test" type="button" onClick={() => void installLocalVoice()} disabled={localTtsInstalling}>
+                      {localTtsInstalling ? 'Instalando / preparando…' : localTtsStatus?.installed ? 'Preparar voz Kokoro' : 'Instalar Kokoro pt-BR (~329 MB)'}
                     </button>
-                    {elevenLabsConfigured && <button className="text-button" type="button" onClick={() => void removeElevenLabsKey()} disabled={elevenLabsSaving}>Remover chave</button>}
+                    <button className="pet-voice-test" type="button" onClick={() => void speak('Oi! Eu sou a Aurora. Agora minha voz é processada localmente, sem depender de serviços pagos.')} disabled={!localTtsStatus?.installed || localTtsInstalling}>
+                      ▶ Testar voz local
+                    </button>
                   </div>
-                  <button className="pet-voice-test" type="button" onClick={() => void speak('Oii! Eu sou a Aurora! Hehehe! Vai demorar muito para me dar uma missao? Estou ficando entediada!')} disabled={!elevenLabsConfigured}>
-                    â–¶ Testar voz ElevenLabs
+                  <p className="field-help">Voz: pf_dora · Idioma: português brasileiro · Execução: CPU local. O primeiro preparo carrega o modelo na memória.</p>
+
+                  <div className="modal-divider" />
+                  <strong>Microfone e captação</strong>
+                  <p>O Silero VAD detecta quando você começa e termina de falar; o Whisper continua fazendo a transcrição em português. Durante a resposta, você pode começar a falar para interromper a Aurora.</p>
+                  <label className="field-label" htmlFor="aurora-microphone">Dispositivo de entrada</label>
+                  <select id="aurora-microphone" className="settings-input" value={microphoneId} onChange={(event) => setMicrophoneId(event.target.value)}>
+                    <option value="default">Microfone padrão do Windows</option>
+                    {audioInputs.map((device) => (
+                      <option key={device.deviceId} value={device.deviceId}>{device.label}</option>
+                    ))}
+                  </select>
+                  <button className="pet-voice-test" type="button" onClick={() => void applyMicrophone()}>
+                    Aplicar microfone selecionado
                   </button>
-                  <p className="field-help">Voz: 29BpZaywSObgMLvRvBhB Â· Modelo: eleven_v4_turbo. A chave nao e exibida novamente, nao vai para o React storage e nao deve ser enviada pelo chat.</p>
+                  <p className="field-help">Cancelamento de eco, redução de ruído e ganho automático ficam ativados quando o dispositivo oferece suporte.</p>
                 </div>
                 <div>
                   <strong>Visão e privacidade</strong>
