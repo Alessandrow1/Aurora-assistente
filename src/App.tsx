@@ -1743,7 +1743,6 @@ export default function App() {
               <div className="modal-divider" />
               <div className="settings-bottom">
                 <div className="elevenlabs-voice-settings">
-                  <div className="elevenlabs-voice-settings">
                     <strong>Voz principal: ElevenLabs</strong>
                     <p>Recupera a voz original da Aurora usando a voz cadastrada no serviço. A chave fica criptografada pelo Windows e nunca aparece novamente depois de salva.</p>
                     <div className="secure-note">
@@ -1780,7 +1779,6 @@ export default function App() {
                       )}
                     </div>
                     <p className="field-help">Quando a ElevenLabs estiver indisponível, a Aurora tentará usar o Kokoro local; se ele também não puder gerar áudio, usará a voz do Windows.</p>
-                  </div>
                 </div>
                 <div className="modal-divider" />
                 <div className="elevenlabs-voice-settings">
