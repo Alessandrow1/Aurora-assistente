@@ -338,21 +338,56 @@ function createAuroraLocalTts(options = {}) {
     const generationConfig = sherpa.GenerationConfig
       ? new sherpa.GenerationConfig({ sid: 42, speed: 1.04, silenceScale: 0.18 })
       : { sid: 42, speed: 1.04, silenceScale: 0.18 };
-    const audio = typeof loaded.instance.generateAsync === 'function'
-      ? await loaded.instance.generateAsync({
-        text,
-        generationConfig,
-        enableExternalBuffer: true,
-        // sherpa-onnx usa o retorno 1 para continuar a geração assíncrona.
-        // Sem esse callback, algumas versões encerram a geração sem amostras.
-        onProgress: () => 1,
-      })
-      : loaded.instance.generate({ text, generationConfig });
+    const engineInfo = {
+      language: loaded.instance.lang || 'desconhecido',
+      speakers: Number.isFinite(loaded.instance.numSpeakers) ? loaded.instance.numSpeakers : null,
+      sampleRate: Number.isFinite(loaded.instance.sampleRate) ? loaded.instance.sampleRate : null,
+      speakerId: 42,
+      externalBuffer: false,
+    };
+    if (engineInfo.speakers !== null && engineInfo.speakerId >= engineInfo.speakers) {
+      throw new Error(
+        'A voz pf_dora (sid 42) não existe no modelo carregado. ' +
+        'O runtime informou ' + engineInfo.speakers + ' vozes disponíveis.',
+      );
+    }
+
+    // No Electron, não permitir que o addon exponha memória nativa diretamente
+    // como ArrayBuffer: o V8 do Electron pode rejeitar buffers externos.
+    // Também evitamos onProgress: a chamada assíncrona retorna o áudio final,
+    // enquanto o callback de streaming pode provocar crescimento de memória em
+    // gerações repetidas em algumas versões do addon.
+    let audio;
+    try {
+      audio = typeof loaded.instance.generateAsync === 'function'
+        ? await loaded.instance.generateAsync({
+          text,
+          generationConfig,
+          enableExternalBuffer: false,
+        })
+        : loaded.instance.generate({
+          text,
+          generationConfig,
+          enableExternalBuffer: false,
+        });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      console.error('[Aurora TTS] Kokoro generation failed', { ...engineInfo, detail });
+      throw new Error('Falha na inferência Kokoro. ' + detail +
+        ' | Runtime: idioma=' + engineInfo.language +
+        ', vozes=' + (engineInfo.speakers ?? 'n/d') +
+        ', sampleRate=' + (engineInfo.sampleRate ?? 'n/d') +
+        ', sid=' + engineInfo.speakerId +
+        ', externalBuffer=false');
+    }
 
     if (!audio || !audio.samples || audio.samples.length === 0) {
+      console.error('[Aurora TTS] Kokoro returned empty audio', engineInfo);
       throw new Error(
-        'O Kokoro finalizou a geração sem retornar amostras de áudio. ' +
-        'Verifique a configuração do modelo, o idioma pt e a voz pf_dora (sid 42).',
+        'O Kokoro retornou áudio vazio. Runtime: idioma=' + engineInfo.language +
+        ', vozes=' + (engineInfo.speakers ?? 'n/d') +
+        ', sampleRate=' + (engineInfo.sampleRate ?? 'n/d') +
+        ', sid=' + engineInfo.speakerId + '.',
       );
     }
     const wav = makeWavBuffer(audio.samples, audio.sampleRate);
