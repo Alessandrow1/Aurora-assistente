@@ -40,3 +40,6 @@ src/vendor/cubism-framework/
 **/xl/
 **/6xb.*
 **/xl.*
+
+# Runtime assets are copied from npm packages by scripts/copy-voice-assets.cjs
+/public/aurora-vad/
