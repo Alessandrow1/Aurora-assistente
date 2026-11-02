@@ -94,6 +94,48 @@ test('Kokoro recognizes the official archive layout when it has a wrapper direct
   }
 });
 
+test('Kokoro async generation supplies a progress callback that keeps inference running', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'aurora-kokoro-progress-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const modelDirectory = path.join(root, 'kokoro-pt-br');
+  await createCompleteKokoroFixture(modelDirectory, 'letrinhas-kokoro-pt');
+
+  let generationOptions = null;
+  let modelConfig = null;
+  const engine = createAuroraLocalTts({
+    modelDirectory,
+    loadSherpa: () => ({
+      GenerationConfig: class {
+        constructor(options) { Object.assign(this, options); }
+      },
+      OfflineTts: {
+        createAsync: async (config) => {
+          modelConfig = config;
+          return {
+            generateAsync: async (options) => {
+              generationOptions = options;
+              assert.equal(typeof options.onProgress, 'function');
+              assert.equal(options.onProgress({ samples: new Float32Array([0.1]), progress: 0.5 }), 1);
+              return { samples: new Float32Array([0, 0.2, -0.2]), sampleRate: 24000 };
+            },
+          };
+        },
+      },
+    }),
+  });
+
+  try {
+    const wav = await engine.synthesize('Olá, tudo bem?');
+    assert.equal(modelConfig.model.kokoro.lang, 'pt');
+    assert.equal(generationOptions.text, 'Olá, tudo bem?');
+    assert.equal(generationOptions.enableExternalBuffer, true);
+    assert.equal(wav.toString('ascii', 0, 4), 'RIFF');
+    assert.equal(wav.readUInt32LE(24), 24000);
+  } finally {
+    await engine.dispose();
+  }
+});
+
 test('Kokoro installation recovers a valid previous extraction without downloading again', async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'aurora-kokoro-recovery-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
