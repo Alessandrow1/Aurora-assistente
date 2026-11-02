@@ -70,7 +70,7 @@ async function createCompleteKokoroFixture(directory, wrapperName = 'kokoro-mult
   const voices = await fs.open(path.join(modelRoot, 'voices.bin'), 'w');
   await voices.truncate(1024 * 1024 + 1);
   await voices.close();
-  await fs.writeFile(path.join(modelRoot, 'tokens.txt'), 't'.repeat(2048));
+  await fs.writeFile(path.join(modelRoot, 'tokens.txt'), 't'.repeat(687));
   await fs.writeFile(path.join(espeak, 'phontab'), 'test phoneme data');
   return modelRoot;
 }
