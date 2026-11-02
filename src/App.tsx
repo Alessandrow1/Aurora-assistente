@@ -774,6 +774,7 @@ export default function App() {
   stopVoiceCaptureRef.current = stopVoiceCapture;
 
   const speak = async (text: string, waitForPlayback = false, resumeAfterPlayback = true) => {
+    const speechTicket = voiceOutputTurnRef.current;
     pauseVoiceRecognitionForSpeech();
     if (hasLaughingCue(text)) setLaughing(true);
     audioRef.current?.pause();
@@ -793,6 +794,10 @@ export default function App() {
 
     try {
       const result = await window.aurora.speak(text);
+      if (speechTicket !== voiceOutputTurnRef.current) {
+        finishPlayback();
+        return;
+      }
       if (!result?.audioBase64) throw new Error('A voz neural nao retornou audio.');
       if (result.provider === 'kokoro-local') setNotice('');
 
