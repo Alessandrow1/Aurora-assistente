@@ -1803,8 +1803,10 @@ export default function App() {
                     </button>
                   </div>
                   <p className="field-help">Voz: pf_dora · Idioma: português brasileiro · Execução: CPU local. O modelo permanece instalado no disco D:.</p>
+                </div>
 
-                  <div className="modal-divider" />
+                <div className="modal-divider" />
+                <div className="elevenlabs-voice-settings">
                   <strong>Microfone e captação</strong>
                   <p>O Silero VAD detecta quando você começa e termina de falar; o Whisper continua fazendo a transcrição em português. Durante a resposta, você pode começar a falar para interromper a Aurora.</p>
                   <label className="field-label" htmlFor="aurora-microphone">Dispositivo de entrada</label>
