@@ -19,7 +19,8 @@
     "@ricky0123/vad-web": "0.0.31",
     "onnxruntime-web": "1.22.0",
     "@pixiv/three-vrm": "^3.5.5",
-    "sherpa-onnx-node": "1.13.8"
+    "sherpa-onnx-node": "1.13.8",
+    "ws": "^8.22.1"
   },
   "devDependencies": {
     "@types/react": "^18.3.18",
