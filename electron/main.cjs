@@ -8,6 +8,7 @@ const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const { createAuroraStore } = require('./aurora-store.cjs');
 const { createAuroraImageGenerator } = require('./aurora-image-generator.cjs');
+const { createAuroraLocalTts } = require('./aurora-local-tts.cjs');
 
 const OLLAMA_URL = 'http://127.0.0.1:11434';
 const ELEVENLABS_VOICE_ID = '29BpZaywSObgMLvRvBhB';
@@ -38,6 +39,23 @@ const ALLOWED_MODELS = new Set(['qwen3.5:2b', 'qwen3.5:4b', 'qwen3.5:9b']);
 
 let mainWindow;
 let activeElevenLabsStreamSession = null;
+let auroraLocalTts = null;
+
+function reportTtsStatus(status) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('aurora:tts-status', status);
+  }
+}
+
+function getAuroraLocalTts() {
+  if (!auroraLocalTts) {
+    auroraLocalTts = createAuroraLocalTts({
+      userDataPath: app.getPath('userData'),
+      onStatus: reportTtsStatus,
+    });
+  }
+  return auroraLocalTts;
+}
 let ollamaWarmupPromise = null;
 let ollamaWarmupModel = '';
 let tray = null;
@@ -1182,158 +1200,61 @@ function createElevenLabsStreamSession(apiKey) {
   };
 }
 
-ipcMain.handle('aurora:speak-session-start', async () => {
-  if (activeElevenLabsStreamSession?.isReady()) {
-    return { active: true, reused: true };
-  }
-  if (activeElevenLabsStreamSession) {
-    const previous = activeElevenLabsStreamSession;
-    activeElevenLabsStreamSession = null;
-    await previous.close().catch(() => undefined);
-  }
-  let apiKey = null;
-  try { apiKey = await readElevenLabsApiKey(); }
-  catch (error) {
-    console.warn('[Aurora ElevenLabs] Nao consegui preparar o streaming persistente:', error instanceof Error ? error.message : String(error));
-    return { active: false };
-  }
-  if (!apiKey) return { active: false };
-
-  const startedAt = Date.now();
-  const session = createElevenLabsStreamSession(apiKey);
-  try {
-    await session.ready;
-    activeElevenLabsStreamSession = session;
-    console.info('[Aurora Performance] ElevenLabs conexao pronta', { connectMs: Date.now() - startedAt });
-    return { active: true };
-  } catch (error) {
-    await session.close().catch(() => undefined);
-    console.warn('[Aurora ElevenLabs] Streaming persistente indisponivel; usarei a sintese normal:', error instanceof Error ? error.message : String(error));
-    return { active: false };
-  }
+ipcMain.handle('aurora:tts-status', async () => {
+  return await getAuroraLocalTts().getStatus();
 });
+
+ipcMain.handle('aurora:tts-install', async () => {
+  const engine = getAuroraLocalTts();
+  await engine.install();
+  return await engine.getStatus();
+});
+
+// O modo de voz não abre conexões externas: o Kokoro local sintetiza cada frase.
+ipcMain.handle('aurora:speak-session-start', async () => ({ active: false, provider: 'kokoro-local' }));
 
 ipcMain.handle('aurora:speak-session-end', async () => {
   const session = activeElevenLabsStreamSession;
   activeElevenLabsStreamSession = null;
-  if (session) await session.close().catch((error) => console.warn('[Aurora ElevenLabs] Nao consegui encerrar a sessao limpa:', error));
+  if (session) await session.close().catch(() => undefined);
   return { closed: true };
 });
 
 ipcMain.handle('aurora:speak', async (_event, rawText) => {
   const text = typeof rawText === 'string' ? rawText.trim().slice(0, 4200) : '';
-  if (!text) throw new Error('Nao ha texto para transformar em fala.');
+  if (!text) throw new Error('Não há texto para transformar em fala.');
 
   const cleanText = text
-    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/```[sS]*?```/g, ' ')
     .replace(/`([^`]+)`/g, '$1')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/https?:\/\/\S+/g, '')
-    .replace(/\[\s*laughs?\s*\]/gi, ' hahaha ')
+    .replace(/[([^]]+)]([^)]+)/g, '$1')
+    .replace(/https?://S+/g, '')
+    .replace(/[s*laughs?s*]/gi, ' hahaha ')
     .replace(/[#*_>|]/g, ' ')
-    .replace(/\bkkkk+\b/gi, 'hahaha')
-    .replace(/\bkkk\b/gi, 'ha ha ha')
-    .replace(/\blol\b/gi, 'hahaha')
-    .replace(/\bhehe+\b/gi, 'he he he')
-    .replace(/\brsrs+\b/gi, 'he he he')
-    .replace(/\s+/g, ' ')
+    .replace(/kkkk+/gi, 'hahaha')
+    .replace(/kkk/gi, 'ha ha ha')
+    .replace(/lol/gi, 'hahaha')
+    .replace(/hehe+/gi, 'he he he')
+    .replace(/rsrs+/gi, 'he he he')
+    .replace(/s+/g, ' ')
     .trim();
-  if (!cleanText) throw new Error('O texto ficou vazio depois de remover a formatacao.');
+  if (!cleanText) throw new Error('O texto ficou vazio depois de remover a formatação.');
 
-  let elevenLabsFailure = '';
-  let apiKey = null;
-  try { apiKey = await readElevenLabsApiKey(); }
-  catch (error) {
-    elevenLabsFailure = error instanceof Error ? error.message : 'Nao consegui ler a chave protegida.';
-    console.error('[Aurora ElevenLabs] Falha ao acessar a chave protegida:', elevenLabsFailure);
-  }
-
-  if (apiKey) {
-    if (activeElevenLabsStreamSession) {
-      const session = activeElevenLabsStreamSession;
-      try {
-        const audio = await session.synthesize(cleanText);
-        return {
-          audioBase64: audio.toString('base64'),
-          audioMimeType: 'audio/wav',
-          voice: ELEVENLABS_VOICE_ID,
-          provider: 'elevenlabs',
-        };
-      } catch (error) {
-        elevenLabsFailure = error instanceof Error ? error.message : String(error);
-        if (activeElevenLabsStreamSession === session) activeElevenLabsStreamSession = null;
-        await session.close().catch(() => undefined);
-        console.warn('[Aurora ElevenLabs] Streaming persistente falhou; tentando uma conexao nova:', elevenLabsFailure);
-        try {
-          const retryAudio = await synthesizeElevenLabsDialogue(cleanText, apiKey);
-          return {
-            audioBase64: retryAudio.toString('base64'),
-            audioMimeType: 'audio/mpeg',
-            voice: ELEVENLABS_VOICE_ID,
-            provider: 'elevenlabs',
-          };
-        } catch (retryError) {
-          elevenLabsFailure += '; nova tentativa: ' + (retryError instanceof Error ? retryError.message : String(retryError));
-        }
-      }
-    } else {
-      try {
-        const audio = await synthesizeElevenLabsDialogue(cleanText, apiKey);
-        return {
-          audioBase64: audio.toString('base64'),
-          audioMimeType: 'audio/mpeg',
-          voice: ELEVENLABS_VOICE_ID,
-          provider: 'elevenlabs',
-        };
-      } catch (error) {
-        elevenLabsFailure = error instanceof Error ? error.message : String(error);
-        // Nunca registrar a chave ou o corpo de autenticacao no log.
-        console.error('[Aurora ElevenLabs] Falha na sessao TTD; usando voz de reserva:', elevenLabsFailure);
-      }
-    }
-  } else if (!elevenLabsFailure) {
-    elevenLabsFailure = 'Nenhuma chave ElevenLabs foi cadastrada.';
-  }
-
-  // Fallback Edge TTS mantido; o React continua recebendo MP3 e alimentando o Lip Sync.
-  let EdgeTTS;
-  try {
-    ({ EdgeTTS } = require('node-edge-tts'));
-  } catch {
-    throw new Error(`ElevenLabs indisponivel (${elevenLabsFailure}). O mecanismo Edge TTS tambem nao esta instalado.`);
-  }
-
-  const audioPath = path.join(app.getPath('temp'), `aurora-leticia-${process.pid}-${Date.now()}.mp3`);
-  const tts = new EdgeTTS({
-    voice: 'pt-BR-LeticiaNeural',
-    lang: 'pt-BR',
-    outputFormat: 'audio-24khz-96kbitrate-mono-mp3',
-    rate: '+0%',
-    pitch: '+0%',
-    timeout: 25000,
+  const startedAt = Date.now();
+  const audio = await getAuroraLocalTts().synthesize(cleanText);
+  console.info('[Aurora Performance] Kokoro local', {
+    synthesisMs: Date.now() - startedAt,
+    characters: cleanText.length,
+    audioBytes: audio.length,
   });
-
-  try {
-    await tts.ttsPromise(cleanText, audioPath);
-    const audioInfo = await fsp.stat(audioPath);
-    if (!audioInfo.isFile() || audioInfo.size < 100) {
-      throw new Error('Edge TTS terminou sem gerar um MP3 valido.');
-    }
-    const audio = await fsp.readFile(audioPath);
-    return {
-      audioBase64: audio.toString('base64'),
-      voice: 'pt-BR-LeticiaNeural',
-      provider: 'edge',
-      fallbackReason: elevenLabsFailure,
-    };
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    console.error('[Aurora TTS] Falha tambem no Edge TTS:', detail);
-    throw new Error(`ElevenLabs: ${elevenLabsFailure}. Voz de reserva: ${detail.slice(0, 220)}`);
-  } finally {
-    await fsp.rm(audioPath, { force: true }).catch(() => undefined);
-  }
+  return {
+    audioBase64: audio.toString('base64'),
+    audioMimeType: 'audio/wav',
+    voice: 'pf_dora',
+    provider: 'kokoro-local',
+  };
 });
+
 ipcMain.handle('aurora:capture-screen', async () => {
   const wasVisible = Boolean(mainWindow?.isVisible());
   try {
