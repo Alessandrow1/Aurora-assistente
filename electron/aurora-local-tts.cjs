@@ -215,9 +215,11 @@ function createAuroraLocalTts(options = {}) {
     if (ttsInstance) return ttsInstance;
     if (ttsPromise) return ttsPromise;
     ttsPromise = (async () => {
-      let files = await getModelFiles();
-      if (!files) files = await install();
-      emitStatus('loading', 'Carregando Kokoro pt-BR na memória (primeira execução)…');
+      const files = await getModelFiles();
+      if (!files) {
+        throw new Error('A voz Kokoro pt-BR ainda não foi instalada. Abra Configurações e use “Instalar voz local”; o modelo será salvo em ' + modelDirectory + '.');
+      }
+      emitStatus('loading', 'Carregando Kokoro pt-BR na memória…');
       const sherpa = loadSherpa();
       if (!sherpa || !sherpa.OfflineTts) throw new Error('A instalação local do sherpa-onnx não oferece OfflineTts.');
       const threadCount = Math.max(2, Math.min(4, os.cpus().length || 2));
@@ -293,7 +295,12 @@ function createAuroraLocalTts(options = {}) {
     }
   }
 
-  return { install, synthesize, getStatus, dispose, modelDirectory };
+  async function prepare() {
+    await load();
+    return await getStatus();
+  }
+
+  return { install, prepare, synthesize, getStatus, dispose, modelDirectory };
 }
 
 module.exports = { createAuroraLocalTts, makeWavBuffer, chooseModelDirectory };
