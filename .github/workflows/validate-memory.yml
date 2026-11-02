@@ -28,5 +28,6 @@ jobs:
           node --check electron/preload.cjs
           node --check electron/aurora-store.cjs
           node --check electron/aurora-image-generator.cjs
-      - name: Test persistent memory and image generation
-        run: node --test electron/aurora-store.test.cjs electron/aurora-image-generator.test.cjs
+          node --check electron/aurora-local-tts.cjs
+      - name: Test persistent memory, image generation and local voice
+        run: node --test electron/aurora-store.test.cjs electron/aurora-image-generator.test.cjs electron/aurora-local-tts.test.cjs
