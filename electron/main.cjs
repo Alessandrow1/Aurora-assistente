@@ -40,6 +40,7 @@ const ALLOWED_MODELS = new Set(['qwen3.5:2b', 'qwen3.5:4b', 'qwen3.5:9b']);
 let mainWindow;
 let activeElevenLabsStreamSession = null;
 let auroraLocalTts = null;
+const activeChatControllers = new Map();
 
 function reportTtsStatus(status) {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -619,9 +620,36 @@ ipcMain.handle('aurora:warmup-transcription', async () => {
   return { ready: true };
 });
 
+ipcMain.on('aurora:chat-cancel', (_event, rawRequestId) => {
+  const requestId = typeof rawRequestId === 'string' ? rawRequestId : '';
+  if (!requestId || requestId.length > 120) return;
+  const controller = activeChatControllers.get(requestId);
+  if (!controller) return;
+  activeChatControllers.delete(requestId);
+  controller.abort();
+});
+
 ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   const message = typeof payload.message === 'string' ? payload.message.trim() : '';
   if (!message) throw new Error('Escreva uma mensagem para a Aurora.');
+  const requestId = typeof payload.requestId === 'string' ? payload.requestId : '';
+  const chatAbortController = new AbortController();
+  if (requestId) {
+    activeChatControllers.set(requestId, chatAbortController);
+    const expiry = setTimeout(() => {
+      if (activeChatControllers.get(requestId) === chatAbortController) activeChatControllers.delete(requestId);
+    }, 3 * 60 * 1000);
+    expiry.unref?.();
+    chatAbortController.signal.addEventListener('abort', () => {
+      if (activeChatControllers.get(requestId) === chatAbortController) activeChatControllers.delete(requestId);
+    }, { once: true });
+  }
+  const throwIfChatCancelled = () => {
+    if (!chatAbortController.signal.aborted) return;
+    const error = new Error('Resposta interrompida pelo usuário.');
+    error.name = 'AbortError';
+    throw error;
+  };
 
   const settings = readSettings();
   const ollama = await getOllamaModels();
@@ -655,6 +683,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
       reason: quickVoiceTurn ? 'voz casual: menor latência' : needsThinking || needsExplanation ? 'tarefa complexa: maior capacidade' : 'modelo configurado',
     });
   }
+  throwIfChatCancelled();
   await warmupOllamaModel(activeModel).catch((error) => {
     console.warn('[Aurora Performance] Nao consegui aquecer o Ollama antes da conversa:', error instanceof Error ? error.message : String(error));
   });
@@ -737,7 +766,7 @@ const chatMessages = [
       response = await fetch(`${OLLAMA_URL}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(180000),
+        signal: AbortSignal.any([chatAbortController.signal, AbortSignal.timeout(180000)]),
         body: JSON.stringify({
           model: activeModel,
           stream: true,
@@ -748,6 +777,11 @@ const chatMessages = [
         }),
       });
     } catch (error) {
+      if (chatAbortController.signal.aborted) {
+        const cancelled = new Error('Resposta interrompida pelo usuário.');
+        cancelled.name = 'AbortError';
+        throw cancelled;
+      }
       if (error.name === 'TimeoutError') throw new Error('A resposta demorou demais. Tente novamente ou use um modelo menor.');
       throw new Error('Não consegui acessar a IA local do Ollama. Verifique se o Ollama continua aberto.');
     }
@@ -763,7 +797,7 @@ const chatMessages = [
     };
   };
 
-  const requestId = typeof payload.requestId === 'string' ? payload.requestId : '';
+  // requestId e AbortController sao preparados no inicio para permitir interrupcao por voz.
   const readChatStream = async ({ response, requestStartedAt, headersReceivedAt }) => {
     const reader = response.body?.getReader();
     if (!reader) throw new Error('Não consegui iniciar a resposta em fluxo.');
@@ -853,8 +887,10 @@ const chatMessages = [
       model: activeModel,
       doneReason: result.doneReason || 'não informado',
     });
+    if (requestId && activeChatControllers.get(requestId) === chatAbortController) activeChatControllers.delete(requestId);
     return { text: 'Não consegui gerar uma resposta final. Tente novamente; se persistir, confira se o modelo selecionado está funcionando no Ollama.' };
   }
+  if (requestId && activeChatControllers.get(requestId) === chatAbortController) activeChatControllers.delete(requestId);
   return { text: result.text };
 });
 
@@ -1218,6 +1254,7 @@ ipcMain.handle('aurora:tts-status', async () => {
 ipcMain.handle('aurora:tts-install', async () => {
   const engine = getAuroraLocalTts();
   await engine.install();
+  await engine.prepare();
   return await engine.getStatus();
 });
 
