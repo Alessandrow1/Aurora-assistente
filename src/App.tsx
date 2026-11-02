@@ -1781,7 +1781,9 @@ export default function App() {
                     </div>
                     <p className="field-help">Quando a ElevenLabs estiver indisponível, a Aurora tentará usar o Kokoro local; se ele também não puder gerar áudio, usará a voz do Windows.</p>
                   </div>
-                  <div className="modal-divider" />
+                </div>
+                <div className="modal-divider" />
+                <div className="elevenlabs-voice-settings">
                   <strong>Voz de reserva: Kokoro pt-BR</strong>
                   <p>Voz neural processada no computador, sem depender da internet. Ela fica como alternativa quando a ElevenLabs não estiver disponível.</p>
                   <div className="secure-note">
