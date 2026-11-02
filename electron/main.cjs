@@ -459,7 +459,9 @@ ipcMain.handle('aurora:clear-elevenlabs-key', async () => {
 });
 
 // AURORA_OFFLINE_ASR: Whisper Base INT8 multilingue via sherpa-onnx; o modelo fica no userData, nunca no Git.
-const speechModelDirectory = () => path.join(app.getPath('userData'), 'speech-recognition', 'sherpa-onnx-whisper-base');
+// Tiny INT8 reduz a latência de transcrição em máquinas modestas; Base continua disponível como fallback configurável.
+const WHISPER_MODEL_SIZE = process.env.AURORA_WHISPER_MODEL === 'base' ? 'base' : 'tiny';
+const speechModelDirectory = () => path.join(app.getPath('userData'), 'speech-recognition', `sherpa-onnx-whisper-${WHISPER_MODEL_SIZE}`);
 let offlineWhisperPromise = null;
 
 function reportSpeechStatus(state, message) {
@@ -480,7 +482,7 @@ async function downloadSpeechModelFile(filename, minimumBytes) {
   await fsp.rm(temporaryPath, { force: true }).catch(() => undefined);
   reportSpeechStatus('downloading', 'Baixando Whisper Base INT8: ' + filename + '…');
 
-  const url = 'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/main/' + encodeURIComponent(filename);
+  const url = 'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-' + WHISPER_MODEL_SIZE + '/resolve/main/' + encodeURIComponent(filename);
   const response = await fetch(url, { signal: AbortSignal.timeout(15 * 60 * 1000) });
   if (!response.ok || !response.body) {
     throw new Error('Nao consegui baixar ' + filename + ' (HTTP ' + response.status + '). Confira a internet e tente novamente.');
@@ -506,9 +508,20 @@ async function getOfflineWhisperRecognizer() {
   offlineWhisperPromise = (async () => {
     const directory = speechModelDirectory();
     reportSpeechStatus('loading', 'Preparando o reconhecimento de voz local…');
-    const encoder = await downloadSpeechModelFile('base-encoder.int8.onnx', 25 * 1024 * 1024);
-    const decoder = await downloadSpeechModelFile('base-decoder.int8.onnx', 120 * 1024 * 1024);
-    const tokens = await downloadSpeechModelFile('base-tokens.txt', 700 * 1024);
+    const modelFiles = WHISPER_MODEL_SIZE === 'tiny'
+      ? {
+          encoder: { name: 'tiny-encoder.int8.onnx', minimumBytes: 10 * 1024 * 1024 },
+          decoder: { name: 'tiny-decoder.int8.onnx', minimumBytes: 80 * 1024 * 1024 },
+          tokens: { name: 'tiny-tokens.txt', minimumBytes: 700 * 1024 },
+        }
+      : {
+          encoder: { name: 'base-encoder.int8.onnx', minimumBytes: 25 * 1024 * 1024 },
+          decoder: { name: 'base-decoder.int8.onnx', minimumBytes: 120 * 1024 * 1024 },
+          tokens: { name: 'base-tokens.txt', minimumBytes: 700 * 1024 },
+        };
+    const encoder = await downloadSpeechModelFile(modelFiles.encoder.name, modelFiles.encoder.minimumBytes);
+    const decoder = await downloadSpeechModelFile(modelFiles.decoder.name, modelFiles.decoder.minimumBytes);
+    const tokens = await downloadSpeechModelFile(modelFiles.tokens.name, modelFiles.tokens.minimumBytes);
 
     let sherpa;
     try {
@@ -517,7 +530,7 @@ async function getOfflineWhisperRecognizer() {
       throw new Error('O motor de voz local nao esta instalado. Feche a Aurora, execute npm install na pasta do projeto e abra novamente. Detalhe: ' + (error instanceof Error ? error.message : String(error)).slice(0, 180));
     }
 
-    reportSpeechStatus('loading', 'Carregando Whisper Base em português na memória…');
+    reportSpeechStatus('loading', 'Carregando Whisper ' + WHISPER_MODEL_SIZE.toUpperCase() + ' em português na memória…');
     const recognizer = await sherpa.OfflineRecognizer.createAsync({
       featConfig: { sampleRate: 16000, featureDim: 80 },
       modelConfig: {
@@ -564,6 +577,7 @@ ipcMain.handle('aurora:transcribe-audio', async (_event, rawSamples) => {
   const result = recognizer.getResult(stream);
   const text = typeof result?.text === 'string' ? result.text.trim().slice(0, 4000) : '';
   console.info('[Aurora Performance] Whisper', {
+    model: WHISPER_MODEL_SIZE,
     audioSeconds: Number((samples.length / 16000).toFixed(2)),
     transcriptionMs: Date.now() - transcriptionStartedAt,
     recognizedCharacters: text.length,
