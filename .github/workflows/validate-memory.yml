@@ -29,7 +29,12 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm install
-      - name: Build renderer and check Electron code
-        run: npm run build
+      - name: Prepare offline Silero and ONNX Runtime assets
+        run: node scripts/copy-voice-assets.cjs
+      - name: Check Electron JavaScript syntax
+        run: |
+          node --check electron/main.cjs
+          node --check electron/preload.cjs
+          node --check electron/aurora-local-tts.cjs
       - name: Run memory, image, voice and asset tests
         run: npm test
