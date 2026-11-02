@@ -3,7 +3,7 @@ import Avatar3D from './components/Avatar3D';
 import MemoryHub from './components/MemoryHub';
 
 type Message = { role: 'user' | 'assistant'; content: string; imageId?: string; imageUrl?: string };
-type VoiceVadController = { start: () => void; pause: () => void; destroy: () => void | Promise<void> };
+type VoiceVadController = { start: () => void | Promise<void>; pause: () => void | Promise<void>; destroy: () => void | Promise<void> };
 type LocalTtsStatus = { installed: boolean; ready: boolean; modelDirectory: string; voice: string; language: string; provider: string };
 type AudioInputOption = { deviceId: string; label: string };
 
@@ -197,7 +197,7 @@ export default function App() {
       voiceResumeRef.current = null;
     }
     if (voiceVadRef.current) {
-      if (voiceVadActiveRef.current) voiceVadRef.current.pause();
+      if (voiceVadActiveRef.current) void Promise.resolve(voiceVadRef.current.pause()).catch((error) => console.warn('[Aurora VAD] Não consegui pausar a escuta:', error));
       voiceVadActiveRef.current = false;
     } else {
       stopVoiceCaptureRef.current?.(false);
@@ -297,8 +297,7 @@ export default function App() {
         const vad = voiceVadRef.current;
         voiceVadRef.current = null;
         voiceVadActiveRef.current = false;
-        vad.pause();
-        void Promise.resolve(vad.destroy()).catch(() => undefined);
+        void Promise.resolve(vad.pause()).then(() => vad.destroy()).catch(() => undefined);
       }
       startVoiceCaptureRef.current = null;
       stopVoiceCaptureRef.current = null;
@@ -388,7 +387,7 @@ export default function App() {
     if (!voiceModeRef.current || recognitionPausedRef.current) return;
     recognitionPausedRef.current = true;
     if (voiceVadRef.current && voiceVadActiveRef.current) {
-      voiceVadRef.current.pause();
+      void Promise.resolve(voiceVadRef.current.pause()).catch((error) => console.warn('[Aurora VAD] Não consegui pausar após a fala:', error));
       voiceVadActiveRef.current = false;
     }
     setListening(false);
@@ -460,7 +459,7 @@ export default function App() {
 
     if (voiceVadRef.current) {
       if (!voiceVadActiveRef.current) {
-        voiceVadRef.current.start();
+        await Promise.resolve(voiceVadRef.current.start());
         voiceVadActiveRef.current = true;
       }
       setListening(true);
@@ -513,10 +512,10 @@ export default function App() {
         });
         voiceVadRef.current = vad;
         if (!voiceModeRef.current || recognitionPausedRef.current) {
-          vad.pause();
+          await Promise.resolve(vad.pause());
           return;
         }
-        vad.start();
+        await Promise.resolve(vad.start());
         voiceVadActiveRef.current = true;
         setListening(true);
         setNotice('');
@@ -529,8 +528,8 @@ export default function App() {
         voiceVadRef.current = null;
         voiceVadActiveRef.current = false;
         if (failedVad) {
-          failedVad.pause();
-          void Promise.resolve(failedVad.destroy()).catch(() => undefined);
+          await Promise.resolve(failedVad.pause()).catch(() => undefined);
+          await Promise.resolve(failedVad.destroy()).catch(() => undefined);
         }
         console.warn('[Aurora VAD] Não consegui iniciar o detector neural; usando captura RMS de reserva:', error);
         setNotice('Detector neural indisponível; usando captura de voz de reserva.');
@@ -1354,7 +1353,7 @@ export default function App() {
       voiceResumeRef.current = null;
     }
     if (voiceVadRef.current) {
-      if (voiceVadActiveRef.current) voiceVadRef.current.pause();
+      if (voiceVadActiveRef.current) void Promise.resolve(voiceVadRef.current.pause()).catch((error) => console.warn('[Aurora VAD] Não consegui pausar ao desligar o microfone:', error));
       voiceVadActiveRef.current = false;
     } else {
       stopVoiceCaptureRef.current?.(false);
@@ -1409,7 +1408,7 @@ export default function App() {
       const vad = voiceVadRef.current;
       voiceVadRef.current = null;
       voiceVadActiveRef.current = false;
-      vad.pause();
+      await Promise.resolve(vad.pause()).catch(() => undefined);
       await Promise.resolve(vad.destroy()).catch(() => undefined);
     }
     const activeRecorder = voiceCaptureRef.current?.recorder;
