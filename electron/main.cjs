@@ -458,7 +458,7 @@ ipcMain.handle('aurora:clear-elevenlabs-key', async () => {
   return { configured: false };
 });
 
-// AURORA_OFFLINE_ASR: Whisper Base INT8 multilingue via sherpa-onnx; o modelo fica no userData, nunca no Git.
+// AURORA_OFFLINE_ASR: Whisper Tiny/Base INT8 multilingue via sherpa-onnx; os modelos ficam no userData, nunca no Git.
 // Tiny INT8 reduz a latência de transcrição em máquinas modestas; Base continua disponível como fallback configurável.
 const WHISPER_MODEL_SIZE = process.env.AURORA_WHISPER_MODEL === 'base' ? 'base' : 'tiny';
 const speechModelDirectory = () => path.join(app.getPath('userData'), 'speech-recognition', `sherpa-onnx-whisper-${WHISPER_MODEL_SIZE}`);
@@ -480,7 +480,7 @@ async function downloadSpeechModelFile(filename, minimumBytes) {
   await fsp.mkdir(directory, { recursive: true });
   const temporaryPath = targetPath + '.part';
   await fsp.rm(temporaryPath, { force: true }).catch(() => undefined);
-  reportSpeechStatus('downloading', 'Baixando Whisper Base INT8: ' + filename + '…');
+  reportSpeechStatus('downloading', 'Baixando Whisper ' + WHISPER_MODEL_SIZE.toUpperCase() + ' INT8: ' + filename + '…');
 
   const url = 'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-' + WHISPER_MODEL_SIZE + '/resolve/main/' + encodeURIComponent(filename);
   const response = await fetch(url, { signal: AbortSignal.timeout(15 * 60 * 1000) });
