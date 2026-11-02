@@ -21,6 +21,13 @@ contextBridge.exposeInMainWorld('aurora', {
   getEmbeddingStatus: () => ipcRenderer.invoke('aurora:embedding-status'),
   installEmbeddingModel: () => ipcRenderer.invoke('aurora:embedding-install'),
   getImageGeneratorStatus: () => ipcRenderer.invoke('aurora:image-status'),
+  getLocalTtsStatus: () => ipcRenderer.invoke('aurora:tts-status'),
+  installLocalTts: () => ipcRenderer.invoke('aurora:tts-install'),
+  onTtsStatus: (callback) => {
+    const listener = (_event, status) => callback(status);
+    ipcRenderer.on('aurora:tts-status', listener);
+    return () => ipcRenderer.removeListener('aurora:tts-status', listener);
+  },
   generateImage: (payload) => ipcRenderer.invoke('aurora:image-generate', payload),
   loadGeneratedImage: (id) => ipcRenderer.invoke('aurora:image-load', id),
   openGeneratedImages: () => ipcRenderer.invoke('aurora:image-open-folder'),
