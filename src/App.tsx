@@ -1721,7 +1721,7 @@ export default function App() {
             <form onSubmit={saveSettings} className="settings-form">
               <div className="secure-note">
                 <span>✓</span>
-                <span>Sem API paga: o chat e a análise de tela usam o Ollama local no computador.</span>
+                <span>O chat e a análise de tela usam Ollama local. A voz principal usa ElevenLabs e consome a cota da sua conta.</span>
               </div>
               <label className="field-label" htmlFor="model">Modelo local</label>
               <select id="model" className="settings-input" value={model} onChange={(event) => setModel(event.target.value)}>
