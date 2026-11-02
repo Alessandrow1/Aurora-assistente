@@ -5,6 +5,7 @@ import MemoryHub from './components/MemoryHub';
 type Message = { role: 'user' | 'assistant'; content: string; imageId?: string; imageUrl?: string };
 type VoiceVadController = { start: () => void | Promise<void>; pause: () => void | Promise<void>; destroy: () => void | Promise<void> };
 type LocalTtsStatus = { installed: boolean; ready: boolean; modelDirectory: string; voice: string; language: string; provider: string };
+type ElevenLabsStatus = { configured: boolean; storageAvailable: boolean; voiceId: string; modelId: string };
 type AudioInputOption = { deviceId: string; label: string };
 
 type VoiceCaptureSession = {
@@ -149,6 +150,16 @@ export default function App() {
   const [localTtsStatus, setLocalTtsStatus] = useState<LocalTtsStatus | null>(null);
   const [localTtsProgress, setLocalTtsProgress] = useState('');
   const [localTtsInstalling, setLocalTtsInstalling] = useState(false);
+  const [elevenLabsStatus, setElevenLabsStatus] = useState<ElevenLabsStatus | null>(null);
+  const [elevenLabsKeyInput, setElevenLabsKeyInput] = useState('');
+  const [elevenLabsKeySaving, setElevenLabsKeySaving] = useState(false);
+  const refreshElevenLabsStatus = async () => {
+    try {
+      setElevenLabsStatus(await window.aurora.getElevenLabsStatus());
+    } catch (error) {
+      console.warn('[Aurora TTS] Não consegui consultar a configuração da ElevenLabs:', error);
+    }
+  };
   const [audioInputs, setAudioInputs] = useState<AudioInputOption[]>([]);
   const [microphoneId, setMicrophoneId] = useState('default');
   const refreshLocalTtsStatus = async () => {
@@ -180,6 +191,7 @@ export default function App() {
 
   useEffect(() => {
     void refreshLocalTtsStatus();
+    void refreshElevenLabsStatus();
     return window.aurora.onTtsStatus((status) => {
       setLocalTtsProgress(status.message || '');
       if (status.state === 'installed' || status.state === 'ready' || status.state === 'error') {
@@ -799,7 +811,7 @@ export default function App() {
         return;
       }
       if (!result?.audioBase64) throw new Error('A voz neural nao retornou audio.');
-      if (result.provider === 'kokoro-local') setNotice('');
+      if (result.provider === 'kokoro-local' || result.provider === 'elevenlabs') setNotice('');
 
       const audio = new Audio('data:' + (result.audioMimeType || 'audio/mpeg') + ';base64,' + result.audioBase64);
       audioRef.current = audio;
@@ -1388,6 +1400,38 @@ export default function App() {
     void startVoiceCaptureRef.current?.();
   };
 
+  const saveElevenLabsKey = async () => {
+    const key = elevenLabsKeyInput.trim();
+    if (!key) {
+      setNotice('Cole sua chave API da ElevenLabs antes de salvar.');
+      return;
+    }
+    setElevenLabsKeySaving(true);
+    try {
+      await window.aurora.saveElevenLabsKey(key);
+      setElevenLabsKeyInput('');
+      await refreshElevenLabsStatus();
+      setNotice('Chave da ElevenLabs salva com proteção do Windows. A próxima fala usará a voz original.');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Não consegui salvar a chave da ElevenLabs.');
+    } finally {
+      setElevenLabsKeySaving(false);
+    }
+  };
+
+  const clearElevenLabsKey = async () => {
+    setElevenLabsKeySaving(true);
+    try {
+      await window.aurora.clearElevenLabsKey();
+      await refreshElevenLabsStatus();
+      setNotice('Chave da ElevenLabs removida. A Aurora usará a voz local, quando instalada.');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Não consegui remover a chave da ElevenLabs.');
+    } finally {
+      setElevenLabsKeySaving(false);
+    }
+  };
+
   const installLocalVoice = async () => {
     setLocalTtsInstalling(true);
     setLocalTtsProgress('Preparando a instalação do Kokoro pt-BR…');
@@ -1699,8 +1743,47 @@ export default function App() {
               <div className="modal-divider" />
               <div className="settings-bottom">
                 <div className="elevenlabs-voice-settings">
-                  <strong>Voz neural local Kokoro pt-BR</strong>
-                  <p>Voz feminina brasileira processada no seu computador, sem API, assinatura ou créditos. O pacote fica fora da pasta do projeto para não ocupar espaço no Git.</p>
+                  <div className="elevenlabs-voice-settings">
+                    <strong>Voz principal: ElevenLabs</strong>
+                    <p>Recupera a voz original da Aurora usando a voz cadastrada no serviço. A chave fica criptografada pelo Windows e nunca aparece novamente depois de salva.</p>
+                    <div className="secure-note">
+                      <span>{elevenLabsStatus?.configured && elevenLabsStatus.storageAvailable ? '✓' : '!'}</span>
+                      <span>{elevenLabsStatus
+                        ? elevenLabsStatus.configured
+                          ? (elevenLabsStatus.storageAvailable ? 'Chave da ElevenLabs configurada e protegida neste computador.' : 'Chave encontrada, mas o armazenamento seguro do Windows está indisponível.')
+                          : 'Nenhuma chave da ElevenLabs configurada.'
+                        : 'Verificando a configuração da ElevenLabs…'}</span>
+                    </div>
+                    <p className="field-help">Voz ID: {elevenLabsStatus?.voiceId || '29BpZaywSObgMLvRvBhB'} · Modelo: {elevenLabsStatus?.modelId || 'eleven_v4_turbo'}</p>
+                    <label className="field-label" htmlFor="aurora-elevenlabs-key">Chave API da ElevenLabs</label>
+                    <input
+                      id="aurora-elevenlabs-key"
+                      className="settings-input"
+                      type="password"
+                      value={elevenLabsKeyInput}
+                      onChange={(event) => setElevenLabsKeyInput(event.target.value)}
+                      placeholder={elevenLabsStatus?.configured ? 'Chave já salva; cole outra apenas para substituí-la' : 'Cole sua chave API'}
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                    <div className="elevenlabs-key-actions">
+                      <button className="pet-voice-test" type="button" onClick={() => void saveElevenLabsKey()} disabled={elevenLabsKeySaving || !elevenLabsKeyInput.trim()}>
+                        {elevenLabsKeySaving ? 'Salvando…' : 'Salvar chave com segurança'}
+                      </button>
+                      <button className="pet-voice-test" type="button" onClick={() => void speak('Oi! Eu sou a Aurora. Essa é minha voz original da ElevenLabs.')} disabled={!elevenLabsStatus?.configured || !elevenLabsStatus.storageAvailable || elevenLabsKeySaving}>
+                        ▶ Testar voz original
+                      </button>
+                      {elevenLabsStatus?.configured && (
+                        <button className="pet-voice-test" type="button" onClick={() => void clearElevenLabsKey()} disabled={elevenLabsKeySaving}>
+                          Remover chave
+                        </button>
+                      )}
+                    </div>
+                    <p className="field-help">Quando a ElevenLabs estiver indisponível, a Aurora tentará usar o Kokoro local; se ele também não puder gerar áudio, usará a voz do Windows.</p>
+                  </div>
+                  <div className="modal-divider" />
+                  <strong>Voz de reserva: Kokoro pt-BR</strong>
+                  <p>Voz neural processada no computador, sem depender da internet. Ela fica como alternativa quando a ElevenLabs não estiver disponível.</p>
                   <div className="secure-note">
                     <span>{localTtsStatus?.installed ? '✓' : '!'}</span>
                     <span>{localTtsStatus
@@ -1719,7 +1802,7 @@ export default function App() {
                       ▶ Testar voz local
                     </button>
                   </div>
-                  <p className="field-help">Voz: pf_dora · Idioma: português brasileiro · Execução: CPU local. O primeiro preparo carrega o modelo na memória.</p>
+                  <p className="field-help">Voz: pf_dora · Idioma: português brasileiro · Execução: CPU local. O modelo permanece instalado no disco D:.</p>
 
                   <div className="modal-divider" />
                   <strong>Microfone e captação</strong>
