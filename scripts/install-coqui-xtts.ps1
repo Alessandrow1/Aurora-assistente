@@ -1,10 +1,11 @@
 $ErrorActionPreference = 'Stop'
 
-$defaultRoot = Join-Path $env:APPDATA 'aurora-assistente\coqui-xtts'
+$defaultRoot = Join-Path $env:LOCALAPPDATA 'Aurora\coqui-xtts'
 $installRoot = if ($env:AURORA_COQUI_HOME) { $env:AURORA_COQUI_HOME } else { $defaultRoot }
 $venvPath = Join-Path $installRoot 'venv'
 $pythonExe = Join-Path $venvPath 'Scripts\python.exe'
 $acceptanceFile = Join-Path $installRoot 'CPML-ACCEPTED.txt'
+$readyMarker = Join-Path $installRoot 'ENV-READY.txt'
 
 Write-Host ''
 Write-Host 'AURORA - INSTALADOR EXPERIMENTAL COQUI XTTS-v2' -ForegroundColor Cyan
@@ -31,6 +32,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 New-Item -ItemType Directory -Force -Path $installRoot | Out-Null
+Remove-Item -LiteralPath $readyMarker -Force -ErrorAction SilentlyContinue
 Set-Content -LiteralPath $acceptanceFile -Value ("CPML ACCEPTED BY USER" + [Environment]::NewLine + "Accepted for non-commercial personal testing on $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')." + [Environment]::NewLine + "License: https://coqui.ai/cpml.txt") -Encoding UTF8
 
 if (-not (Test-Path $pythonExe)) {
@@ -51,6 +53,7 @@ Write-Host 'Instalando Coqui TTS 0.28.0…' -ForegroundColor Cyan
 & $pythonExe -m pip install coqui-tts==0.28.0
 if ($LASTEXITCODE -ne 0) { throw 'Falha ao instalar coqui-tts.' }
 
+Set-Content -LiteralPath $readyMarker -Value 'Coqui XTTS Python environment installed successfully.' -Encoding UTF8
 Write-Host ''
 Write-Host 'Ambiente Coqui instalado. Os pesos XTTS-v2 serão baixados somente quando você tocar em "Testar Coqui XTTS" na Aurora.' -ForegroundColor Green
 Write-Host "Pasta: $installRoot"
