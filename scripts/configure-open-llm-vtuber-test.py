@@ -124,6 +124,7 @@ def main() -> None:
                 "kScale": 0.5,
                 "initialXshift": 0,
                 "initialYshift": 0,
+                "emotionMap": {},
             }
         )
         model_dict_temp = model_dict_path.with_suffix(".json.tmp")
