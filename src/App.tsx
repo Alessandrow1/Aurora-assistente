@@ -942,7 +942,7 @@ export default function App() {
       }
       if (!result?.audioBase64) throw new Error('A voz neural nao retornou audio.');
       console.info('[Aurora TTS] Áudio recebido para reprodução', { provider: result.provider || 'não informado', mimeType: result.audioMimeType || 'audio/mpeg', audioBytes: Math.floor(result.audioBase64.length * 0.75) });
-      if (result.provider === 'kokoro-local' || result.provider === 'elevenlabs') setNotice('');
+      if (result.provider === 'kokoro-local' || result.provider === 'elevenlabs' || result.provider === 'edge-tts') setNotice('');
 
       const audio = new Audio('data:' + (result.audioMimeType || 'audio/mpeg') + ';base64,' + result.audioBase64);
       audioRef.current = audio;
@@ -1929,8 +1929,8 @@ export default function App() {
               <div className="modal-divider" />
               <div className="settings-bottom">
                 <div className="elevenlabs-voice-settings">
-                    <strong>Voz principal: ElevenLabs</strong>
-                    <p>Recupera a voz original da Aurora usando a voz cadastrada no serviço. A chave fica criptografada pelo Windows e nunca aparece novamente depois de salva.</p>
+                    <strong>Voz premium opcional: ElevenLabs</strong>
+                    <p>Permite recuperar a voz original da Aurora quando houver créditos disponíveis. A chave fica criptografada pelo Windows e nunca aparece novamente depois de salva.</p>
                     <div className="secure-note">
                       <span>{elevenLabsStatus?.configured && elevenLabsStatus.storageAvailable ? '✓' : '!'}</span>
                       <span>{elevenLabsStatus
@@ -1964,12 +1964,12 @@ export default function App() {
                         </button>
                       )}
                     </div>
-                    <p className="field-help">Quando a ElevenLabs estiver indisponível, a Aurora tentará usar o Kokoro local; se ele também não puder gerar áudio, usará a voz do Windows.</p>
+                    <p className="field-help">Sem créditos da ElevenLabs, a voz padrão gratuita é Microsoft Edge Neural (pt-BR-FranciscaNeural), sem chave ou créditos. Ela usa um serviço online e envia o texto falado para a Microsoft. Se a conexão falhar, a Aurora usa Kokoro local; a voz do Windows fica apenas como último recurso.</p>
                 </div>
                 <div className="modal-divider" />
                 <div className="elevenlabs-voice-settings">
                   <strong>Voz de reserva: Kokoro pt-BR</strong>
-                  <p>Voz neural processada no computador, sem depender da internet. Ela fica como alternativa quando a ElevenLabs não estiver disponível.</p>
+                  <p>Voz neural processada no computador, sem depender da internet. É a alternativa privada/offline quando o serviço online Edge TTS não estiver disponível.</p>
                   <div className="secure-note">
                     <span>{localTtsStatus?.installed ? '✓' : '!'}</span>
                     <span>{localTtsStatus
