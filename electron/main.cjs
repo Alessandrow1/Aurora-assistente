@@ -11,7 +11,7 @@ const { createAuroraImageGenerator } = require('./aurora-image-generator.cjs');
 const { createAuroraLocalTts } = require('./aurora-local-tts.cjs');
 
 const OLLAMA_URL = 'http://127.0.0.1:11434';
-const ELEVENLABS_VOICE_ID = 'T7yYq3WpB94yAuOXraRi';
+const ELEVENLABS_VOICE_ID = '29BpZaywSObgMLvRvBhB';
 const ELEVENLABS_MODEL_ID = 'eleven_flash_v2_5';
 const ELEVENLABS_OUTPUT_FORMAT = 'mp3_44100_128';
 // AURORA_ELEVENLABS_TTS: credencial cifrada pelo DPAPI do Windows via Electron safeStorage.
