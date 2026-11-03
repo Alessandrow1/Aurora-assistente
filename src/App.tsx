@@ -1366,7 +1366,12 @@ export default function App() {
     if (/^(oi|ola|e ai|opa|bom dia|boa tarde|boa noite|salve|fala)( ai)?[!.? ]*$/.test(text)) {
       return 'Opa, cabeção. Tô aqui. Conta logo, o que foi?';
     }
-    if (/\b(ta me ouvindo|esta me ouvindo|consegue me ouvir|ta ouvindo|me ouve)\b/.test(text)) {
+    const hearingCheck = /\b(consegue me ouvir|me ouve|me escuta|ta ouvindo|esta ouvindo)\b/.test(text) ||
+      (/\b(?:ta|esta)\b/.test(text) &&
+        /\b(?:me|meu|mim)\b/.test(text) &&
+        /\b(?:ouvindo|ouvido|vindo|ouvir|ouve|escutando|escuta)\b/.test(text) &&
+        text.split(/\s+/).length <= 8);
+    if (hearingCheck) {
       return 'Tô te ouvindo, sim. Pode falar, criatura.';
     }
 
