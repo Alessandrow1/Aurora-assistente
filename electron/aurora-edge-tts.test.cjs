@@ -26,7 +26,7 @@ test('assembles streamed Edge audio buffers and ignores subtitle metadata', asyn
 
   const engine = createEdgeTtsSpeech({ EdgeTTS: FakeEdgeTTS });
   const audio = await engine.synthesize('  Olá, Aurora!  ');
-  assert.equal(capturedConfig, DEFAULT_EDGE_TTS_CONFIG);
+  assert.deepEqual(capturedConfig, DEFAULT_EDGE_TTS_CONFIG);
   assert.equal(capturedText, 'Olá, Aurora!');
   assert.equal(audio.length, 203);
   assert.equal(audio.subarray(0, 3).toString(), 'ID3');
