@@ -47,6 +47,12 @@ test('always activates identity and selects avatar, desktop and file skills when
   assert.ok(file.ids.includes('computer-environment'));
   assert.ok(file.ids.includes('file-finder'));
   assert.equal(file.fileSearchQuery, 'Aurora-Checkpoint.txt');
+
+  const time = selectSkills({ message: 'Que horas são agora?' });
+  assert.ok(time.ids.includes('computer-environment'));
+
+  const overview = selectSkills({ message: 'Quais skills você tem?' });
+  assert.ok(overview.ids.includes('skills-overview'));
 });
 
 test('extracts quoted names, exact filenames and simple file descriptions', () => {
@@ -57,12 +63,13 @@ test('extracts quoted names, exact filenames and simple file descriptions', () =
 });
 
 test('loads the identity and requested skill Markdown files from the local skill directory', async () => {
-  const loaded = await skills.loadSkills(['computer-environment', 'file-finder']);
+  const loaded = await skills.loadSkills(['computer-environment', 'file-finder', 'skills-overview']);
   const ids = loaded.map((item) => item.id);
-  assert.deepEqual(ids, ['aurora-identity', 'computer-environment', 'file-finder']);
+  assert.deepEqual(ids, ['aurora-identity', 'computer-environment', 'file-finder', 'skills-overview']);
   assert.match(loaded[0].content, /representação visual/i);
   assert.match(loaded[1].content, /Data e hora/i);
   assert.match(loaded[2].content, /RESULTADO REAL DA BUSCA LOCAL/i);
+  assert.match(loaded[3].content, /Habilidades atualmente instaladas/i);
 });
 
 test('reports fresh local time, operating system, display and safe search locations', () => {
