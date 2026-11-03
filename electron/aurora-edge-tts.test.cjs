@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { createEdgeTtsSpeech, DEFAULT_EDGE_TTS_CONFIG } = require('./aurora-edge-tts.cjs');
 
 test('configures a Brazilian Portuguese neural Edge voice without API credentials', () => {
-  assert.equal(DEFAULT_EDGE_TTS_CONFIG.voice, 'pt-BR-FranciscaNeural');
+  assert.equal(DEFAULT_EDGE_TTS_CONFIG.voice, 'pt-BR-ThalitaMultilingualNeural');
   assert.equal(DEFAULT_EDGE_TTS_CONFIG.lang, 'pt-BR');
   assert.equal(DEFAULT_EDGE_TTS_CONFIG.outputFormat, 'audio-24khz-96kbitrate-mono-mp3');
   assert.ok(DEFAULT_EDGE_TTS_CONFIG.timeout >= 10000);
