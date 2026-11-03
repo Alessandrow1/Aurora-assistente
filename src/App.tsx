@@ -37,8 +37,8 @@ type AppConfig = {
 
 type AvatarEmotion = 'neutral' | 'happy' | 'sad' | 'surprised' | 'curious' | 'angry' | 'affectionate' | 'laughing';
 
-// Tempo de silêncio após a última sílaba antes de encerrar o áudio e chamar o Whisper.
-const VOICE_END_SILENCE_MS = 750;
+// Pausa curta para encerrar a fala sem acrescentar espera desnecessária antes do Whisper.
+const VOICE_END_SILENCE_MS = 550;
 
 function detectMemorySuggestion(text: string): string | null {
   if (/^\\s*(?:aurora[, ]+)?(?:lembre-se de que|lembre que|guarde que|anote que|aprenda que)\\s+/i.test(text)) return null;
@@ -506,7 +506,7 @@ export default function App() {
           onnxWASMBasePath: assetBasePath,
           positiveSpeechThreshold: 0.42,
           negativeSpeechThreshold: 0.30,
-          redemptionMs: 620,
+          redemptionMs: 500,
           preSpeechPadMs: 450,
           minSpeechMs: 250,
           getStream: getVoiceStream,
@@ -1117,14 +1117,19 @@ export default function App() {
       };
       const collectCompleteSpeech = (chunk: string) => {
         speechBuffer += chunk;
-        const boundary = /[.!?…]+\s+/g;
+        // Uma cláusula longa terminada em vírgula já pode ir para a voz; não precisamos esperar o ponto final.
+        const boundary = /[.!?…]+\s+|[,;:]+\s+/g;
         let cursor = 0;
         let match: RegExpExecArray | null;
         while ((match = boundary.exec(speechBuffer)) !== null) {
           const end = match.index + match[0].length;
           const candidate = speechBuffer.slice(cursor, end).trim();
           const wordCount = candidate.split(/\s+/).filter(Boolean).length;
-          if (candidate.length >= 18 || wordCount >= 5) {
+          const sentenceBoundary = /[.!?…]/.test(match[0]);
+          const readyToSpeak = sentenceBoundary
+            ? candidate.length >= 18 || wordCount >= 5
+            : candidate.length >= 32 && wordCount >= 7;
+          if (readyToSpeak) {
             enqueueSpeech(candidate);
             cursor = end;
           }
