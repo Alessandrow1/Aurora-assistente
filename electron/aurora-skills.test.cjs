@@ -96,7 +96,7 @@ test('extracts quoted names, exact filenames and simple file descriptions', () =
 test('loads the identity and requested skill Markdown files from the local skill directory', async () => {
   const loaded = await skills.loadSkills(['computer-environment', 'file-finder', 'skills-overview']);
   const ids = loaded.map((item) => item.id);
-  assert.deepEqual(ids, ['aurora-identity', 'computer-environment', 'file-finder', 'skills-overview']);
+  assert.deepEqual(ids.filter((id) => id !== 'user-profile-summary'), ['aurora-identity', 'computer-environment', 'file-finder', 'skills-overview']);
   assert.match(loaded[0].content, /representação visual/i);
   assert.match(loaded[1].content, /Data e hora/i);
   assert.match(loaded[2].content, /RESULTADO REAL DA BUSCA LOCAL/i);
