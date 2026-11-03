@@ -10,26 +10,46 @@ function foldPortuguese(text) {
     .replace(/\s+/g, ' ');
 }
 
+function extractHearingCheck(text) {
+  const folded = foldPortuguese(text);
+  if (!folded) return null;
+  const match = folded.match(/^(?:(oi|ola|opa|alo|aloo|e ai) )?(.+)$/);
+  const greeting = match?.[1] || '';
+  const body = (match?.[2] || folded)
+    .replace(/\b(?:agora|ai|bem|direito|por favor|ne)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const hasVerb = /\b(?:ta|esta)\b/.test(body);
+  const hasFirstPerson = /\b(?:me|meu|mim)\b/.test(body);
+  const hasHearingVerb = /\b(?:ouvindo|ouvido|vindo|ouvir|ouve|escutando|escuta)\b/.test(body);
+  const directQuestion = /^(?:consegue me ouvir|me ouve|me escuta|esta ouvindo|ta ouvindo)$/.test(body);
+  if (directQuestion || (hasVerb && hasFirstPerson && hasHearingVerb && body.split(' ').length <= 7)) {
+    return { greeting, body };
+  }
+  return null;
+}
+
+function isVoiceHearingCheck(text) {
+  return extractHearingCheck(text) !== null;
+}
+
 /**
- * Corrige apenas uma classe muito específica de erro recorrente do Whisper:
- * "tá meu vindo?" / "tá me vindo?" quando a intenção é "tá me ouvindo?".
+ * Corrige apenas erros recorrentes do Whisper em perguntas para testar o microfone.
  * O restante da transcrição é preservado sem reescrita.
  */
 function normalizeVoiceTranscript(rawText) {
   const original = typeof rawText === 'string' ? rawText.trim().replace(/\s+/g, ' ') : '';
   if (!original) return '';
 
-  const folded = foldPortuguese(original);
-  const match = folded.match(/^(?:(oi|ola|opa|alo|e ai) )?((?:voce )?(?:ta|esta) (?:meu|me|mim) (?:vindo|ouvindo|ouvido|ouvir))$/);
-  if (!match) return original;
+  const hearingCheck = extractHearingCheck(original);
+  if (!hearingCheck) return original;
 
-  const greeting = match[1];
-  return greeting
-    ? greeting === 'ola' ? 'Olá, tá me ouvindo?' :
-      greeting === 'e ai' ? 'E aí, tá me ouvindo?' :
-      greeting === 'alo' ? 'Alô, tá me ouvindo?' :
-      greeting[0].toUpperCase() + greeting.slice(1) + ', tá me ouvindo?'
-    : 'Tá me ouvindo?';
+  const greeting = hearingCheck.greeting;
+  if (!greeting) return 'Tá me ouvindo?';
+  if (greeting === 'ola') return 'Olá, tá me ouvindo?';
+  if (greeting === 'e ai') return 'E aí, tá me ouvindo?';
+  if (greeting === 'alo' || greeting === 'aloo') return 'Alô, tá me ouvindo?';
+  return greeting[0].toUpperCase() + greeting.slice(1) + ', tá me ouvindo?';
 }
 
-module.exports = { foldPortuguese, normalizeVoiceTranscript };
+module.exports = { foldPortuguese, isVoiceHearingCheck, normalizeVoiceTranscript };
