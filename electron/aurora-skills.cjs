@@ -7,6 +7,7 @@ const BUILT_IN_SKILLS = Object.freeze({
   'live2d-self-perception': { title: 'Percepção do próprio avatar Live2D', file: 'live2d-self-perception/SKILL.md' },
   'computer-environment': { title: 'Consciência operacional do computador', file: 'computer-environment/SKILL.md' },
   'file-finder': { title: 'Localização de arquivos e pastas', file: 'file-finder/SKILL.md' },
+  'skills-overview': { title: 'Catálogo de habilidades instaladas', file: 'skills-overview/SKILL.md' },
 });
 
 const SKIP_DIRECTORY_NAMES = new Set([
@@ -51,12 +52,14 @@ function selectSkills({ message = '', avatarImageAttached = false } = {}) {
   const normalized = normalizeSearchText(message);
   const ids = ['aurora-identity'];
   const ownAvatarIntent = avatarImageAttached || /\b(como voce e|como voce ta|como e seu avatar|qual e sua aparencia|descreva sua aparencia|fale sobre sua aparencia|como voce aparece|como voce se parece|olha pra voce|olhe para voce|veja seu avatar|se veja|se olhe|o que voce (?:esta|ta) vestindo|o que voce (?:esta|ta) usando|como e seu cabelo|como e seu rosto|qual expressao voce esta|essa e voce|essa personagem e voce|seu modelo live2d|sua boneca|sua personagem)\b/.test(normalized);
-  const desktopIntent = /\b(hora|horario|data de hoje|que dia e hoje|dia de hoje|computador|windows|sistema operacional|sistema do pc|memoria ram|processador|espaco em disco|desktop|area de trabalho|pasta|arquivo|programa|aplicativo|janela|tela)\b/.test(normalized);
+  const desktopIntent = /\b(horas?|horario|data|que dia|qual dia|dia de hoje|hoje|agora|computador|windows|sistema operacional|sistema do pc|memoria ram|processador|espaco em disco|desktop|area de trabalho|pasta|arquivo|programa|aplicativo|janela|tela)\b/.test(normalized);
   const fileSearchQuery = extractFileSearchQuery(message);
+  const asksSkills = /\b(quais skills|que skills|suas skills|quais habilidades|que habilidades|suas habilidades|o que voce sabe fazer|o que voce consegue fazer|suas capacidades|habilidades instaladas)\b/.test(normalized);
 
   if (ownAvatarIntent) ids.push('live2d-self-perception');
   if (desktopIntent) ids.push('computer-environment');
   if (fileSearchQuery) ids.push('file-finder');
+  if (asksSkills) ids.push('skills-overview');
 
   return {
     ids: [...new Set(ids)],
