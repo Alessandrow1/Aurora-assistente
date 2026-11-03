@@ -74,7 +74,7 @@ function choosePreferredModel({
   settingsModel = 'qwen3.5:9b',
 } = {}) {
   if (fastVoiceTurn) return 'qwen3.5:2b';
-  if (voiceMode && !needsThinking && !needsExplanation && !needsFactualKnowledge && !needsStoredContext && !hasImage && !studyMode) {
+  if (voiceMode && !needsThinking && !needsStoredContext && !hasImage && !studyMode) {
     return 'qwen3.5:2b';
   }
   if (voiceMode || needsThinking || needsExplanation || needsFactualKnowledge || studyMode) {
