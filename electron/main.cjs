@@ -1358,7 +1358,7 @@ ipcMain.handle('aurora:speak-session-end', async () => {
   return { closed: true };
 });
 
-ipcMain.handle('aurora:speak', async (_event, rawText) => {
+ipcMain.handle('aurora:speak', async (_event, rawText, options = {}) => {
   const text = typeof rawText === 'string' ? rawText.trim().slice(0, 4200) : '';
   if (!text) throw new Error('Não há texto para transformar em fala.');
 
@@ -1366,49 +1366,28 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
   if (!cleanText) throw new Error('O texto ficou vazio depois de remover a formatação.');
 
   const startedAt = Date.now();
-  let apiKey = null;
-  let keyError = null;
-  try {
-    apiKey = await readElevenLabsApiKey();
-  } catch (error) {
-    keyError = error instanceof Error ? error.message : String(error);
-    console.warn('[Aurora TTS] Não consegui ler a chave protegida da ElevenLabs:', keyError);
-  }
+  const requestedProvider = options && options.provider === 'elevenlabs' ? 'elevenlabs' : 'free';
 
-  if (apiKey && !elevenLabsQuotaExhausted) {
-    const activeSession = activeElevenLabsStreamSession;
-    if (activeSession?.isReady()) {
-      try {
-        const audio = await activeSession.synthesize(cleanText);
-        console.info('[Aurora Performance] ElevenLabs persistente', {
-          synthesisMs: Date.now() - startedAt,
-          characters: cleanText.length,
-          audioBytes: audio.length,
-          voiceId: ELEVENLABS_VOICE_ID,
-          modelId: ELEVENLABS_MODEL_ID,
-        });
-        return {
-          audioBase64: audio.toString('base64'),
-          audioMimeType: 'audio/wav',
-          voice: ELEVENLABS_VOICE_ID,
-          provider: 'elevenlabs',
-        };
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
-        console.warn('[Aurora TTS] O streaming persistente falhou; tentando uma conexão nova:', detail);
-        if (activeElevenLabsStreamSession === activeSession) activeElevenLabsStreamSession = null;
-        await activeSession.close().catch(() => undefined);
-      }
+  // ElevenLabs só é chamado quando o usuário escolhe explicitamente testar a voz premium.
+  // A conversa normal nunca consome créditos automaticamente.
+  if (requestedProvider === 'elevenlabs') {
+    let apiKey = null;
+    try {
+      apiKey = await readElevenLabsApiKey();
+    } catch (error) {
+      throw new Error('Não consegui ler a chave protegida da ElevenLabs: ' +
+        (error instanceof Error ? error.message : String(error)));
     }
-
+    if (!apiKey) throw new Error('A chave da ElevenLabs não está configurada.');
+    if (elevenLabsQuotaExhausted) {
+      throw new Error('A cota da ElevenLabs foi identificada como esgotada nesta sessão. A voz gratuita continua disponível.');
+    }
     try {
       const audio = await synthesizeElevenLabsSpeech(cleanText, apiKey);
-      console.info('[Aurora Performance] ElevenLabs', {
+      console.info('[Aurora TTS] Voz premium ElevenLabs solicitada manualmente.', {
         synthesisMs: Date.now() - startedAt,
         characters: cleanText.length,
         audioBytes: audio.length,
-        voiceId: ELEVENLABS_VOICE_ID,
-        modelId: ELEVENLABS_MODEL_ID,
       });
       return {
         audioBase64: audio.toString('base64'),
@@ -1418,53 +1397,15 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
       };
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
-      if (isElevenLabsQuotaExceeded(detail)) {
-        elevenLabsQuotaExhausted = true;
-        console.warn('[Aurora TTS] Cota da ElevenLabs esgotada. Vou pular novas tentativas deste serviço nesta sessão e usar a voz neural gratuita do Edge.');
-      }
-      console.warn('[Aurora TTS] ElevenLabs indisponível; tentando voz neural gratuita do Edge:', detail);
-      try {
-        const edgeAudio = await synthesizeEdgeTtsSpeech(cleanText);
-        return {
-          audioBase64: edgeAudio.toString('base64'),
-          audioMimeType: 'audio/mpeg',
-          voice: 'pt-BR-FranciscaNeural',
-          provider: 'edge-tts',
-          fallbackReason: detail.slice(0, 220),
-        };
-      } catch (edgeError) {
-        console.warn('[Aurora TTS] Edge TTS indisponível; tentando Kokoro offline:', edgeError instanceof Error ? edgeError.message : String(edgeError));
-      }
-      try {
-        const localEngine = getAuroraLocalTts();
-        const localStatus = await localEngine.getStatus();
-        if (!localStatus.installed) throw new Error('Kokoro local não está instalado. Instale a voz local nas Configurações.');
-        const localAudio = await localEngine.synthesize(cleanText);
-        console.info('[Aurora TTS] Provedor de voz selecionado: Kokoro local (pf_dora).');
-        console.info('[Aurora Performance] Kokoro local após falha da ElevenLabs', {
-          synthesisMs: Date.now() - startedAt,
-          characters: cleanText.length,
-          audioBytes: localAudio.length,
-        });
-        return {
-          audioBase64: localAudio.toString('base64'),
-          audioMimeType: 'audio/wav',
-          voice: 'pf_dora',
-          provider: 'kokoro-local',
-          fallbackReason: detail.slice(0, 220),
-        };
-      } catch (localError) {
-        const localDetail = localError instanceof Error ? localError.message : String(localError);
-        console.error('[Aurora TTS] Kokoro local também falhou; a interface poderá tentar a voz de emergência do Windows:', localDetail);
-        throw new Error('ElevenLabs falhou: ' + detail.slice(0, 220) +
-          '. Kokoro local também não pôde gerar áudio: ' + localDetail.slice(0, 180));
-      }
+      if (isElevenLabsQuotaExceeded(detail)) elevenLabsQuotaExhausted = true;
+      throw new Error('A voz original da ElevenLabs não está disponível: ' + detail.slice(0, 260));
     }
   }
 
+  // Caminho padrão gratuito: Edge Neural online, sem conta nem créditos.
   try {
     const edgeAudio = await synthesizeEdgeTtsSpeech(cleanText);
-    console.info('[Aurora TTS] Provedor de voz selecionado: Microsoft Edge Neural (pt-BR-FranciscaNeural).');
+    console.info('[Aurora TTS] Provedor gratuito selecionado: Microsoft Edge Neural (pt-BR-FranciscaNeural).');
     return {
       audioBase64: edgeAudio.toString('base64'),
       audioMimeType: 'audio/mpeg',
@@ -1472,13 +1413,13 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
       provider: 'edge-tts',
     };
   } catch (edgeError) {
-    console.warn('[Aurora TTS] Edge TTS gratuito indisponível; usando Kokoro offline:', edgeError instanceof Error ? edgeError.message : String(edgeError));
+    console.warn('[Aurora TTS] Edge TTS gratuito indisponível; tentando Kokoro offline:', edgeError instanceof Error ? edgeError.message : String(edgeError));
   }
 
   try {
     const audio = await getAuroraLocalTts().synthesize(cleanText);
-    console.info('[Aurora TTS] Provedor de voz selecionado: Kokoro local (pf_dora).');
-    console.info('[Aurora Performance] Kokoro local (sem chave ElevenLabs)', {
+    console.info('[Aurora TTS] Provedor offline selecionado: Kokoro local (pf_dora).');
+    console.info('[Aurora Performance] Kokoro local após falha do Edge TTS', {
       synthesisMs: Date.now() - startedAt,
       characters: cleanText.length,
       audioBytes: audio.length,
@@ -1490,9 +1431,9 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
       provider: 'kokoro-local',
     };
   } catch (localError) {
-    const localDetail = localError instanceof Error ? localError.message : String(localError);
-    const prefix = keyError ? 'A chave da ElevenLabs não pôde ser lida: ' + keyError + '. ' : '';
-    throw new Error(prefix + 'A voz neural gratuita do Edge falhou e a voz offline Kokoro também não pôde gerar áudio: ' + localDetail);
+    const detail = localError instanceof Error ? localError.message : String(localError);
+    console.error('[Aurora TTS] Edge TTS e Kokoro local falharam:', detail);
+    throw new Error('A voz neural online gratuita falhou e a voz offline Kokoro também não pôde gerar áudio: ' + detail.slice(0, 240));
   }
 });
 
