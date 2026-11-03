@@ -965,6 +965,15 @@ export default function App() {
       if (!result?.audioBase64) throw new Error('A voz neural nao retornou audio.');
       console.info('[Aurora TTS] Áudio recebido para reprodução', { provider: result.provider || 'não informado', mimeType: result.audioMimeType || 'audio/mpeg', audioBytes: Math.floor(result.audioBase64.length * 0.75) });
       if (result.provider === 'kokoro-local' || result.provider === 'elevenlabs' || result.provider === 'edge-tts') setNotice('');
+      if (result.provider === 'coqui-xtts' && result.performance) {
+        const metrics = result.performance;
+        setCoquiTtsProgress(
+          'Coqui XTTS: síntese em ' + (metrics.synthesisMs / 1000).toFixed(2) +
+          ' s para ' + metrics.audioSeconds.toFixed(2) + ' s de áudio · carregamento do modelo: ' +
+          (metrics.modelLoadMs === null ? 'já carregado' : (metrics.modelLoadMs / 1000).toFixed(1) + ' s') +
+          ' · CPU.'
+        );
+      }
 
       const audio = new Audio('data:' + (result.audioMimeType || 'audio/mpeg') + ';base64,' + result.audioBase64);
       audioRef.current = audio;
