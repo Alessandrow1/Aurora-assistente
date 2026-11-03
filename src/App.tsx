@@ -53,6 +53,20 @@ function hasLaughingCue(text: string): boolean {
   return /(?:\b(?:kkkk+|haha+|hehe+|rsrs+)\b|\u{1F602}|\u{1F923}|\u{1F606}|\u{1F639}|\u{1F63A})/iu.test(text);
 }
 
+function normalizeSpeechText(rawText: string): string {
+  return rawText
+    .replace(/\x60{3}[\s\S]*?\x60{3}/g, ' ')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/https?:\/\/\S+/gi, ' ')
+    .replace(/[#*_>|~\x60]/g, ' ')
+    .replace(/[#*0-9]\uFE0F?\u20E3/gu, ' ')
+    .replace(/[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\uFE0E\uFE0F\u200D\u20E3]/gu, ' ')
+    .replace(/\s+([,.;:!?])/g, '$1')
+    .replace(/([,.;:!?])(?=\S)/g, '$1 ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function inferAvatarEmotion(userText: string, answer: string): AvatarEmotion {
   const input = userText.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const output = answer.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -787,6 +801,7 @@ export default function App() {
 
   const speak = async (text: string, waitForPlayback = false, resumeAfterPlayback = true) => {
     const speechTicket = voiceOutputTurnRef.current;
+    const speechText = normalizeSpeechText(text);
     pauseVoiceRecognitionForSpeech();
     if (hasLaughingCue(text)) setLaughing(true);
     audioRef.current?.pause();
@@ -805,7 +820,7 @@ export default function App() {
     });
 
     try {
-      const result = await window.aurora.speak(text);
+      const result = await window.aurora.speak(speechText);
       if (speechTicket !== voiceOutputTurnRef.current) {
         finishPlayback();
         return;
@@ -868,7 +883,7 @@ export default function App() {
       try {
         if (!('speechSynthesis' in window)) throw error;
         const synth = window.speechSynthesis;
-        const utterance = new SpeechSynthesisUtterance(text);
+        const utterance = new SpeechSynthesisUtterance(speechText);
         const voices = synth.getVoices();
         const portugueseVoice = voices.find((voice) => /^pt-BR$/i.test(voice.lang))
           || voices.find((voice) => /^pt(-|_)/i.test(voice.lang));
