@@ -37,6 +37,46 @@ type AppConfig = {
 
 type AvatarEmotion = 'neutral' | 'happy' | 'sad' | 'surprised' | 'curious' | 'angry' | 'affectionate' | 'laughing';
 
+function choosePortugueseSpeechVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
+  const brazilianVoices = voices.filter((voice) => /^pt-BR$/i.test(voice.lang));
+  const preferredBrazilianVoice = brazilianVoices.find((voice) =>
+    /francisca|antonio|maria|fernanda|luciana/i.test(voice.name)
+  );
+  if (preferredBrazilianVoice) return preferredBrazilianVoice;
+  if (brazilianVoices.length) return brazilianVoices[0];
+
+  const portugueseVoices = voices.filter((voice) => /^pt(?:-|_)/i.test(voice.lang));
+  return portugueseVoices.find((voice) =>
+    /portugal|portuguese|portugues/i.test(voice.name)
+  ) || portugueseVoices[0] || null;
+}
+
+async function waitForPortugueseSpeechVoice(
+  synth: SpeechSynthesis,
+  timeoutMs = 1200,
+): Promise<SpeechSynthesisVoice | null> {
+  const select = () => choosePortugueseSpeechVoice(synth.getVoices());
+  const initialVoice = select();
+  if (initialVoice) return initialVoice;
+
+  return await new Promise((resolve) => {
+    let settled = false;
+    const finish = (voice: SpeechSynthesisVoice | null) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      synth.removeEventListener('voiceschanged', onVoicesChanged);
+      resolve(voice);
+    };
+    const onVoicesChanged = () => {
+      const voice = select();
+      if (voice) finish(voice);
+    };
+    const timeout = window.setTimeout(() => finish(select()), timeoutMs);
+    synth.addEventListener('voiceschanged', onVoicesChanged);
+  });
+}
+
 // Pausa curta para encerrar a fala sem acrescentar espera desnecessária antes do Whisper.
 const VOICE_END_SILENCE_MS = 550;
 
@@ -961,11 +1001,17 @@ export default function App() {
         if (!('speechSynthesis' in window)) throw error;
         const synth = window.speechSynthesis;
         const utterance = new SpeechSynthesisUtterance(speechText);
-        const voices = synth.getVoices();
-        const portugueseVoice = voices.find((voice) => /^pt-BR$/i.test(voice.lang))
-          || voices.find((voice) => /^pt(-|_)/i.test(voice.lang));
+        const portugueseVoice = await waitForPortugueseSpeechVoice(synth);
+        const availableVoices = synth.getVoices();
         utterance.lang = 'pt-BR';
         if (portugueseVoice) utterance.voice = portugueseVoice;
+        console.warn('[Aurora TTS] Voz de emergência do Windows selecionada', {
+          voiceName: portugueseVoice?.name || 'padrão do sistema',
+          voiceLanguage: portugueseVoice?.lang || 'não identificada',
+          voiceURI: portugueseVoice?.voiceURI || null,
+          portugueseVoicesAvailable: availableVoices.filter((voice) => /^pt(?:-|_)/i.test(voice.lang)).map((voice) => ({ name: voice.name, lang: voice.lang })),
+          reason: 'ElevenLabs/Kokoro não entregaram áudio',
+        });
         utterance.rate = 1;
         utterance.pitch = 1.04;
         utterance.onend = () => {
@@ -1372,6 +1418,12 @@ export default function App() {
       /\b(?:voce )?(?:ta|esta) (?:me|meu|mim) (?:ouvindo|ouvido|vindo|ouvir|ouve|escutando|escuta)\b/.test(text);
     if (hearingCheck) {
       return 'Tô te ouvindo, sim. Pode falar, criatura.';
+    }
+    if (/^(?:tudo bem|ta tudo bem|esta tudo bem|ta tudo certo|esta tudo certo|como voce esta|como vai voce)[!.? ]*$/.test(text)) {
+      return 'Tudo bem por aqui! Tô aqui fazendo companhia. E você, como tá?';
+    }
+    if (/^(?:eu )?(?:to|estou)(?: no (?:computador|pc))? (?:sem fazer nada|a toa|atoa|de bobeira)[!.? ]*$/.test(text)) {
+      return 'Então bora sair do modo descanso. KKKK. Quer mexer em algum projeto, jogar alguma coisa ou só ficar de papo comigo?';
     }
 
     // Autodescricao deterministica: evita que modelos pequenos inventem corpo, sentimentos ou capacidades.
