@@ -56,7 +56,7 @@ contextBridge.exposeInMainWorld('aurora', {
       .finally(() => ipcRenderer.removeListener('aurora:chat-chunk', listener));
   },
   cancelChat: (requestId) => ipcRenderer.send('aurora:chat-cancel', requestId),
-  speak: (text) => ipcRenderer.invoke('aurora:speak', text),
+  speak: (text, options) => ipcRenderer.invoke('aurora:speak', text, options),
   startSpeakSession: () => ipcRenderer.invoke('aurora:speak-session-start'),
   endSpeakSession: () => ipcRenderer.invoke('aurora:speak-session-end'),
   transcribeAudio: (samples) => ipcRenderer.invoke('aurora:transcribe-audio', samples),
