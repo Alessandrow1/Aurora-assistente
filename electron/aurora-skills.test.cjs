@@ -59,6 +59,12 @@ test('always activates identity and selects avatar, desktop and file skills when
   const time = selectSkills({ message: 'Que horas são agora?' });
   assert.ok(time.ids.includes('computer-environment'));
 
+  const casualToday = selectSkills({ message: 'O que vamos fazer hoje?' });
+  assert.equal(casualToday.ids.includes('computer-environment'), false);
+
+  const explicitDate = selectSkills({ message: 'Que dia é hoje?' });
+  assert.ok(explicitDate.ids.includes('computer-environment'));
+
   const overview = selectSkills({ message: 'Quais skills você tem?' });
   assert.ok(overview.ids.includes('skills-overview'));
 });
