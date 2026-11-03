@@ -1120,7 +1120,7 @@ export default function App() {
       }
 
       const normalizedUserRequest = text.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      const selfVisualRequest = /\b(como voce e|como e seu avatar|qual e sua aparencia|descreva sua aparencia|fale sobre sua aparencia|como voce aparece|como voce se parece|olha pra voce|olhe para voce|olha para voce|veja seu avatar|se veja|se olhe|esta sorrindo|esta fazendo qual expressao|qual expressao voce esta|como esta sua expressao|o que voce esta vestindo|o que voce esta usando|como e seu cabelo|como e seu rosto)\b/.test(normalizedUserRequest);
+      const selfVisualRequest = /\b(como voce e|como voce ta|como e seu avatar|qual e sua aparencia|descreva sua aparencia|fale sobre sua aparencia|como voce aparece|como voce se parece|olha pra voce|olhe para voce|olha para voce|veja seu avatar|se veja|se olhe|esta sorrindo|esta fazendo qual expressao|qual expressao voce esta|como esta sua expressao|o que voce (?:esta|ta) vestindo|o que voce (?:esta|ta) usando|como e seu cabelo|como e seu rosto|essa e voce|essa personagem e voce|sua boneca|sua personagem)\b/.test(normalizedUserRequest);
       const quickReply = selfVisualRequest ? null : await runQuickCommand(text);
       if (quickReply) {
         setEmotion(inferAvatarEmotion(text, quickReply));
