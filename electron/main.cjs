@@ -744,6 +744,8 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
     needsThinking,
     needsExplanation,
     needsFactualKnowledge,
+    needsStoredContext,
+    hasImage: Boolean(imageBase64),
     studyMode,
     settingsModel: settings.model,
   });
