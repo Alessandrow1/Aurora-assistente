@@ -1268,10 +1268,12 @@ export default function App() {
           const wordCount = candidate.split(/\s+/).filter(Boolean).length;
           const sentenceEnded = /[.!?…]+$/.test(candidate);
           const clauseEnded = /[,;:]$/.test(candidate);
+          // Interjeições curtas também precisam chegar à voz, mesmo sem quatro palavras.
+          const expressiveEnding = /(?:^|\s)(?:hã|tch|tchi)[!?…]*$/iu.test(candidate);
           // Frases completas podem sair cedo; vírgulas só dividem cláusulas realmente longas.
-          const readyToSpeak = sentenceEnded
+          const readyToSpeak = expressiveEnding || (sentenceEnded
             ? wordCount >= 4 && candidate.length >= 16
-            : clauseEnded && wordCount >= 9 && candidate.length >= 42;
+            : clauseEnded && wordCount >= 9 && candidate.length >= 42);
           if (readyToSpeak) {
             enqueueSpeech(candidate);
             cursor = end;
