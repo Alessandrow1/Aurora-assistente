@@ -152,7 +152,7 @@ test('requires a meaningful query before scanning', async () => {
   assert.equal(result.scannedEntries, 0);
 });
 
-test('loads a short private profile summary by default and the full dossier only on personal questions', async () => {
+test('keeps the private profile out of casual turns and loads the full dossier only on personal questions', async () => {
   const profilePath = path.join(paths.userData, 'aurora-user-profile.md');
   await fs.writeFile(
     profilePath,
@@ -161,11 +161,12 @@ test('loads a short private profile summary by default and the full dossier only
   );
 
   const casual = await skills.loadSkills([]);
-  assert.equal(casual.some((item) => item.id === 'user-profile-summary'), true);
+  assert.equal(casual.some((item) => item.id === 'user-profile-summary'), false);
   assert.equal(casual.some((item) => item.id === 'user-profile'), false);
 
   const personal = await skills.loadSkills(['user-profile']);
   const dossier = personal.find((item) => item.id === 'user-profile');
   assert.ok(dossier);
   assert.match(dossier.content, /Dado detalhado: teste privado/);
+  assert.equal(personal.some((item) => item.id === 'user-profile-summary'), false);
 });
