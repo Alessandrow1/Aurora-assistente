@@ -71,6 +71,50 @@ function hasSpeakableSpeechText(text: string): boolean {
   return /[\p{L}\p{N}]/u.test(text);
 }
 
+function prepareVoiceAudio(rawSamples: Float32Array) {
+  const samples = new Float32Array(rawSamples.length);
+  if (rawSamples.length === 0) {
+    return { samples, rmsBefore: 0, peakBefore: 0, gain: 1, rmsAfter: 0 };
+  }
+
+  let mean = 0;
+  for (let index = 0; index < rawSamples.length; index += 1) mean += rawSamples[index];
+  mean /= rawSamples.length;
+
+  let sumSquares = 0;
+  let peak = 0;
+  for (let index = 0; index < rawSamples.length; index += 1) {
+    const centered = rawSamples[index] - mean;
+    sumSquares += centered * centered;
+    peak = Math.max(peak, Math.abs(centered));
+  }
+
+  const rms = Math.sqrt(sumSquares / rawSamples.length);
+  if (!Number.isFinite(rms) || rms < 0.003 || peak < 0.01) {
+    samples.set(rawSamples);
+    return { samples, rmsBefore: rms || 0, peakBefore: peak, gain: 1, rmsAfter: rms || 0 };
+  }
+
+  // Compensa microfones baixos sem amplificar silêncio indefinidamente nem estourar picos.
+  const targetRms = 0.12;
+  const normalizationGain = Math.min(4, targetRms / rms);
+  const peakLimiterGain = peak > 0 ? 0.96 / peak : 4;
+  const gain = Math.min(normalizationGain, peakLimiterGain);
+
+  for (let index = 0; index < rawSamples.length; index += 1) {
+    const amplified = (rawSamples[index] - mean) * gain;
+    samples[index] = Math.max(-0.98, Math.min(0.98, amplified));
+  }
+
+  return {
+    samples,
+    rmsBefore: rms,
+    peakBefore: peak,
+    gain,
+    rmsAfter: rms * gain,
+  };
+}
+
 function inferAvatarEmotion(userText: string, answer: string): AvatarEmotion {
   const input = userText.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const output = answer.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -423,15 +467,20 @@ export default function App() {
     setListening(false);
     setTranscribingVoice(true);
     setNotice('Transcrevendo sua fala localmente…');
-    console.info('[Aurora Performance] Silero VAD', {
+    const preparedAudio = prepareVoiceAudio(samples);
+    console.info('[Aurora Performance] Silero VAD / ganho de microfone', {
       audioSeconds: Number((samples.length / 16000).toFixed(2)),
       sampleRate: 16000,
+      rmsBefore: Number(preparedAudio.rmsBefore.toFixed(4)),
+      peakBefore: Number(preparedAudio.peakBefore.toFixed(4)),
+      gainApplied: Number(preparedAudio.gain.toFixed(2)),
+      rmsAfter: Number(preparedAudio.rmsAfter.toFixed(4)),
     });
     void (async () => {
       try {
         if (samples.length < 4000) throw new Error('A fala ficou muito curta. Tente falar um pouco mais.');
         if (samples.length > 16000 * 45) throw new Error('A fala passou de 45 segundos. Divida a mensagem.');
-        const result = await window.aurora.transcribeAudio(samples);
+        const result = await window.aurora.transcribeAudio(preparedAudio.samples);
         const transcript = result?.text?.trim() || '';
         if (!voiceModeRef.current) return;
         if (!transcript) {
@@ -503,7 +552,7 @@ export default function App() {
         setNotice('Carregando detector neural de fala…');
         const { MicVAD } = await import('@ricky0123/vad-web');
         const assetBasePath = new URL(`${import.meta.env.BASE_URL}aurora-vad/`, window.location.href).toString();
-        const getVoiceStream = () => {
+        const getVoiceStream = async () => {
           const audio: MediaTrackConstraints = {
             channelCount: { ideal: 1 },
             sampleRate: { ideal: 48000 },
@@ -514,7 +563,18 @@ export default function App() {
           if (microphoneIdRef.current && microphoneIdRef.current !== 'default') {
             audio.deviceId = { exact: microphoneIdRef.current };
           }
-          return navigator.mediaDevices.getUserMedia({ audio });
+          const stream = await navigator.mediaDevices.getUserMedia({ audio });
+          const track = stream.getAudioTracks()[0];
+          const settings = track?.getSettings();
+          console.info('[Aurora Microphone] Entrada ativa', {
+            label: track?.label || 'Microfone padrão',
+            sampleRate: settings?.sampleRate || null,
+            channels: settings?.channelCount || null,
+            echoCancellation: settings?.echoCancellation ?? null,
+            noiseSuppression: settings?.noiseSuppression ?? null,
+            autoGainControl: settings?.autoGainControl ?? null,
+          });
+          return stream;
         };
         const vad = await MicVAD.new({
           startOnLoad: false,
@@ -522,11 +582,11 @@ export default function App() {
           processorType: 'AudioWorklet',
           baseAssetPath: assetBasePath,
           onnxWASMBasePath: assetBasePath,
-          positiveSpeechThreshold: 0.42,
-          negativeSpeechThreshold: 0.30,
-          redemptionMs: 500,
-          preSpeechPadMs: 450,
-          minSpeechMs: 250,
+          positiveSpeechThreshold: 0.34,
+          negativeSpeechThreshold: 0.22,
+          redemptionMs: 750,
+          preSpeechPadMs: 700,
+          minSpeechMs: 280,
           getStream: getVoiceStream,
           resumeStream: getVoiceStream,
           onSpeechStart: () => {
@@ -711,8 +771,15 @@ export default function App() {
               pcm16k = resampledAudio.getChannelData(0).slice();
             }
 
+            const preparedAudio = prepareVoiceAudio(pcm16k);
+            console.info('[Aurora Performance] Ganho de microfone (captura reserva)', {
+              rmsBefore: Number(preparedAudio.rmsBefore.toFixed(4)),
+              peakBefore: Number(preparedAudio.peakBefore.toFixed(4)),
+              gainApplied: Number(preparedAudio.gain.toFixed(2)),
+              rmsAfter: Number(preparedAudio.rmsAfter.toFixed(4)),
+            });
             setNotice('Transcrevendo no proprio computador…');
-            const result = await window.aurora.transcribeAudio(pcm16k);
+            const result = await window.aurora.transcribeAudio(preparedAudio.samples);
             const transcript = result?.text?.trim() || '';
 
             if (!voiceModeRef.current) return;
