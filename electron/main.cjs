@@ -11,6 +11,7 @@ const { createAuroraStore } = require('./aurora-store.cjs');
 const { createAuroraImageGenerator } = require('./aurora-image-generator.cjs');
 const { createAuroraLocalTts } = require('./aurora-local-tts.cjs');
 const { createAuroraSkills } = require('./aurora-skills.cjs');
+const { createEdgeTtsSpeech } = require('./aurora-edge-tts.cjs');
 const { choosePreferredModel, isElevenLabsQuotaExceeded, normalizeVoiceTranscript, isVoiceHearingCheck } = require('./aurora-voice.cjs');
 
 const OLLAMA_URL = 'http://127.0.0.1:11434';
@@ -44,6 +45,7 @@ let mainWindow;
 let activeElevenLabsStreamSession = null;
 let elevenLabsQuotaExhausted = false;
 let auroraLocalTts = null;
+let auroraEdgeTts = null;
 const activeChatControllers = new Map();
 
 function reportTtsStatus(status) {
@@ -1080,6 +1082,20 @@ async function synthesizeElevenLabsSpeech(text, apiKey) {
   return audio;
 }
 
+async function synthesizeEdgeTtsSpeech(text) {
+  if (!auroraEdgeTts) auroraEdgeTts = createEdgeTtsSpeech();
+  const startedAt = Date.now();
+  const audio = await auroraEdgeTts.synthesize(text);
+  console.info('[Aurora Performance] Microsoft Edge neural TTS', {
+    synthesisMs: Date.now() - startedAt,
+    characters: text.length,
+    audioBytes: audio.length,
+    voice: 'pt-BR-FranciscaNeural',
+    transport: 'WebSocket stream; frase completa enviada ao renderer',
+  });
+  return audio;
+}
+
 function pcm24KhzToWav(pcmBytes) {
   const pcm = Buffer.from(pcmBytes);
   const header = Buffer.alloc(44);
@@ -1395,9 +1411,21 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
       const detail = error instanceof Error ? error.message : String(error);
       if (isElevenLabsQuotaExceeded(detail)) {
         elevenLabsQuotaExhausted = true;
-        console.warn('[Aurora TTS] Cota da ElevenLabs esgotada. Vou pular novas tentativas deste serviço nesta sessão e usar Kokoro local.');
+        console.warn('[Aurora TTS] Cota da ElevenLabs esgotada. Vou pular novas tentativas deste serviço nesta sessão e usar a voz neural gratuita do Edge.');
       }
-      console.warn('[Aurora TTS] ElevenLabs indisponível; tentando Kokoro local:', detail);
+      console.warn('[Aurora TTS] ElevenLabs indisponível; tentando voz neural gratuita do Edge:', detail);
+      try {
+        const edgeAudio = await synthesizeEdgeTtsSpeech(cleanText);
+        return {
+          audioBase64: edgeAudio.toString('base64'),
+          audioMimeType: 'audio/mpeg',
+          voice: 'pt-BR-FranciscaNeural',
+          provider: 'edge-tts',
+          fallbackReason: detail.slice(0, 220),
+        };
+      } catch (edgeError) {
+        console.warn('[Aurora TTS] Edge TTS indisponível; tentando Kokoro offline:', edgeError instanceof Error ? edgeError.message : String(edgeError));
+      }
       try {
         const localEngine = getAuroraLocalTts();
         const localStatus = await localEngine.getStatus();
@@ -1426,6 +1454,19 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
   }
 
   try {
+    const edgeAudio = await synthesizeEdgeTtsSpeech(cleanText);
+    console.info('[Aurora TTS] Provedor de voz selecionado: Microsoft Edge Neural (pt-BR-FranciscaNeural).');
+    return {
+      audioBase64: edgeAudio.toString('base64'),
+      audioMimeType: 'audio/mpeg',
+      voice: 'pt-BR-FranciscaNeural',
+      provider: 'edge-tts',
+    };
+  } catch (edgeError) {
+    console.warn('[Aurora TTS] Edge TTS gratuito indisponível; usando Kokoro offline:', edgeError instanceof Error ? edgeError.message : String(edgeError));
+  }
+
+  try {
     const audio = await getAuroraLocalTts().synthesize(cleanText);
     console.info('[Aurora TTS] Provedor de voz selecionado: Kokoro local (pf_dora).');
     console.info('[Aurora Performance] Kokoro local (sem chave ElevenLabs)', {
@@ -1442,7 +1483,7 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
   } catch (localError) {
     const localDetail = localError instanceof Error ? localError.message : String(localError);
     const prefix = keyError ? 'A chave da ElevenLabs não pôde ser lida: ' + keyError + '. ' : '';
-    throw new Error(prefix + localDetail);
+    throw new Error(prefix + 'A voz neural gratuita do Edge falhou e a voz offline Kokoro também não pôde gerar áudio: ' + localDetail);
   }
 });
 
