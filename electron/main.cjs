@@ -12,7 +12,7 @@ const { createAuroraLocalTts } = require('./aurora-local-tts.cjs');
 
 const OLLAMA_URL = 'http://127.0.0.1:11434';
 const ELEVENLABS_VOICE_ID = '29BpZaywSObgMLvRvBhB';
-const ELEVENLABS_MODEL_ID = 'eleven_v4_turbo';
+const ELEVENLABS_MODEL_ID = 'eleven_flash_v2_5';
 const ELEVENLABS_OUTPUT_FORMAT = 'mp3_44100_128';
 // AURORA_ELEVENLABS_TTS: credencial cifrada pelo DPAPI do Windows via Electron safeStorage.
 const elevenLabsKeyPath = () => path.join(app.getPath('userData'), 'elevenlabs-api-key.bin');
@@ -966,7 +966,8 @@ async function synthesizeElevenLabsDialogue(text, apiKey) {
   if (!cleanInput) throw new Error('O texto ficou vazio depois de remover emojis e formatação.');
 
   const startedAt = Date.now();
-  const endpoint = 'https://api.elevenlabs.io/v1/text-to-dialogue?output_format=' +
+  const endpoint = 'https://api.elevenlabs.io/v1/text-to-speech/' +
+    encodeURIComponent(ELEVENLABS_VOICE_ID) + '?output_format=' +
     encodeURIComponent(ELEVENLABS_OUTPUT_FORMAT);
   const response = await fetch(endpoint, {
     method: 'POST',
@@ -977,10 +978,10 @@ async function synthesizeElevenLabsDialogue(text, apiKey) {
     },
     signal: AbortSignal.timeout(90000),
     body: JSON.stringify({
+      text: cleanInput,
       model_id: ELEVENLABS_MODEL_ID,
       language_code: 'pt',
       apply_text_normalization: 'auto',
-      inputs: [{ text: cleanInput, voice_id: ELEVENLABS_VOICE_ID }],
     }),
   });
 
@@ -995,12 +996,13 @@ async function synthesizeElevenLabsDialogue(text, apiKey) {
     throw new Error('ElevenLabs não retornou um arquivo de áudio válido.');
   }
 
-  console.info('[Aurora Performance] ElevenLabs HTTP diálogo', {
+  console.info('[Aurora Performance] ElevenLabs HTTP TTS', {
     synthesisMs: Date.now() - startedAt,
     characters: cleanInput.length,
     audioBytes: audio.length,
     contentType: contentType || 'não informado',
-    transport: 'HTTP arquivo completo; sem concatenação WebSocket',
+    modelId: ELEVENLABS_MODEL_ID,
+    transport: 'HTTP TTS; arquivo MP3 completo',
   });
   return audio;
 }
