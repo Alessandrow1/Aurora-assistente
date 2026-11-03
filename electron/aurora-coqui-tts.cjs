@@ -12,11 +12,15 @@ function createAuroraCoquiTts({
   onStatus = () => {},
 } = {}) {
   if (!app && !rootDirectory) throw new Error('Informe o diretório de dados da Aurora para o Coqui.');
-  const root = rootDirectory || path.join(app.getPath('userData'), 'coqui-xtts');
+  const defaultRoot = process.platform === 'win32' && process.env.LOCALAPPDATA
+    ? path.join(process.env.LOCALAPPDATA, 'Aurora', 'coqui-xtts')
+    : path.join(app ? app.getPath('userData') : os.tmpdir(), 'coqui-xtts');
+  const root = process.env.AURORA_COQUI_HOME || rootDirectory || defaultRoot;
   const pythonPath = process.platform === 'win32'
     ? path.join(root, 'venv', 'Scripts', 'python.exe')
     : path.join(root, 'venv', 'bin', 'python');
   const acceptancePath = path.join(root, 'CPML-ACCEPTED.txt');
+  const installedMarkerPath = path.join(root, 'ENV-READY.txt');
   const resolvedWorkerPath = workerPath || path.join(__dirname, '..', 'tools', 'coqui-xtts', 'worker.py');
 
   let child = null;
@@ -35,7 +39,7 @@ function createAuroraCoquiTts({
       try { return fs.readFileSync(acceptancePath, 'utf8'); } catch { return ''; }
     })();
     return {
-      installed: fs.existsSync(pythonPath),
+      installed: fs.existsSync(pythonPath) && fs.existsSync(installedMarkerPath),
       licenseAccepted: /CPML ACCEPTED BY USER/i.test(licenseText),
       ready: workerReady,
       modelLoaded,
