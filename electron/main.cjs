@@ -730,7 +730,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   const needsStoredContext = skillSelection.userProfileIntent || /\b(lembra|lembre|lembranca|memoria|historico|conversamos|falamos|antes|retomar|continuar|documento|documentos|biblioteca|arquivo|pdf|material|anotado|guardado|salvo|salva|qual era|o que combinamos|o que conversamos|meu objetivo|minha meta|meu projeto|minha ideia|nosso projeto|nossa ideia)\b/i.test(normalizedRequest);
   const needsThinking = studyMode || needsReasoning || asksForLongResponse;
   const casualVoiceTurn = voiceMode && !studyMode && !imageBase64 && !needsThinking && !needsExplanation && !needsFactualKnowledge && !needsStoredContext;
-  // Todas as falas casuais usam o modelo 2B; 9B fica reservado para explicações, fatos, memória e raciocínio.
+  // O prompt compacto é usado em conversa casual; o 4B é o modelo de conversa preferido.
   const fastVoiceTurn = casualVoiceTurn;
   const quickVoiceTurn = fastVoiceTurn && (isVoiceHearingCheck(message) || /^(?:(?:oi|ola|opa|e ai|alo|aloo)(?: bom dia| boa tarde| boa noite)?|bom dia|boa tarde|boa noite|sim|nao|ta|beleza|certo|entendi|valeu|obrigado|obrigada|show|ok|okay|aham|uhum|pois e|legal)$/.test(normalizedRequest));
   const modelInstalled = (name) => ollama.models.some((installed) => installed === name || installed.startsWith(name + '-'));
@@ -1341,14 +1341,14 @@ ipcMain.handle('aurora:tts-install', async () => {
   return await engine.getStatus();
 });
 
-// A voz neural principal usa ElevenLabs; o Kokoro fica como alternativa local.
+// ElevenLabs é opcional/premium; Edge Neural é a opção gratuita online e Kokoro é o fallback offline.
 ipcMain.handle('aurora:speak-session-start', async () => {
-  // Diagnóstico de áudio: usa o endpoint HTTP TTS e recebe um MP3 completo.
+  // A fala é sintetizada por frase; o Edge TTS recebe cada frase pelo serviço online.
   const previous = activeElevenLabsStreamSession;
   activeElevenLabsStreamSession = null;
   if (previous) await previous.close().catch(() => undefined);
-  console.info('[Aurora TTS] Modo de diagnóstico ativo: HTTP TTS com MP3 completo.');
-  return { active: false, provider: 'elevenlabs-http' };
+  console.info('[Aurora TTS] Pronto para síntese neural por frase; Edge TTS fica disponível sem créditos.');
+  return { active: false, provider: 'edge-tts' };
 });
 
 ipcMain.handle('aurora:speak-session-end', async () => {
