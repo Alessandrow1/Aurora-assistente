@@ -67,6 +67,10 @@ test('always activates identity and selects avatar, desktop and file skills when
   assert.ok(personalProfile.ids.includes('user-profile'));
   assert.equal(personalProfile.userProfileIntent, true);
 
+  const personalCar = selectSkills({ message: 'Qual carro eu tenho?' });
+  assert.ok(personalCar.ids.includes('user-profile'));
+  assert.equal(personalCar.userProfileIntent, true);
+
   const idleAtPc = selectSkills({ message: 'Eu estou no computador sem fazer nada.' });
   assert.equal(idleAtPc.ids.includes('computer-environment'), false);
 
