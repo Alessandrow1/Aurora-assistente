@@ -1105,7 +1105,7 @@ async function synthesizeEdgeTtsSpeech(text) {
     synthesisMs: Date.now() - startedAt,
     characters: text.length,
     audioBytes: audio.length,
-    voice: 'pt-BR-FranciscaNeural',
+    voice: 'pt-BR-ThalitaMultilingualNeural',
     transport: 'WebSocket stream; frase completa enviada ao renderer',
   });
   return audio;
@@ -1411,11 +1411,11 @@ ipcMain.handle('aurora:speak', async (_event, rawText, options = {}) => {
   // Caminho padrão gratuito: Edge Neural online, sem conta nem créditos.
   try {
     const edgeAudio = await synthesizeEdgeTtsSpeech(cleanText);
-    console.info('[Aurora TTS] Provedor gratuito selecionado: Microsoft Edge Neural (pt-BR-FranciscaNeural).');
+    console.info('[Aurora TTS] Provedor gratuito selecionado: Microsoft Edge Neural (pt-BR-ThalitaMultilingualNeural).');
     return {
       audioBase64: edgeAudio.toString('base64'),
       audioMimeType: 'audio/mpeg',
-      voice: 'pt-BR-FranciscaNeural',
+      voice: 'pt-BR-ThalitaMultilingualNeural',
       provider: 'edge-tts',
     };
   } catch (edgeError) {
