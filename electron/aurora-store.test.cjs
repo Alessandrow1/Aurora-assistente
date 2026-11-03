@@ -117,6 +117,25 @@ test('rejects unsupported files and oversized document payloads', async () => {
   );
 });
 
+test('uses lexical-only memory lookup without an Ollama embedding request', async () => {
+  let requestCount = 0;
+  global.fetch = async () => {
+    requestCount += 1;
+    throw new Error('A busca lexical não deve chamar o Ollama.');
+  };
+
+  const memories = [
+    { id: 'drink-project', content: 'O projeto Dr!nk é um serviço de motorista designado.' },
+    { id: 'study-goal', content: 'Estou estudando para um concurso público.' },
+  ];
+
+  const results = await store.searchMemories('projeto Dr!nk', memories, 2, { semantic: false });
+
+  assert.equal(requestCount, 0);
+  assert.equal(results.length, 1);
+  assert.equal(results[0].id, 'drink-project');
+});
+
 test('requires protected storage before writing encrypted records', async () => {
   const unavailableStore = createAuroraStore({
     app: { getPath: () => root },
