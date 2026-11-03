@@ -8,6 +8,7 @@ As habilidades da Aurora são arquivos Markdown locais carregados pelo núcleo E
 - `live2d-self-perception/SKILL.md`: observação do próprio avatar a partir de uma captura real do canvas Live2D.
 - `computer-environment/SKILL.md`: data/hora local, sistema operacional, recursos e limites de percepção do computador.
 - `file-finder/SKILL.md`: busca de nomes de arquivos e pastas nas pastas pessoais autorizadas.
+- `skills-overview/SKILL.md`: catálogo real das habilidades instaladas e seus limites.
 
 ## Como adicionar uma habilidade interna
 
