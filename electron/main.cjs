@@ -11,7 +11,7 @@ const { createAuroraStore } = require('./aurora-store.cjs');
 const { createAuroraImageGenerator } = require('./aurora-image-generator.cjs');
 const { createAuroraLocalTts } = require('./aurora-local-tts.cjs');
 const { createAuroraSkills } = require('./aurora-skills.cjs');
-const { choosePreferredModel, normalizeVoiceTranscript, isVoiceHearingCheck } = require('./aurora-voice.cjs');
+const { choosePreferredModel, isElevenLabsQuotaExceeded, normalizeVoiceTranscript, isVoiceHearingCheck } = require('./aurora-voice.cjs');
 
 const OLLAMA_URL = 'http://127.0.0.1:11434';
 const ELEVENLABS_VOICE_ID = '29BpZaywSObgMLvRvBhB';
@@ -1388,7 +1388,7 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
       };
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
-      if (/quota_exceeded|exceeds your quota|credits remaining/i.test(detail)) {
+      if (isElevenLabsQuotaExceeded(detail)) {
         elevenLabsQuotaExhausted = true;
         console.warn('[Aurora TTS] Cota da ElevenLabs esgotada. Vou pular novas tentativas deste serviço nesta sessão e usar Kokoro local.');
       }
@@ -1398,6 +1398,7 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
         const localStatus = await localEngine.getStatus();
         if (!localStatus.installed) throw new Error('Kokoro local não está instalado. Instale a voz local nas Configurações.');
         const localAudio = await localEngine.synthesize(cleanText);
+        console.info('[Aurora TTS] Provedor de voz selecionado: Kokoro local (pf_dora).');
         console.info('[Aurora Performance] Kokoro local após falha da ElevenLabs', {
           synthesisMs: Date.now() - startedAt,
           characters: cleanText.length,
@@ -1412,7 +1413,7 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
         };
       } catch (localError) {
         const localDetail = localError instanceof Error ? localError.message : String(localError);
-        console.error('[Aurora TTS] Kokoro local também falhou:', localDetail);
+        console.error('[Aurora TTS] Kokoro local também falhou; a interface poderá tentar a voz de emergência do Windows:', localDetail);
         throw new Error('ElevenLabs falhou: ' + detail.slice(0, 220) +
           '. Kokoro local também não pôde gerar áudio: ' + localDetail.slice(0, 180));
       }
@@ -1421,6 +1422,7 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
 
   try {
     const audio = await getAuroraLocalTts().synthesize(cleanText);
+    console.info('[Aurora TTS] Provedor de voz selecionado: Kokoro local (pf_dora).');
     console.info('[Aurora Performance] Kokoro local (sem chave ElevenLabs)', {
       synthesisMs: Date.now() - startedAt,
       characters: cleanText.length,
