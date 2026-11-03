@@ -728,6 +728,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   const needsExplanation = /\b(por que|porque|explique|explicar|como funciona|o que significa|qual a diferenca|como acontece|causa|consequencia)\b/i.test(normalizedRequest);
   const needsFactualKnowledge = /\b(quem e|quem foi|o que e|o que foi|de onde e|onde fica|quando nasceu|quantos anos tem|qual a profissao|qual o trabalho de|me fala sobre|fale sobre|me conta sobre)\b/i.test(normalizedRequest);
   const needsStoredContext = skillSelection.userProfileIntent || /\b(lembra|lembre|lembranca|memoria|historico|conversamos|falamos|antes|retomar|continuar|documento|documentos|biblioteca|arquivo|pdf|material|anotado|guardado|salvo|salva|qual era|o que combinamos|o que conversamos|meu objetivo|minha meta|meu projeto|minha ideia|nosso projeto|nossa ideia)\b/i.test(normalizedRequest);
+  const conciseVoiceTurn = voiceMode && !asksForLongResponse && !needsStoredContext && !imageBase64;
   const needsThinking = studyMode || needsReasoning || asksForLongResponse;
   const casualVoiceTurn = voiceMode && !studyMode && !imageBase64 && !needsThinking && !needsExplanation && !needsFactualKnowledge && !needsStoredContext;
   // O prompt compacto é usado em conversa casual; o 4B é o modelo de conversa preferido.
@@ -738,6 +739,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   // Estudo, explicações, fatos e perguntas de memória continuam no modelo maior.
   const preferredModel = choosePreferredModel({
     fastVoiceTurn,
+    conciseVoiceTurn,
     voiceMode,
     needsThinking,
     needsExplanation,
@@ -810,7 +812,6 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
       : []),
   ].join('\n\n');
 
-  const conciseVoiceTurn = voiceMode && !asksForLongResponse;
   const numPredict = conciseVoiceTurn
     ? (studyMode || imageBase64 ? 128 : 96)
     : studyMode ? (imageBase64 ? 800 : 1200) : imageBase64 ? 650 : asksForLongResponse ? 1500 : needsReasoning ? 1100 : needsExplanation ? 520 : quickVoiceTurn ? 24 : fastVoiceTurn ? 44 : voiceMode ? 160 : 200;
