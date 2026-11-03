@@ -64,11 +64,13 @@ function choosePreferredModel({
   needsThinking = false,
   needsExplanation = false,
   needsFactualKnowledge = false,
+  needsStoredContext = false,
+  hasImage = false,
   studyMode = false,
   settingsModel = 'qwen3.5:9b',
 } = {}) {
   if (fastVoiceTurn) return 'qwen3.5:2b';
-  if (voiceMode && !needsThinking && !needsExplanation && !needsFactualKnowledge && !studyMode) {
+  if (voiceMode && !needsThinking && !needsExplanation && !needsFactualKnowledge && !needsStoredContext && !hasImage && !studyMode) {
     return voiceConversationModel;
   }
   if (voiceMode || needsThinking || needsExplanation || needsFactualKnowledge || studyMode) {
