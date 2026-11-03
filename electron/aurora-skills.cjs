@@ -50,7 +50,7 @@ function extractFileSearchQuery(message) {
 function selectSkills({ message = '', avatarImageAttached = false } = {}) {
   const normalized = normalizeSearchText(message);
   const ids = ['aurora-identity'];
-  const ownAvatarIntent = avatarImageAttached || /\b(como voce e|como e seu avatar|qual e sua aparencia|descreva sua aparencia|fale sobre sua aparencia|como voce aparece|como voce se parece|olha pra voce|olhe para voce|veja seu avatar|se veja|se olhe|o que voce esta vestindo|o que voce esta usando|como e seu cabelo|como e seu rosto|qual expressao voce esta)\b/.test(normalized);
+  const ownAvatarIntent = avatarImageAttached || /\b(como voce e|como voce ta|como e seu avatar|qual e sua aparencia|descreva sua aparencia|fale sobre sua aparencia|como voce aparece|como voce se parece|olha pra voce|olhe para voce|veja seu avatar|se veja|se olhe|o que voce (?:esta|ta) vestindo|o que voce (?:esta|ta) usando|como e seu cabelo|como e seu rosto|qual expressao voce esta|essa e voce|essa personagem e voce|seu modelo live2d|sua boneca|sua personagem)\b/.test(normalized);
   const desktopIntent = /\b(hora|horario|data de hoje|que dia e hoje|dia de hoje|computador|windows|sistema operacional|sistema do pc|memoria ram|processador|espaco em disco|desktop|area de trabalho|pasta|arquivo|programa|aplicativo|janela|tela)\b/.test(normalized);
   const fileSearchQuery = extractFileSearchQuery(message);
 
