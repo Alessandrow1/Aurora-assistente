@@ -68,7 +68,7 @@ function normalizeSpeechText(rawText: string): string {
 }
 
 function hasSpeakableSpeechText(text: string): boolean {
-  return /[\\p{L}\\p{N}]/u.test(text);
+  return /[\p{L}\p{N}]/u.test(text);
 }
 
 function inferAvatarEmotion(userText: string, answer: string): AvatarEmotion {
