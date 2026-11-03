@@ -371,14 +371,18 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
     }
   }
 
-  async function searchMemories(query, memories, limit = 5) {
-    const data = await readKnowledge();
+  async function searchMemories(query, memories, limit = 5, options = {}) {
+    // Conversas casuais por voz usam busca lexical local para não chamar outro endpoint do Ollama antes da resposta.
+    const useSemanticSearch = options.semantic !== false;
+    const data = useSemanticSearch ? await readKnowledge() : null;
     let queryVector = null;
-    try {
-      [queryVector] = (await generateEmbeddings([query])) || [];
-    } catch { /* a busca por palavras continua disponível */ }
+    if (useSemanticSearch) {
+      try {
+        [queryVector] = (await generateEmbeddings([query])) || [];
+      } catch { /* a busca por palavras continua disponível */ }
+    }
     const results = memories.map((memory, index) => {
-      const stored = data.memoryEmbeddings[memory.id];
+      const stored = data?.memoryEmbeddings?.[memory.id];
       const semantic = queryVector && stored?.embedding ? cosineSimilarity(queryVector, stored.embedding) : 0;
       const lexical = scoreText(query, memory.content);
       return { memory, score: semantic > 0 ? semantic * 10 + lexical * 0.1 : lexical, index };
