@@ -981,6 +981,8 @@ async function synthesizeElevenLabsSpeech(text, apiKey) {
       text: cleanInput,
       model_id: ELEVENLABS_MODEL_ID,
       language_code: 'pt',
+      // Aumenta a fidelidade à voz clonada sem trocar o Flash nem alterar sua velocidade.
+      voice_settings: { similarity_boost: 0.88 },
       apply_text_normalization: 'auto',
     }),
   });
