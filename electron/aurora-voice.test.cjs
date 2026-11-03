@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const {
   choosePreferredModel,
   isElevenLabsQuotaExceeded,
+  isExplicitDeepDiveRequest,
   isVoiceHearingCheck,
   normalizeVoiceTranscript,
 } = require('./aurora-voice.cjs');
@@ -41,6 +42,16 @@ test('uses 2b for casual voice and 9b for demanding voice or study turns', () =>
   assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true, hasImage: true }), 'qwen3.5:9b');
   assert.equal(choosePreferredModel({ fastVoiceTurn: false, needsThinking: true }), 'qwen3.5:9b');
   assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: false, settingsModel: 'qwen3.5:4b' }), 'qwen3.5:4b');
+});
+
+test('keeps ordinary follow-up questions concise and expands only on explicit request', () => {
+  assert.equal(isExplicitDeepDiveRequest('Quantos planetas existem no Sistema Solar?'), false);
+  assert.equal(isExplicitDeepDiveRequest('Quais são?'), false);
+  assert.equal(isExplicitDeepDiveRequest('Tem mais que 8?'), false);
+  assert.equal(isExplicitDeepDiveRequest('Me ensina mitose e meiose'), false);
+  assert.equal(isExplicitDeepDiveRequest('Me explica melhor'), true);
+  assert.equal(isExplicitDeepDiveRequest('Quero entender melhor, passo a passo'), true);
+  assert.equal(isExplicitDeepDiveRequest('Pode aprofundar com exemplos?'), true);
 });
 
 test('detects exhausted ElevenLabs quota without treating other errors as quota exhaustion', () => {
