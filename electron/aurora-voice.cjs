@@ -60,6 +60,7 @@ function isElevenLabsQuotaExceeded(error) {
 function choosePreferredModel({
   fastVoiceTurn = false,
   voiceMode = false,
+  voiceConversationModel = 'qwen3.5:4b',
   needsThinking = false,
   needsExplanation = false,
   needsFactualKnowledge = false,
@@ -67,6 +68,9 @@ function choosePreferredModel({
   settingsModel = 'qwen3.5:9b',
 } = {}) {
   if (fastVoiceTurn) return 'qwen3.5:2b';
+  if (voiceMode && !needsThinking && !needsExplanation && !needsFactualKnowledge && !studyMode) {
+    return voiceConversationModel;
+  }
   if (voiceMode || needsThinking || needsExplanation || needsFactualKnowledge || studyMode) {
     return 'qwen3.5:9b';
   }
