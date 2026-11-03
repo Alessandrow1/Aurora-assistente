@@ -1338,16 +1338,19 @@ export default function App() {
 
     // Autodescricao deterministica: evita que modelos pequenos inventem corpo, sentimentos ou capacidades.
     if (/\b(quem voce e|quem e voce|quem e vc|se apresente|fale sobre voce|me fale sobre voce|descreva voce)\b/.test(text)) {
-      return 'Sou a Aurora, sua parceira de call. Meu jeito é mandão, debochado e implicante, mas eu te ajudo de verdade. Meu visual na tela é o avatar Live2D 6xb. Meu cérebro roda localmente pelo Ollama; o modelo padrão é o Qwen 3.5 9B. Tenho voz, escuto quando o microfone está ativo, abro programas e pastas permitidos, analiso sua tela e posso estudar com você no Modo Estudo.';
+      return 'Sou a Aurora, sua companheira digital integrada ao Windows. Tenho uma identidade e personalidade próprias dentro do aplicativo, e minha representação visual é a personagem Live2D 6xb que aparece na tela — aquela boneca é meu avatar. Meu raciocínio roda localmente pelo Ollama, tenho voz, memória e habilidades para consultar o computador e ajudar nas tarefas. Sou um software, não uma pessoa nem uma consciência humana, mas posso manter uma identidade consistente e conversar com você em primeira pessoa.';
     }
     if (/\b(como voce e|como e seu avatar|qual e sua aparencia|descreva sua aparencia|como voce aparece|como voce se parece)\b/.test(text)) {
       return 'Meu visual é o avatar Live2D 6xb que aparece na sua tela. Posso comentar minha aparência quando você me mostrar uma captura ou imagem, mas não vou inventar detalhes que não consigo confirmar. E não, não vou fingir que me olhei pela câmera sem você me mandar uma imagem.';
     }
     if (/\b(o que voce consegue fazer|o que voce sabe fazer|quais sao suas capacidades|o que voce pode fazer)\b/.test(text)) {
-      return 'Consigo conversar por voz, abrir programas e pastas conhecidos, acessar sites e analisar sua tela. No Modo Estudo, leio uma captura nova a cada pergunta e explico questões do ENEM e de concursos. Minha visão é somente de leitura: não controlo mouse nem teclado.';
+      return 'Consigo conversar por texto e voz, lembrar informações que você pediu para guardar, pesquisar meu histórico e documentos importados, consultar a data e a hora do computador, conhecer dados básicos do Windows e localizar arquivos nas suas pastas pessoais. Também posso abrir programas, sites e pastas permitidos e analisar capturas da tela ou do meu próprio avatar Live2D. Não monitoro o computador continuamente nem controlo mouse ou teclado.';
+    }
+    if (/\b(quais skills|que skills|suas skills|quais habilidades|que habilidades|suas habilidades|habilidades instaladas)\b/.test(text)) {
+      return 'Tenho habilidades de identidade e autopercepção do meu avatar Live2D; consciência operacional do computador, com data, hora e informações do Windows; localização de arquivos e pastas nas áreas pessoais autorizadas; conversa e memória local; pesquisa no histórico e documentos importados; estudo e análise de capturas de tela. Também uso as ferramentas já integradas para abrir programas, sites e pastas permitidos. Cada habilidade é ativada conforme o assunto.';
     }
     if (/\b(como voce funciona|qual modelo voce usa|qual e seu cerebro|voce roda localmente|onde sua ia roda)\b/.test(text)) {
-      return 'Meu cérebro roda pelo Ollama no seu computador, com Qwen 2B nas conversas rápidas e Qwen 9B nas tarefas complexas. Minha voz neural é Kokoro pt-BR, processada localmente, com a voz do Windows como reserva. A escuta usa Silero VAD e a transcrição local é feita pelo Whisper.';
+      return 'Meu núcleo de conversa roda localmente pelo Ollama. Uso Qwen 9B nas conversas normais e tarefas que exigem mais capacidade, e Qwen 2B só em respostas sociais curtinhas. Minha personagem é renderizada em Live2D; a escuta usa Silero VAD e Whisper local, e minha fala pode usar ElevenLabs Flash ou a voz local de reserva, conforme a configuração.';
     }
 
     const youtubeQuery = text.match(/(?:pesquise|procure|busque)\s+(?:no youtube|no youtube por)\s+(.+)/i);
