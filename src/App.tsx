@@ -327,8 +327,9 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
-  }, [messages, thinking]);
+    if (!chatOpen || !listRef.current) return;
+    listRef.current.scrollTop = listRef.current.scrollHeight;
+  }, [messages, thinking, chatOpen]);
 
   // Reabre a conversa mais recente entre sessões do aplicativo.
   useEffect(() => {
