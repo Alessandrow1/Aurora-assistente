@@ -13,6 +13,12 @@ const DEFAULT_EDGE_TTS_CONFIG = Object.freeze({
  * Audio is consumed from the package's streaming generator and assembled per
  * sentence so the renderer can begin playback without waiting for Kokoro CPU inference.
  */
+function normalizeEdgeTtsPronunciation(rawText) {
+  return String(rawText || '')
+    .replace(/\bHã\s*\?!/giu, 'Hã?')
+    .replace(/\bTch(?=\s*[!?…])/giu, 'Tchi');
+}
+
 function createEdgeTtsSpeech({ EdgeTTS = null, config = DEFAULT_EDGE_TTS_CONFIG } = {}) {
   let client = null;
 
@@ -30,8 +36,11 @@ function createEdgeTtsSpeech({ EdgeTTS = null, config = DEFAULT_EDGE_TTS_CONFIG 
   }
 
   async function synthesize(rawText) {
-    const text = typeof rawText === 'string' ? rawText.trim().slice(0, 4200) : '';
-    if (!text) throw new Error('Não há texto para sintetizar com a voz neural gratuita.');
+    const sourceText = typeof rawText === 'string' ? rawText.trim().slice(0, 4200) : '';
+    if (!sourceText) throw new Error('Não há texto para sintetizar com a voz neural gratuita.');
+    // O Edge Neural pode engolir a interjeição escrita só com consoantes.
+    // Mantemos a forma original na conversa e fornecemos uma grafia pronunciável ao TTS.
+    const text = normalizeEdgeTtsPronunciation(sourceText);
 
     const chunks = [];
     for await (const item of getClient().streamAudio(text)) {
@@ -50,4 +59,4 @@ function createEdgeTtsSpeech({ EdgeTTS = null, config = DEFAULT_EDGE_TTS_CONFIG 
   return { synthesize };
 }
 
-module.exports = { DEFAULT_EDGE_TTS_CONFIG, createEdgeTtsSpeech };
+module.exports = { DEFAULT_EDGE_TTS_CONFIG, createEdgeTtsSpeech, normalizeEdgeTtsPronunciation };
