@@ -19,11 +19,9 @@ function extractHearingCheck(text) {
     .replace(/\b(?:agora|ai|bem|direito|por favor|ne)\b/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  const hasVerb = /\b(?:ta|esta)\b/.test(body);
-  const hasFirstPerson = /\b(?:me|meu|mim)\b/.test(body);
-  const hasHearingVerb = /\b(?:ouvindo|ouvido|vindo|ouvir|ouve|escutando|escuta)\b/.test(body);
   const directQuestion = /^(?:consegue me ouvir|me ouve|me escuta|esta ouvindo|ta ouvindo)$/.test(body);
-  if (directQuestion || (hasVerb && hasFirstPerson && hasHearingVerb && body.split(' ').length <= 7)) {
+  const speechCheckPattern = /^(?:voce )?(?:ta|esta) (?:me|meu|mim) (?:ouvindo|ouvido|vindo|ouvir|ouve|escutando|escuta)$/;
+  if (directQuestion || speechCheckPattern.test(body)) {
     return { greeting, body };
   }
   return null;
