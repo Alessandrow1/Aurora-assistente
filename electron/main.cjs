@@ -961,7 +961,7 @@ function normalizeTextForSpeech(rawText) {
   return text;
 }
 
-async function synthesizeElevenLabsDialogue(text, apiKey) {
+async function synthesizeElevenLabsSpeech(text, apiKey) {
   const cleanInput = normalizeTextForSpeech(text);
   if (!cleanInput) throw new Error('O texto ficou vazio depois de remover emojis e formatação.');
 
@@ -1245,13 +1245,12 @@ ipcMain.handle('aurora:tts-install', async () => {
 
 // A voz neural principal usa ElevenLabs; o Kokoro fica como alternativa local.
 ipcMain.handle('aurora:speak-session-start', async () => {
-  // Diagnóstico de áudio: evita PCM_24000 + WAV montado manualmente.
-  // Usa a rota de diálogo por turno, com MP3 pronto para reprodução no Chromium.
+  // Diagnóstico de áudio: usa o endpoint HTTP TTS e recebe um MP3 completo.
   const previous = activeElevenLabsStreamSession;
   activeElevenLabsStreamSession = null;
   if (previous) await previous.close().catch(() => undefined);
-  console.info('[Aurora TTS] Modo de diagnóstico ativo: MP3 por turno (sem conversão PCM/WAV).');
-  return { active: false, provider: 'elevenlabs-mp3' };
+  console.info('[Aurora TTS] Modo de diagnóstico ativo: HTTP TTS com MP3 completo.');
+  return { active: false, provider: 'elevenlabs-http' };
 });
 
 ipcMain.handle('aurora:speak-session-end', async () => {
@@ -1305,7 +1304,7 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
     }
 
     try {
-      const audio = await synthesizeElevenLabsDialogue(cleanText, apiKey);
+      const audio = await synthesizeElevenLabsSpeech(cleanText, apiKey);
       console.info('[Aurora Performance] ElevenLabs', {
         synthesisMs: Date.now() - startedAt,
         characters: cleanText.length,
