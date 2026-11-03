@@ -51,6 +51,12 @@ function normalizeVoiceTranscript(rawText) {
 }
 
 
+
+function isElevenLabsQuotaExceeded(error) {
+  const message = error instanceof Error ? error.message : String(error || '');
+  return /quota_exceeded|exceeds your quota|credits remaining/i.test(message);
+}
+
 function choosePreferredModel({
   fastVoiceTurn = false,
   voiceMode = false,
@@ -67,4 +73,4 @@ function choosePreferredModel({
   return settingsModel;
 }
 
-module.exports = { choosePreferredModel, foldPortuguese, isVoiceHearingCheck, normalizeVoiceTranscript };
+module.exports = { choosePreferredModel, foldPortuguese, isElevenLabsQuotaExceeded, isVoiceHearingCheck, normalizeVoiceTranscript };
