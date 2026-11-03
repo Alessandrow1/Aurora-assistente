@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
+  choosePreferredModel,
   isVoiceHearingCheck,
   normalizeVoiceTranscript,
 } = require('./aurora-voice.cjs');
@@ -29,4 +30,12 @@ test('preserva transcrições que não correspondem ao erro conhecido', () => {
   assert.equal(normalizeVoiceTranscript('Oi, tudo bem?'), 'Oi, tudo bem?');
   assert.equal(normalizeVoiceTranscript('Meu arquivo está vindo de outra pasta.'), 'Meu arquivo está vindo de outra pasta.');
   assert.equal(normalizeVoiceTranscript(''), '');
+});
+
+test('routes casual voice turns to the fast model and complex turns to the capable model', () => {
+  assert.equal(choosePreferredModel({ fastVoiceTurn: true, voiceMode: true }), 'qwen3.5:2b');
+  assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true }), 'qwen3.5:9b');
+  assert.equal(choosePreferredModel({ fastVoiceTurn: false, needsExplanation: true }), 'qwen3.5:9b');
+  assert.equal(choosePreferredModel({ fastVoiceTurn: false, needsThinking: true }), 'qwen3.5:9b');
+  assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: false, settingsModel: 'qwen3.5:4b' }), 'qwen3.5:4b');
 });
