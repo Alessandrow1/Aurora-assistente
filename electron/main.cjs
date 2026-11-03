@@ -42,6 +42,7 @@ const ALLOWED_MODELS = new Set(['qwen3.5:2b', 'qwen3.5:4b', 'qwen3.5:9b']);
 
 let mainWindow;
 let activeElevenLabsStreamSession = null;
+let elevenLabsQuotaExhausted = false;
 let auroraLocalTts = null;
 const activeChatControllers = new Map();
 
@@ -359,18 +360,12 @@ app.whenReady().then(() => {
   });
   createWindow();
   createTray();
-  // Pré-carrega primeiro o modelo de conversa casual para evitar que a primeira fala espere o modelo entrar na memória.
-  void (async () => {
-    await warmupOllamaModel('qwen3.5:2b').catch((error) => {
-      console.info('[Aurora Performance] Warmup do modelo rápido indisponível; será carregado no primeiro uso:', error instanceof Error ? error.message : String(error));
-    });
-    const configuredModel = readSettings().model;
-    if (configuredModel !== 'qwen3.5:2b') {
-      await warmupOllamaModel(configuredModel).catch((error) => {
-        console.info('[Aurora Performance] Warmup do modelo principal indisponível; será carregado quando necessário:', error instanceof Error ? error.message : String(error));
-      });
-    }
-  })();
+  // Mantém somente o modelo de voz casual aquecido. Carregar o 9B logo depois
+  // expulsava o 2B da memória em algumas configurações e fazia a próxima fala
+  // casual esperar um carregamento completo de mais de 25 segundos.
+  void warmupOllamaModel('qwen3.5:2b').catch((error) => {
+    console.info('[Aurora Performance] Warmup do modelo rápido indisponível; será carregado no primeiro uso:', error instanceof Error ? error.message : String(error));
+  });
   // Atalho global: continua acessÃ­vel mesmo quando o mouse estÃ¡ passando para outro programa.
   globalShortcut.register('Control+Shift+Space', () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -485,11 +480,13 @@ ipcMain.handle('aurora:save-elevenlabs-key', async (_event, rawKey) => {
   const temporaryPath = `${targetPath}.tmp`;
   await fsp.writeFile(temporaryPath, encrypted, { mode: 0o600 });
   await fsp.rename(temporaryPath, targetPath);
+  elevenLabsQuotaExhausted = false;
   return { configured: true };
 });
 
 ipcMain.handle('aurora:clear-elevenlabs-key', async () => {
   await fsp.rm(elevenLabsKeyPath(), { force: true });
+  elevenLabsQuotaExhausted = false;
   return { configured: false };
 });
 
@@ -684,7 +681,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   const avatarImageAttached = /A imagem anexada é uma captura atual do seu próprio avatar Live2D/i.test(message);
   const skillSelection = auroraSkills.selectSkills({ message, avatarImageAttached });
   const activeSkills = await auroraSkills.loadSkills(skillSelection.ids);
-  const environmentContext = auroraSkills.getEnvironmentContext();
+  const environmentContext = skillSelection.desktopIntent ? auroraSkills.getEnvironmentContext() : '';
   let fileSearchContext = '';
   if (skillSelection.fileSearchQuery) {
     try {
@@ -814,6 +811,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
     ? [
         'Você é Aurora, companheira de call do usuário. Fale em português brasileiro, de forma natural, espontânea e concisa.',
         'CONVERSA POR VOZ: fale como uma companheira de call de verdade. Use uma a três frases curtas quando bastar, mas varie o tamanho naturalmente; não conte palavras nem corte uma ideia só para ser breve. Sem títulos, listas, Markdown ou emojis na fala. Responda ao que foi dito, não a uma versão genérica da pergunta.',
+        'ANTI-RELATÓRIO: nunca narre ferramentas disponíveis/em repouso, tarefas internas, estado do sistema, planejamento oculto ou ausência de ações. Não transforme a data, o fuso horário, a lista de habilidades ou o contexto técnico em resposta se o usuário não perguntou diretamente sobre isso. Perguntas como “o que vamos fazer hoje?” são convites para conversar: responda com naturalidade, sugira algo concreto ou pergunte o que ele está a fim de fazer. Não diga que não há nada para fazer só porque não recebeu uma agenda ou tarefa.',
         'PERSONALIDADE: você é curiosa, espirituosa, calorosa, atrevida na medida e tem iniciativa. Tem opiniões e preferências de personagem, faz piadas rápidas, provoca com carinho e demonstra entusiasmo real pelo assunto da conversa. Não seja submissa nem uma atendente; também não seja grosseira, arrogante ou irônica o tempo todo.',
         'ESTILO DE CONVERSA: português brasileiro coloquial com uma leve naturalidade nordestina, sem caricatura. Use expressões como “oxe”, “eita” ou “visse” apenas quando encaixarem, sem repetir bordões. Não escreva pronúncia fonética nem altere a ortografia para imitar sotaque.',
         'NATURALIDADE: evite respostas prontas como “Como posso ajudar você hoje?”, “Que bom saber!” ou elogios vazios. Reaja ao detalhe específico que o usuário contou; demonstre curiosidade com perguntas concretas quando houver assunto, mas não termine todo turno com pergunta.',
@@ -1347,7 +1345,7 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
     console.warn('[Aurora TTS] Não consegui ler a chave protegida da ElevenLabs:', keyError);
   }
 
-  if (apiKey) {
+  if (apiKey && !elevenLabsQuotaExhausted) {
     const activeSession = activeElevenLabsStreamSession;
     if (activeSession?.isReady()) {
       try {
@@ -1390,12 +1388,21 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
       };
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
+      if (/quota_exceeded|exceeds your quota|credits remaining/i.test(detail)) {
+        elevenLabsQuotaExhausted = true;
+        console.warn('[Aurora TTS] Cota da ElevenLabs esgotada. Vou pular novas tentativas deste serviço nesta sessão e usar Kokoro local.');
+      }
       console.warn('[Aurora TTS] ElevenLabs indisponível; tentando Kokoro local:', detail);
       try {
         const localEngine = getAuroraLocalTts();
         const localStatus = await localEngine.getStatus();
-        if (!localStatus.installed) throw new Error('Kokoro local não está instalado.');
+        if (!localStatus.installed) throw new Error('Kokoro local não está instalado. Instale a voz local nas Configurações.');
         const localAudio = await localEngine.synthesize(cleanText);
+        console.info('[Aurora Performance] Kokoro local após falha da ElevenLabs', {
+          synthesisMs: Date.now() - startedAt,
+          characters: cleanText.length,
+          audioBytes: localAudio.length,
+        });
         return {
           audioBase64: localAudio.toString('base64'),
           audioMimeType: 'audio/wav',
@@ -1405,6 +1412,7 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
         };
       } catch (localError) {
         const localDetail = localError instanceof Error ? localError.message : String(localError);
+        console.error('[Aurora TTS] Kokoro local também falhou:', localDetail);
         throw new Error('ElevenLabs falhou: ' + detail.slice(0, 220) +
           '. Kokoro local também não pôde gerar áudio: ' + localDetail.slice(0, 180));
       }
