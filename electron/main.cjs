@@ -663,7 +663,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   const asksForLongResponse = /\b(detalhes?|detalhad[oa]s?|passo a passo|aprofundad[oa]s?|plano completo|guia completo|explique detalhadamente|analise completa|compare em detalhes)\b/i.test(normalizedRequest);
   const needsReasoning = /\b(compare|comparar|analise|analisar|calcule|calcular|resolva|resolver|planeje|planejar|questione|questionar|questionamento|conclusoes|premissas|pressupostos|critique|criticar|avaliar|avalie|alternativas|estrategia|diagnostique|depure|debug|vantagens|desvantagens|qual compensa|qual e melhor|decida|decidir|decisao|tradeoff|consequencias)\b/i.test(normalizedRequest);
   const needsExplanation = /\b(por que|porque|explique|explicar|como funciona|o que significa|qual a diferenca|como acontece|causa|consequencia)\b/i.test(normalizedRequest);
-  const needsStoredContext = /\b(lembra|lembre|lembranca|memoria|historico|conversamos|falamos|antes|retomar|continuar|documento|documentos|biblioteca|arquivo|pdf|material|anotado|guardado|salvo|salva)\b/i.test(normalizedRequest);
+  const needsStoredContext = /\b(lembra|lembre|lembranca|memoria|historico|conversamos|falamos|antes|retomar|continuar|documento|documentos|biblioteca|arquivo|pdf|material|anotado|guardado|salvo|salva|qual era|o que combinamos|o que conversamos|meu objetivo|minha meta|meu projeto|minha ideia|nosso projeto|nossa ideia)\b/i.test(normalizedRequest);
   const needsThinking = studyMode || needsReasoning || asksForLongResponse;
   const quickVoiceTurn = voiceMode && !studyMode && !imageBase64 && !needsThinking && !needsExplanation && !needsStoredContext;
   const preferredModel = quickVoiceTurn
@@ -735,9 +735,14 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
 
   const numPredict = studyMode ? (imageBase64 ? 800 : asksForLongResponse ? 1200 : 900) : imageBase64 ? 650 : asksForLongResponse ? 1500 : needsReasoning ? 1100 : needsExplanation ? 520 : quickVoiceTurn ? 56 : voiceMode ? 80 : 200;
 
-  const identityPrompt = await auroraStore.getIdentityProfile()
-    .then((profile) => 'seu nome é ' + profile.name + '; sua representação visual é ' + profile.avatar + '; descrição oficial da aparência: ' + (profile.appearanceDescription || 'ainda não há uma descrição visual detalhada cadastrada') + '; personalidade: ' + profile.personality + '. Não invente traços físicos que não estejam descritos nem diga que viu a webcam.')
-    .catch(() => 'seu nome é Aurora e seu avatar é o Live2D 6xb. Não invente detalhes visuais nem diga que viu a webcam.');
+  const identityProfile = await auroraStore.getIdentityProfile().catch(() => ({
+    name: 'Aurora',
+    avatar: 'Live2D 6xb',
+    appearanceDescription: '',
+    personality: 'Companheira de conversa: confiante, brincalhona, carinhosa e curiosa.',
+  }));
+  const quickIdentityPrompt = 'seu nome é ' + identityProfile.name + '; sua personalidade é ' + String(identityProfile.personality || '').slice(0, 240) + '.';
+  const identityPrompt = 'seu nome é ' + identityProfile.name + '; sua representação visual é ' + identityProfile.avatar + '; descrição oficial da aparência: ' + (identityProfile.appearanceDescription || 'ainda não há uma descrição visual detalhada cadastrada') + '; personalidade: ' + identityProfile.personality + '. Não invente traços físicos que não estejam descritos nem diga que viu a webcam.';
 
   // Voz casual usa um prompt curto. Explicações, estudo e perguntas de memória mantêm o contexto completo.
   const systemPrompt = (quickVoiceTurn
@@ -747,7 +752,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
         'Personalidade: confiante, brincalhona, um pouco mandona, sarcástica com carinho e nunca humilhante. Cumprimente de volta e dê espaço quando o usuário deixar uma frase no ar.',
         'Entregue apenas o que diria em voz alta. Não mostre raciocínio ou planejamento. Não invente fatos, números, memórias ou capacidades; admita incerteza.',
         'Em provável erro de transcrição, corrija mentalmente quando o sentido estiver claro; caso contrário, peça para repetir. Em sofrimento, perigo ou pedido de seriedade, abandone a brincadeira e responda com respeito.',
-        'IDENTIDADE: ' + identityPrompt,
+        'IDENTIDADE: ' + quickIdentityPrompt,
         ...(memoryContext ? [memoryContext] : []),
       ]
     : [
