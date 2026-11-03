@@ -12,7 +12,7 @@ function foldPortuguese(text) {
 
 function isExplicitDeepDiveRequest(text) {
   const folded = foldPortuguese(text);
-  return /\\b(?:detalhe|detalhes|detalhad[oa]s?|passo a passo|aprofund(?:ar|a|e|amento|ado|ada)|explica melhor|explique melhor|com mais calma|com exemplos?|me da exemplos?|mais completo|mais completa|destrincha|destrinche|desenvolve|desenvolva|elabora|elabore|quero entender melhor|quero saber mais|fala mais|fale mais|me conta mais|mais detalhes)\\b/.test(folded);
+  return /\b(?:detalhe|detalhes|detalhad[oa]s?|passo a passo|aprofund(?:ar|a|e|amento|ado|ada)|explica melhor|explique melhor|com mais calma|com exemplos?|me da exemplos?|mais completo|mais completa|destrincha|destrinche|desenvolve|desenvolva|elabora|elabore|quero entender melhor|quero saber mais|fala mais|fale mais|me conta mais|mais detalhes)\b/.test(folded);
 }
 
 function extractHearingCheck(text) {
