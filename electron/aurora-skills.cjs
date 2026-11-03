@@ -52,7 +52,10 @@ function selectSkills({ message = '', avatarImageAttached = false } = {}) {
   const normalized = normalizeSearchText(message);
   const ids = ['aurora-identity'];
   const ownAvatarIntent = avatarImageAttached || /\b(como voce e|como voce ta|como e seu avatar|qual e sua aparencia|descreva sua aparencia|fale sobre sua aparencia|como voce aparece|como voce se parece|olha pra voce|olhe para voce|veja seu avatar|se veja|se olhe|o que voce (?:esta|ta) vestindo|o que voce (?:esta|ta) usando|como e seu cabelo|como e seu rosto|qual expressao voce esta|essa e voce|essa personagem e voce|seu modelo live2d|sua boneca|sua personagem)\b/.test(normalized);
-  const desktopIntent = /\b(que horas|horas?|horario atual|qual (?:e )?a data|data de hoje|data atual|que dia|qual dia|dia de hoje|hoje e que dia|no computador|do computador|no pc|do pc|computador|windows|sistema operacional|sistema do pc|memoria ram|processador|espaco em disco|desktop|area de trabalho|pasta|arquivo|programa|aplicativo|janela|tela)\b/.test(normalized);
+  const asksForClock = /\b(que horas (?:sao|e)|horas agora|horario atual|qual (?:e )?a data|data atual|data de hoje|que dia e hoje|qual dia e hoje|hoje e que dia)\b/.test(normalized);
+  const asksForComputerDetails = /\b(qual (?:e )?o? ?(?:sistema operacional|windows|processador|processador do pc|processador do computador|modelo do computador|memoria ram|ram|espaco em disco|resolucao da tela)|qual versao do windows|quantos gb de ram|quanta memoria ram|quantos nucleos|qual windows|informacoes do (?:meu )?(?:pc|computador)|configuracoes do (?:meu )?(?:pc|computador))\b/.test(normalized);
+  const asksForScreenDetails = /\b(analise|analisar|olha|olhe|observe|observar|descreva|descrever|o que aparece|o que esta aparecendo|o que tem|capture|capturar)\b.*\b(tela|janela|desktop)\b|\b(minha tela|essa tela|essa janela|o que aparece na tela)\b/.test(normalized);
+  const desktopIntent = asksForClock || asksForComputerDetails || asksForScreenDetails || Boolean(fileSearchQuery);
   const fileSearchQuery = extractFileSearchQuery(message);
   const asksSkills = /\b(quais skills|que skills|suas skills|quais habilidades|que habilidades|suas habilidades|o que voce sabe fazer|o que voce consegue fazer|suas capacidades|habilidades instaladas)\b/.test(normalized);
 
