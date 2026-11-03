@@ -11,7 +11,7 @@ const { createAuroraStore } = require('./aurora-store.cjs');
 const { createAuroraImageGenerator } = require('./aurora-image-generator.cjs');
 const { createAuroraLocalTts } = require('./aurora-local-tts.cjs');
 const { createAuroraSkills } = require('./aurora-skills.cjs');
-const { normalizeVoiceTranscript, isVoiceHearingCheck } = require('./aurora-voice.cjs');
+const { choosePreferredModel, normalizeVoiceTranscript, isVoiceHearingCheck } = require('./aurora-voice.cjs');
 
 const OLLAMA_URL = 'http://127.0.0.1:11434';
 const ELEVENLABS_VOICE_ID = '29BpZaywSObgMLvRvBhB';
@@ -722,10 +722,18 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   const needsStoredContext = /\b(lembra|lembre|lembranca|memoria|historico|conversamos|falamos|antes|retomar|continuar|documento|documentos|biblioteca|arquivo|pdf|material|anotado|guardado|salvo|salva|qual era|o que combinamos|o que conversamos|meu objetivo|minha meta|meu projeto|minha ideia|nosso projeto|nossa ideia)\b/i.test(normalizedRequest);
   const needsThinking = studyMode || needsReasoning || asksForLongResponse;
   const casualVoiceTurn = voiceMode && !studyMode && !imageBase64 && !needsThinking && !needsExplanation && !needsFactualKnowledge && !needsStoredContext;
-  const quickVoiceTurn = casualVoiceTurn && (isVoiceHearingCheck(message) || /^(?:(?:oi|ola|opa|e ai|alo|aloo)(?: bom dia| boa tarde| boa noite)?|bom dia|boa tarde|boa noite|sim|nao|ta|beleza|certo|entendi|valeu|obrigado|obrigada|show|ok|okay|aham|uhum|pois e|legal)$/.test(normalizedRequest));
-  const preferredModel = quickVoiceTurn
-    ? 'qwen3.5:2b'
-    : (voiceMode || needsThinking || needsExplanation || needsFactualKnowledge || studyMode ? 'qwen3.5:9b' : settings.model);
+  // Todas as falas casuais usam o modelo 2B; 9B fica reservado para explicações, fatos, memória e raciocínio.
+  const fastVoiceTurn = casualVoiceTurn;
+  const quickVoiceTurn = fastVoiceTurn && (isVoiceHearingCheck(message) || /^(?:(?:oi|ola|opa|e ai|alo|aloo)(?: bom dia| boa tarde| boa noite)?|bom dia|boa tarde|boa noite|sim|nao|ta|beleza|certo|entendi|valeu|obrigado|obrigada|show|ok|okay|aham|uhum|pois e|legal)$/.test(normalizedRequest));
+  const preferredModel = choosePreferredModel({
+    fastVoiceTurn,
+    voiceMode,
+    needsThinking,
+    needsExplanation,
+    needsFactualKnowledge,
+    studyMode,
+    settingsModel: settings.model,
+  });
   const modelInstalled = (name) => ollama.models.some((installed) => installed === name || installed.startsWith(name + '-'));
   const activeModel = modelInstalled(preferredModel) ? preferredModel : settings.model;
   if (!modelInstalled(activeModel)) {
@@ -735,7 +743,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
     console.info('[Aurora Performance] Roteamento de modelo', {
       configuredModel: settings.model,
       activeModel,
-      reason: quickVoiceTurn ? 'saudação ou confirmação curta: menor latência' : voiceMode ? 'conversa por voz: modelo 9B para maior capacidade' : needsFactualKnowledge ? 'pergunta factual: preservar contexto e priorizar precisão' : needsThinking || needsExplanation ? 'tarefa complexa: maior capacidade' : 'modelo configurado',
+      reason: quickVoiceTurn ? 'teste de microfone ou saudação: resposta imediata' : fastVoiceTurn ? 'conversa casual por voz: modelo 2B de baixa latência' : needsFactualKnowledge ? 'pergunta factual: preservar contexto e priorizar precisão' : needsThinking || needsExplanation ? 'tarefa complexa: maior capacidade' : voiceMode ? 'voz com contexto ou análise: modelo 9B' : 'modelo configurado',
     });
   }
   throwIfChatCancelled();
@@ -746,8 +754,8 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   const contextStartedAt = Date.now();
   // Mantém as últimas trocas também em voz, para a Aurora não perder o fio da conversa.
   const preserveConversationContext = true;
-  const historyLimit = studyMode ? 6 : preserveConversationContext ? 6 : 2;
-  const historyCharacterLimit = studyMode ? 1200 : preserveConversationContext ? 1400 : 600;
+  const historyLimit = studyMode ? 6 : fastVoiceTurn ? 4 : preserveConversationContext ? 6 : 2;
+  const historyCharacterLimit = studyMode ? 1200 : fastVoiceTurn ? 700 : preserveConversationContext ? 1400 : 600;
   const history = Array.isArray(payload.history)
     ? payload.history
         .filter((item) => item && ['user', 'assistant'].includes(item.role) && typeof item.content === 'string')
@@ -759,7 +767,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   try {
     relevantMemories = await findRelevantAuroraMemories(
       [history.slice(-3).filter((item) => item.role === 'user').map((item) => item.content).join(' '), message].join(' '),
-      quickVoiceTurn ? 2 : 5,
+      fastVoiceTurn ? 2 : 5,
       { semantic: !casualVoiceTurn || needsStoredContext || needsFactualKnowledge },
     );
   } catch (error) {
@@ -790,7 +798,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
       : []),
   ].join('\n\n');
 
-  const numPredict = studyMode ? (imageBase64 ? 800 : asksForLongResponse ? 1200 : 900) : imageBase64 ? 650 : asksForLongResponse ? 1500 : needsReasoning ? 1100 : needsExplanation ? 520 : quickVoiceTurn ? 40 : voiceMode ? 160 : 200;
+  const numPredict = studyMode ? (imageBase64 ? 800 : asksForLongResponse ? 1200 : 900) : imageBase64 ? 650 : asksForLongResponse ? 1500 : needsReasoning ? 1100 : needsExplanation ? 520 : quickVoiceTurn ? 40 : fastVoiceTurn ? 112 : voiceMode ? 160 : 200;
 
   const identityProfile = await auroraStore.getIdentityProfile().catch(() => ({
     name: 'Aurora',
@@ -802,7 +810,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   const identityPrompt = 'seu nome é ' + identityProfile.name + '; sua representação visual é ' + identityProfile.avatar + '; descrição oficial da aparência: ' + (identityProfile.appearanceDescription || 'ainda não há uma descrição visual detalhada cadastrada') + '; personalidade complementar do perfil: ' + identityProfile.personality + '. Não invente traços físicos que não estejam descritos nem diga que viu a webcam. As regras de personalidade e estilo de conversa deste prompt têm prioridade sobre descrições genéricas do perfil.';
 
   // Voz casual usa um prompt curto. Explicações, estudo e perguntas de memória mantêm o contexto completo.
-  const systemPrompt = (quickVoiceTurn
+  const systemPrompt = (fastVoiceTurn
     ? [
         'Você é Aurora, companheira de call do usuário. Fale em português brasileiro, de forma natural, espontânea e concisa.',
         'CONVERSA POR VOZ: fale como uma companheira de call de verdade. Use uma a três frases curtas quando bastar, mas varie o tamanho naturalmente; não conte palavras nem corte uma ideia só para ser breve. Sem títulos, listas, Markdown ou emojis na fala. Responda ao que foi dito, não a uma versão genérica da pergunta.',
@@ -878,7 +886,7 @@ const chatMessages = [
           think: thinkEnabled,
           keep_alive: '2h',
           messages,
-          options: { temperature: studyMode ? 0.12 : needsThinking ? 0.2 : needsExplanation ? 0.22 : 0.25, num_predict: tokenBudget, num_ctx: quickVoiceTurn ? 2048 : imageBase64 ? 6144 : 4096 },
+          options: { temperature: studyMode ? 0.12 : needsThinking ? 0.2 : needsExplanation ? 0.22 : 0.25, num_predict: tokenBudget, num_ctx: quickVoiceTurn ? 2048 : fastVoiceTurn ? 3072 : imageBase64 ? 6144 : 4096 },
         }),
       });
     } catch (error) {
