@@ -700,7 +700,6 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   const contextStartedAt = Date.now();
   const preserveConversationContext = studyMode || !voiceMode || Boolean(payload.imageBase64) || needsStoredContext || needsFactualKnowledge ||
     /\b(compare|comparar|analise|analisar|calcule|calcular|resolva|resolver|planeje|planejar|estrategia|vantagens|desvantagens|explica|explique|porque|por que|como funciona|qual diferenca|o que significa|consequencia|detalhad[oa]s?|passo a passo|retomar|continuar|voltar)\b/i.test(normalizeMemoryText(message));
-    /\b(compare|comparar|analise|analisar|calcule|calcular|resolva|resolver|planeje|planejar|estrategia|vantagens|desvantagens|explica|explique|porque|por que|como funciona|qual diferenca|o que significa|consequencia|detalhad[oa]s?|passo a passo|retomar|continuar|voltar)\b/i.test(normalizeMemoryText(message));
   const historyLimit = studyMode ? 6 : preserveConversationContext ? 6 : 2;
   const historyCharacterLimit = studyMode ? 1200 : preserveConversationContext ? 1400 : 600;
   const history = Array.isArray(payload.history)
