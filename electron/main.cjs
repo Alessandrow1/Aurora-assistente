@@ -11,6 +11,7 @@ const { createAuroraStore } = require('./aurora-store.cjs');
 const { createAuroraImageGenerator } = require('./aurora-image-generator.cjs');
 const { createAuroraLocalTts } = require('./aurora-local-tts.cjs');
 const { createAuroraSkills } = require('./aurora-skills.cjs');
+const { normalizeVoiceTranscript } = require('./aurora-voice.cjs');
 
 const OLLAMA_URL = 'http://127.0.0.1:11434';
 const ELEVENLABS_VOICE_ID = '29BpZaywSObgMLvRvBhB';
@@ -616,13 +617,19 @@ ipcMain.handle('aurora:transcribe-audio', async (_event, rawSamples) => {
   stream.acceptWaveform({ sampleRate: 16000, samples });
   await recognizer.decodeAsync(stream);
   const result = recognizer.getResult(stream);
-  const text = typeof result?.text === 'string' ? result.text.trim().slice(0, 4000) : '';
+  const rawText = typeof result?.text === 'string' ? result.text.trim().slice(0, 4000) : '';
+  const text = normalizeVoiceTranscript(rawText);
+  const transcriptCorrected = text !== rawText;
   console.info('[Aurora Performance] Whisper', {
     model: WHISPER_MODEL_SIZE,
     audioSeconds: Number((samples.length / 16000).toFixed(2)),
     transcriptionMs: Date.now() - transcriptionStartedAt,
     recognizedCharacters: text.length,
+    transcriptCorrected,
   });
+  if (transcriptCorrected) {
+    console.info('[Aurora Voice] Corrigi um erro conhecido de reconhecimento:', { from: rawText, to: text });
+  }
   reportSpeechStatus('ready', text ? 'Fala reconhecida localmente.' : 'Nao consegui identificar palavras. Tente falar um pouco mais perto do microfone.');
   return { text };
 });
