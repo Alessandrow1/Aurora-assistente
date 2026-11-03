@@ -231,9 +231,11 @@ async function warmupOllamaModel(model = readSettings().model) {
   ollamaWarmupPromises.set(model, promise);
   try {
     return await promise;
-  } catch (error) {
+  } finally {
+    // Guarda somente aquecimentos em andamento. Um modelo pode ser removido da
+    // memória pelo Ollama após outro modelo ser carregado; a próxima chamada
+    // precisa poder verificar/aquecer novamente, sem reutilizar uma Promise velha.
     if (ollamaWarmupPromises.get(model) === promise) ollamaWarmupPromises.delete(model);
-    throw error;
   }
 }
 
