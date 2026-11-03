@@ -23,6 +23,12 @@ contextBridge.exposeInMainWorld('aurora', {
   getImageGeneratorStatus: () => ipcRenderer.invoke('aurora:image-status'),
   getLocalTtsStatus: () => ipcRenderer.invoke('aurora:tts-status'),
   installLocalTts: () => ipcRenderer.invoke('aurora:tts-install'),
+  getCoquiTtsStatus: () => ipcRenderer.invoke('aurora:coqui-status'),
+  onCoquiTtsStatus: (callback) => {
+    const listener = (_event, status) => callback(status);
+    ipcRenderer.on('aurora:coqui-status-update', listener);
+    return () => ipcRenderer.removeListener('aurora:coqui-status-update', listener);
+  },
   onTtsStatus: (callback) => {
     const listener = (_event, status) => callback(status);
     ipcRenderer.on('aurora:tts-status', listener);
