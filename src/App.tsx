@@ -910,7 +910,7 @@ export default function App() {
   startVoiceCaptureRef.current = startVoiceCapture;
   stopVoiceCaptureRef.current = stopVoiceCapture;
 
-  const speak = async (text: string, waitForPlayback = false, resumeAfterPlayback = true) => {
+  const speak = async (text: string, waitForPlayback = false, resumeAfterPlayback = true, provider: 'auto' | 'elevenlabs' = 'auto') => {
     const speechTicket = voiceOutputTurnRef.current;
     const speechText = normalizeSpeechText(text);
     if (!hasSpeakableSpeechText(speechText)) {
@@ -935,7 +935,7 @@ export default function App() {
     });
 
     try {
-      const result = await window.aurora.speak(speechText);
+      const result = await window.aurora.speak(speechText, provider === 'elevenlabs' ? { provider } : undefined);
       if (speechTicket !== voiceOutputTurnRef.current) {
         finishPlayback();
         return;
@@ -1955,7 +1955,7 @@ export default function App() {
                       <button className="pet-voice-test" type="button" onClick={() => void saveElevenLabsKey()} disabled={elevenLabsKeySaving || !elevenLabsKeyInput.trim()}>
                         {elevenLabsKeySaving ? 'Salvando…' : 'Salvar chave com segurança'}
                       </button>
-                      <button className="pet-voice-test" type="button" onClick={() => void speak('Oi! Eu sou a Aurora. Essa é minha voz original da ElevenLabs.')} disabled={!elevenLabsStatus?.configured || !elevenLabsStatus.storageAvailable || elevenLabsKeySaving}>
+                      <button className="pet-voice-test" type="button" onClick={() => void speak('Oi! Eu sou a Aurora. Essa é minha voz original da ElevenLabs.', false, true, 'elevenlabs')} disabled={!elevenLabsStatus?.configured || !elevenLabsStatus.storageAvailable || elevenLabsKeySaving}>
                         ▶ Testar voz original
                       </button>
                       {elevenLabsStatus?.configured && (
