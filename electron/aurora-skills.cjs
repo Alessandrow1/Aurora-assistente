@@ -273,7 +273,7 @@ function createAuroraSkills({ app, screen, os, skillsDirectory = path.resolve(__
     return lines.join('\n');
   }
 
-  return { getEnvironmentContext, getSearchRoots, loadSkills, searchFiles, formatFileSearchResult };
+  return { getEnvironmentContext, getSearchRoots, loadSkills, selectSkills, searchFiles, formatFileSearchResult };
 }
 
 module.exports = {
