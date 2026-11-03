@@ -38,6 +38,8 @@ test('uses 2b for tiny acknowledgements, 4b for ordinary voice and 9b for demand
   assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true }), 'qwen3.5:4b');
   assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true, voiceConversationModel: 'qwen3.5:9b' }), 'qwen3.5:9b');
   assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true, needsExplanation: true }), 'qwen3.5:9b');
+  assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true, needsStoredContext: true }), 'qwen3.5:9b');
+  assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true, hasImage: true }), 'qwen3.5:9b');
   assert.equal(choosePreferredModel({ fastVoiceTurn: false, needsThinking: true }), 'qwen3.5:9b');
   assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: false, settingsModel: 'qwen3.5:4b' }), 'qwen3.5:4b');
 });
