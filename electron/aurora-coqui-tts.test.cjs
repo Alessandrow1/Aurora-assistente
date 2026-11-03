@@ -39,6 +39,7 @@ function setupCoquiDirectory() {
     : path.join(root, 'venv', 'bin', 'python');
   fs.mkdirSync(path.dirname(pythonPath), { recursive: true });
   fs.writeFileSync(pythonPath, '');
+  fs.writeFileSync(path.join(root, 'ENV-READY.txt'), 'installed');
   const workerPath = path.join(root, 'worker.py');
   fs.writeFileSync(workerPath, '# fake worker');
   fs.writeFileSync(path.join(root, 'CPML-ACCEPTED.txt'), 'CPML ACCEPTED BY USER');
@@ -66,6 +67,7 @@ test('refuses to start XTTS until the user has explicitly accepted CPML', async 
     : path.join(root, 'venv', 'bin', 'python');
   fs.mkdirSync(path.dirname(pythonPath), { recursive: true });
   fs.writeFileSync(pythonPath, '');
+  fs.writeFileSync(path.join(root, 'ENV-READY.txt'), 'installed');
   const workerPath = path.join(root, 'worker.py');
   fs.writeFileSync(workerPath, '# fake worker');
   let spawnCalled = false;
