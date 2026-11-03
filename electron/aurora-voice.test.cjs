@@ -34,12 +34,14 @@ test('preserva transcrições que não correspondem ao erro conhecido', () => {
   assert.equal(normalizeVoiceTranscript(''), '');
 });
 
-test('uses 2b for casual voice and 9b for demanding voice or study turns', () => {
+test('uses 2b for concise voice answers and 9b for deep reasoning or context', () => {
   assert.equal(choosePreferredModel({ fastVoiceTurn: true, voiceMode: true }), 'qwen3.5:2b');
   assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true }), 'qwen3.5:2b');
-  assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true, needsExplanation: true }), 'qwen3.5:9b');
+  assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true, needsExplanation: true }), 'qwen3.5:2b');
+  assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true, needsFactualKnowledge: true }), 'qwen3.5:2b');
   assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true, needsStoredContext: true }), 'qwen3.5:9b');
   assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true, hasImage: true }), 'qwen3.5:9b');
+  assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true, studyMode: true }), 'qwen3.5:9b');
   assert.equal(choosePreferredModel({ fastVoiceTurn: false, needsThinking: true }), 'qwen3.5:9b');
   assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: false, settingsModel: 'qwen3.5:4b' }), 'qwen3.5:4b');
 });
