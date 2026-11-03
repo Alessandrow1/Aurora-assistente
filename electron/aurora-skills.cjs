@@ -165,7 +165,7 @@ function createAuroraSkills({ app, screen, os, skillsDirectory = path.resolve(__
     // incluído para personalização; o dossiê completo só entra em perguntas pessoais.
     const profileCandidates = [];
     try { profileCandidates.push(path.join(app.getPath('userData'), 'aurora-user-profile.md')); } catch { /* userData indisponível no teste */ }
-    profileCandidates.push(path.join(root, 'aurora-identity', 'USER-PROFILE.local.md'));
+    profileCandidates.push(path.join(path.resolve(skillsDirectory), 'aurora-identity', 'USER-PROFILE.local.md'));
     let profileContent = '';
     for (const profilePath of profileCandidates) {
       try {
