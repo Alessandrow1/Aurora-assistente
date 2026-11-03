@@ -43,8 +43,8 @@ declare global {
       openApp: (appId: string) => Promise<{ success: boolean; label: string }>;
       openFolder: (folderId: string) => Promise<{ success: boolean; label: string }>;
       openUrl: (url: string) => Promise<{ success: boolean }>;
-      speak: (text: string) => Promise<{ audioBase64: string; audioMimeType?: string; voice: string; provider: 'elevenlabs' | 'kokoro-local'; fallbackReason?: string }>;
-      startSpeakSession: () => Promise<{ active: boolean; provider?: 'elevenlabs' | 'kokoro-local'; error?: string }>;
+      speak: (text: string, options?: { provider?: 'auto' | 'elevenlabs' }) => Promise<{ audioBase64: string; audioMimeType?: string; voice: string; provider: 'elevenlabs' | 'kokoro-local' | 'edge-tts'; fallbackReason?: string }>;
+      startSpeakSession: () => Promise<{ active: boolean; provider?: 'elevenlabs' | 'kokoro-local' | 'edge-tts'; error?: string }>;
       endSpeakSession: () => Promise<{ closed: boolean }>;
       transcribeAudio: (samples: Float32Array) => Promise<{ text: string }>;
       warmupTranscription: () => Promise<{ ready: boolean }>;
