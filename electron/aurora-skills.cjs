@@ -55,8 +55,8 @@ function selectSkills({ message = '', avatarImageAttached = false } = {}) {
   const asksForClock = /\b(que horas (?:sao|e)|horas agora|horario atual|qual (?:e )?a data|data atual|data de hoje|que dia e hoje|qual dia e hoje|hoje e que dia)\b/.test(normalized);
   const asksForComputerDetails = /\b(qual (?:e )?o? ?(?:sistema operacional|windows|processador|processador do pc|processador do computador|modelo do computador|memoria ram|ram|espaco em disco|resolucao da tela)|qual versao do windows|quantos gb de ram|quanta memoria ram|quantos nucleos|qual windows|informacoes do (?:meu )?(?:pc|computador)|configuracoes do (?:meu )?(?:pc|computador))\b/.test(normalized);
   const asksForScreenDetails = /\b(analise|analisar|olha|olhe|observe|observar|descreva|descrever|o que aparece|o que esta aparecendo|o que tem|capture|capturar)\b.*\b(tela|janela|desktop)\b|\b(minha tela|essa tela|essa janela|o que aparece na tela)\b/.test(normalized);
-  const desktopIntent = asksForClock || asksForComputerDetails || asksForScreenDetails || Boolean(fileSearchQuery);
   const fileSearchQuery = extractFileSearchQuery(message);
+  const desktopIntent = asksForClock || asksForComputerDetails || asksForScreenDetails || Boolean(fileSearchQuery);
   const asksSkills = /\b(quais skills|que skills|suas skills|quais habilidades|que habilidades|suas habilidades|o que voce sabe fazer|o que voce consegue fazer|suas capacidades|habilidades instaladas)\b/.test(normalized);
 
   if (ownAvatarIntent) ids.push('live2d-self-perception');
