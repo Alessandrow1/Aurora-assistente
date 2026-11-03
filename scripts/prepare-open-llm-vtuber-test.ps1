@@ -70,8 +70,8 @@ Write-Host "Preparando ambiente Python 3.12..."
 Invoke-Checked "uv" @("sync", "--python", "3.12") $TargetPath
 
 Write-Host ""
-Write-Host "Adicionando Faster-Whisper (CPU int8) apenas ao ambiente de teste..."
-Invoke-Checked "uv" @("add", "faster-whisper") $TargetPath
+Write-Host "Adicionando Faster-Whisper (CPU int8) e Silero VAD apenas ao ambiente de teste..."
+Invoke-Checked "uv" @("add", "faster-whisper", "silero-vad") $TargetPath
 
 Write-Host ""
 Write-Host "Copiando a personagem Aurora para a instalação isolada e criando conf.yaml..."
