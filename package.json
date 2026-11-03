@@ -43,6 +43,7 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
+      "skills/**/*",
       "package.json"
     ],
     "win": {
