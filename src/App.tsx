@@ -60,7 +60,7 @@ function normalizeSpeechText(rawText: string): string {
     .replace(/https?:\/\/\S+/gi, ' ')
     .replace(/[#*_>|~\x60]/g, ' ')
     .replace(/[#*0-9]\uFE0F?\u20E3/gu, ' ')
-    .replace(/[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\uFE0E\uFE0F\u200D\u20E3]/gu, ' ')
+    .replace(/[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\\p{So}\uFE0E\uFE0F\u200D\u20E3]/gu, ' ')
     .replace(/\s+([,.;:!?])/g, '$1')
     .replace(/([,.;:!?])(?=\S)/g, '$1 ')
     .replace(/\s+/g, ' ')
