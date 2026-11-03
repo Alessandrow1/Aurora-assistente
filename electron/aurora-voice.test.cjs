@@ -33,7 +33,7 @@ test('preserva transcrições que não correspondem ao erro conhecido', () => {
   assert.equal(normalizeVoiceTranscript(''), '');
 });
 
-test('routes casual voice turns to the fast model and complex turns to the capable model', () => {
+test('reserves the fast model for quick acknowledgements and uses the capable model for full voice turns', () => {
   assert.equal(choosePreferredModel({ fastVoiceTurn: true, voiceMode: true }), 'qwen3.5:2b');
   assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true }), 'qwen3.5:9b');
   assert.equal(choosePreferredModel({ fastVoiceTurn: false, needsExplanation: true }), 'qwen3.5:9b');
