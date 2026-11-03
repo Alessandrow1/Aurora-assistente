@@ -43,6 +43,8 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
+      "tools/**/*",
+      "scripts/*.ps1",
       "skills/**/*",
       "!skills/aurora-identity/USER-PROFILE.local.md",
       "package.json"
@@ -61,7 +63,8 @@
     },
     "asarUnpack": [
       "node_modules/sherpa-onnx-node/**/*",
-      "node_modules/sherpa-onnx-win-x64/**/*"
+      "node_modules/sherpa-onnx-win-x64/**/*",
+      "tools/coqui-xtts/worker.py"
     ]
   },
   "engines": {
