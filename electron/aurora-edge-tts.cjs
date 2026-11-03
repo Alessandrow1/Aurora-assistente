@@ -21,7 +21,7 @@ function createEdgeTtsSpeech({ EdgeTTS = null, config = DEFAULT_EDGE_TTS_CONFIG 
     if (typeof EdgeTtsClass !== 'function') {
       throw new Error('O pacote node-edge-tts não disponibilizou a classe EdgeTTS.');
     }
-    client = new EdgeTtsClass(config);
+    client = new EdgeTtsClass({ ...config });
     if (typeof client.streamAudio !== 'function') {
       throw new Error('A versão instalada do node-edge-tts não oferece streamAudio(). Atualize as dependências do projeto.');
     }
