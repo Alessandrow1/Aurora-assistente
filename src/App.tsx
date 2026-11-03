@@ -67,6 +67,10 @@ function normalizeSpeechText(rawText: string): string {
     .trim();
 }
 
+function hasSpeakableSpeechText(text: string): boolean {
+  return /[\\p{L}\\p{N}]/u.test(text);
+}
+
 function inferAvatarEmotion(userText: string, answer: string): AvatarEmotion {
   const input = userText.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const output = answer.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -802,6 +806,10 @@ export default function App() {
   const speak = async (text: string, waitForPlayback = false, resumeAfterPlayback = true) => {
     const speechTicket = voiceOutputTurnRef.current;
     const speechText = normalizeSpeechText(text);
+    if (!hasSpeakableSpeechText(speechText)) {
+      console.info('[Aurora TTS] Trecho ignorado: nenhum texto falável após remover emojis e símbolos.');
+      return;
+    }
     pauseVoiceRecognitionForSpeech();
     if (hasLaughingCue(text)) setLaughing(true);
     audioRef.current?.pause();
@@ -1116,8 +1124,8 @@ export default function App() {
       let speechStarted = false;
       let speechQueue = Promise.resolve();
       const enqueueSpeech = (segment: string) => {
-        const cleanSegment = segment.trim();
-        if (!cleanSegment) return;
+        const cleanSegment = normalizeSpeechText(segment);
+        if (!hasSpeakableSpeechText(cleanSegment)) return;
         speechStarted = true;
         speechQueue = speechQueue
           .then(async () => {
