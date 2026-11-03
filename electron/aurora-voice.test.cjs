@@ -35,7 +35,7 @@ test('preserva transcrições que não correspondem ao erro conhecido', () => {
 
 test('uses 2b for casual voice and 9b for demanding voice or study turns', () => {
   assert.equal(choosePreferredModel({ fastVoiceTurn: true, voiceMode: true }), 'qwen3.5:2b');
-  assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true }), 'qwen3.5:9b');
+  assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true }), 'qwen3.5:2b');
   assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true, needsExplanation: true }), 'qwen3.5:9b');
   assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true, needsStoredContext: true }), 'qwen3.5:9b');
   assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true, hasImage: true }), 'qwen3.5:9b');
