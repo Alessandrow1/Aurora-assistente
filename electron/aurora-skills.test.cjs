@@ -36,6 +36,12 @@ test.afterEach(async () => {
   await fs.rm(tempRoot, { recursive: true, force: true });
 });
 
+test('exposes skill selection through the created Aurora skills instance', () => {
+  assert.equal(typeof skills.selectSkills, 'function');
+  assert.deepEqual(skills.selectSkills({ message: 'Oi, Aurora!' }).ids, ['aurora-identity']);
+  assert.ok(skills.selectSkills({ message: 'Que horas são agora?' }).ids.includes('computer-environment'));
+});
+
 test('always activates identity and selects avatar, desktop and file skills when relevant', () => {
   assert.deepEqual(selectSkills({ message: 'Oi, Aurora!' }).ids, ['aurora-identity']);
 
