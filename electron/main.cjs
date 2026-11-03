@@ -485,7 +485,7 @@ ipcMain.handle('aurora:clear-elevenlabs-key', async () => {
 });
 
 // AURORA_OFFLINE_ASR: Whisper Tiny/Base INT8 multilingue via sherpa-onnx; modelos não são armazenados no Git.
-const WHISPER_MODEL_SIZE = process.env.AURORA_WHISPER_MODEL === 'base' ? 'base' : 'tiny';
+const WHISPER_MODEL_SIZE = process.env.AURORA_WHISPER_MODEL === 'tiny' ? 'tiny' : 'base';
 const whisperModelBaseDirectory = () => {
   const override = process.env.AURORA_WHISPER_MODELS_DIR;
   if (override && override.trim()) return path.resolve(override.trim());
@@ -673,10 +673,11 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   const needsFactualKnowledge = /\b(quem e|quem foi|o que e|o que foi|de onde e|onde fica|quando nasceu|quantos anos tem|qual a profissao|qual o trabalho de|me fala sobre|fale sobre|me conta sobre)\b/i.test(normalizedRequest);
   const needsStoredContext = /\b(lembra|lembre|lembranca|memoria|historico|conversamos|falamos|antes|retomar|continuar|documento|documentos|biblioteca|arquivo|pdf|material|anotado|guardado|salvo|salva|qual era|o que combinamos|o que conversamos|meu objetivo|minha meta|meu projeto|minha ideia|nosso projeto|nossa ideia)\b/i.test(normalizedRequest);
   const needsThinking = studyMode || needsReasoning || asksForLongResponse;
-  const quickVoiceTurn = voiceMode && !studyMode && !imageBase64 && !needsThinking && !needsExplanation && !needsFactualKnowledge && !needsStoredContext;
+  const casualVoiceTurn = voiceMode && !studyMode && !imageBase64 && !needsThinking && !needsExplanation && !needsFactualKnowledge && !needsStoredContext;
+  const quickVoiceTurn = casualVoiceTurn && /^(?:(?:oi|ola|opa|e ai|alo|aloo)(?: bom dia| boa tarde| boa noite)?|bom dia|boa tarde|boa noite|sim|nao|ta|beleza|certo|entendi|valeu|obrigado|obrigada|show|ok|okay|aham|uhum|pois e|legal)$/.test(normalizedRequest);
   const preferredModel = quickVoiceTurn
     ? 'qwen3.5:2b'
-    : (needsThinking || needsExplanation || needsFactualKnowledge || studyMode ? 'qwen3.5:9b' : settings.model);
+    : (voiceMode || needsThinking || needsExplanation || needsFactualKnowledge || studyMode ? 'qwen3.5:9b' : settings.model);
   const modelInstalled = (name) => ollama.models.some((installed) => installed === name || installed.startsWith(name + '-'));
   const activeModel = modelInstalled(preferredModel) ? preferredModel : settings.model;
   if (!modelInstalled(activeModel)) {
@@ -686,7 +687,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
     console.info('[Aurora Performance] Roteamento de modelo', {
       configuredModel: settings.model,
       activeModel,
-      reason: quickVoiceTurn ? 'voz casual: menor latência' : needsFactualKnowledge ? 'pergunta factual: preservar contexto e priorizar precisão' : needsThinking || needsExplanation ? 'tarefa complexa: maior capacidade' : 'modelo configurado',
+      reason: quickVoiceTurn ? 'saudação ou confirmação curta: menor latência' : voiceMode ? 'conversa por voz: modelo 9B para maior capacidade' : needsFactualKnowledge ? 'pergunta factual: preservar contexto e priorizar precisão' : needsThinking || needsExplanation ? 'tarefa complexa: maior capacidade' : 'modelo configurado',
     });
   }
   throwIfChatCancelled();
@@ -695,7 +696,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   });
   throwIfChatCancelled();
   const contextStartedAt = Date.now();
-  const preserveConversationContext = studyMode || !voiceMode || Boolean(payload.imageBase64) || needsStoredContext || needsFactualKnowledge ||
+  const preserveConversationContext = studyMode || voiceMode || !voiceMode || Boolean(payload.imageBase64) || needsStoredContext || needsFactualKnowledge ||
     /\b(compare|comparar|analise|analisar|calcule|calcular|resolva|resolver|planeje|planejar|estrategia|vantagens|desvantagens|explica|explique|porque|por que|como funciona|qual diferenca|o que significa|consequencia|detalhad[oa]s?|passo a passo|retomar|continuar|voltar)\b/i.test(normalizeMemoryText(message));
   const historyLimit = studyMode ? 6 : preserveConversationContext ? 6 : 2;
   const historyCharacterLimit = studyMode ? 1200 : preserveConversationContext ? 1400 : 600;
@@ -711,7 +712,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
     relevantMemories = await findRelevantAuroraMemories(
       [history.slice(-3).filter((item) => item.role === 'user').map((item) => item.content).join(' '), message].join(' '),
       quickVoiceTurn ? 2 : 5,
-      { semantic: !quickVoiceTurn },
+      { semantic: !casualVoiceTurn || needsStoredContext || needsFactualKnowledge },
     );
   } catch (error) {
     console.error('[Aurora Memory] Não consegui consultar a memória protegida:', error instanceof Error ? error.message : String(error));
@@ -720,7 +721,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   let retrievedContext = [];
   const retrievalStartedAt = Date.now();
   // A biblioteca semântica é útil em perguntas de estudo, arquivo ou lembrança, mas não deve atrasar um "oi" por voz.
-  if (!quickVoiceTurn) {
+  if (!casualVoiceTurn || needsStoredContext || needsFactualKnowledge) {
     try {
       retrievedContext = await auroraStore.searchContext(
         [history.slice(-4).map((item) => item.content).join(' '), message].join(' '),
@@ -741,7 +742,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
       : []),
   ].join('\n\n');
 
-  const numPredict = studyMode ? (imageBase64 ? 800 : asksForLongResponse ? 1200 : 900) : imageBase64 ? 650 : asksForLongResponse ? 1500 : needsReasoning ? 1100 : needsExplanation ? 520 : quickVoiceTurn ? 40 : voiceMode ? 80 : 200;
+  const numPredict = studyMode ? (imageBase64 ? 800 : asksForLongResponse ? 1200 : 900) : imageBase64 ? 650 : asksForLongResponse ? 1500 : needsReasoning ? 1100 : needsExplanation ? 520 : quickVoiceTurn ? 40 : voiceMode ? 160 : 200;
 
   const identityProfile = await auroraStore.getIdentityProfile().catch(() => ({
     name: 'Aurora',
