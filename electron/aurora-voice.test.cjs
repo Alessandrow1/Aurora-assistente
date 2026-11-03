@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   choosePreferredModel,
+  isElevenLabsQuotaExceeded,
   isVoiceHearingCheck,
   normalizeVoiceTranscript,
 } = require('./aurora-voice.cjs');
@@ -38,4 +39,11 @@ test('routes casual voice turns to the fast model and complex turns to the capab
   assert.equal(choosePreferredModel({ fastVoiceTurn: false, needsExplanation: true }), 'qwen3.5:9b');
   assert.equal(choosePreferredModel({ fastVoiceTurn: false, needsThinking: true }), 'qwen3.5:9b');
   assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: false, settingsModel: 'qwen3.5:4b' }), 'qwen3.5:4b');
+});
+
+test('detects exhausted ElevenLabs quota without treating other errors as quota exhaustion', () => {
+  assert.equal(isElevenLabsQuotaExceeded('ElevenLabs HTTP 401: quota_exceeded'), true);
+  assert.equal(isElevenLabsQuotaExceeded(new Error('This request exceeds your quota; 7 credits remaining')), true);
+  assert.equal(isElevenLabsQuotaExceeded('invalid_api_key'), false);
+  assert.equal(isElevenLabsQuotaExceeded('network timeout'), false);
 });
