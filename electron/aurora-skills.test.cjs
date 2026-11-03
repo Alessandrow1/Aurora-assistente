@@ -18,6 +18,7 @@ test.beforeEach(async () => {
   paths = {
     desktop: path.join(tempRoot, 'Desktop'),
     documents: path.join(tempRoot, 'Documents'),
+    downloads: path.join(tempRoot, 'Downloads'),
     home: tempRoot,
     pictures: path.join(tempRoot, 'Pictures'),
     videos: path.join(tempRoot, 'Videos'),
