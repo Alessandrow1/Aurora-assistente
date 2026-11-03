@@ -29,7 +29,7 @@ function normalizeSearchText(value) {
 function extractFileSearchQuery(message) {
   const original = String(message || '').trim();
   const normalized = normalizeSearchText(original);
-  const hasSearchIntent = /\b(onde esta|onde fica|cade|acha|achar|encontre|encontrar|localize|localizar|procure|procurar|busque|buscar)\b/.test(normalized);
+  const hasSearchIntent = /\b(onde (?:que )?(?:esta|ta)|onde fica|cade|acha|acho|achar|encontre|encontro|encontrar|localize|localizar|procure|procurar|busque|buscar)\b/.test(normalized);
   const hasFileTarget = /\b(arquivo|ficheiro|documento|pasta)\b/.test(normalized);
   if (!hasSearchIntent || !hasFileTarget) return null;
 
