@@ -1,10 +1,10 @@
 'use strict';
 
 const DEFAULT_EDGE_TTS_CONFIG = Object.freeze({
-  voice: 'pt-BR-FranciscaNeural',
+  voice: 'pt-BR-ThalitaMultilingualNeural',
   lang: 'pt-BR',
   outputFormat: 'audio-24khz-96kbitrate-mono-mp3',
-  timeout: 20000,
+  timeout: 12000,
 });
 
 /**
