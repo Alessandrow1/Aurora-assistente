@@ -1,0 +1,94 @@
+CHECKPOINT — AURORA + OPEN-LLM-VTUBER
+Data: 02/11/2026
+Status: experimento isolado em andamento; não migrar a Aurora principal ainda.
+
+1. REPOSITÓRIO AURORA
+- Repositório: Alessandrow1/Aurora-assistente
+- Branch de trabalho: experiment/open-llm-vtuber-hybrid
+- Branch principal de desenvolvimento preservada: feature/live2d-avatar
+- O experimento continua separado da aplicação Electron/React/TypeScript original.
+- A branch experimental contém os scripts de preparação/configuração e a documentação do teste.
+- Atualização deste checkpoint: o script PowerShell instala Faster-Whisper + Silero VAD; o configurador inclui emotionMap vazio no registro Live2D, requisito do Open-LLM-VTuber v1.2.1.
+- Não fazer merge na branch principal antes dos testes A/B e da decisão explícita de aproveitar componentes.
+
+2. BACKUP LOCAL DO GIT
+- Antes de trocar de branch, foi criado um stash apenas para package-lock.json:
+  git stash push -m "backup package-lock antes do teste Open LLM" -- package-lock.json
+- O stash continua guardado na máquina local. Não executar pop/drop/clear até confirmar que o package-lock original está seguro.
+- Branch local atual foi criada para acompanhar origin/experiment/open-llm-vtuber-hybrid.
+- Depois de atualizar a branch remota, sincronizar a cópia local do repositório Aurora com:
+  git -C "C:\Users\Alessandro Linhares\Desktop\AURORA\Aurora-assistente" fetch origin
+  git -C "C:\Users\Alessandro Linhares\Desktop\AURORA\Aurora-assistente" switch experiment/open-llm-vtuber-hybrid
+  git -C "C:\Users\Alessandro Linhares\Desktop\AURORA\Aurora-assistente" pull --ff-only origin experiment/open-llm-vtuber-hybrid
+
+3. INSTALAÇÃO EXTERNA DO OPEN-LLM-VTUBER
+- Pasta: C:\Users\Alessandro Linhares\Desktop\AURORA\Open-LLM-VTuber-Test-v1.2.1
+- Repositório remoto: https://github.com/Open-LLM-VTuber/Open-LLM-VTuber.git
+- Tag confirmada: v1.2.1
+- A pasta foi clonada separadamente da Aurora. Não apagar nem clonar por cima.
+- Pré-requisitos instalados no Windows: uv 0.13.6 e FFmpeg 9.0.2.
+- Ollama mantém apenas qwen3.5:9b (listagem indicou 6,6 GB); modelos antigos foram removidos.
+- uv sync --python 3.12 instalou as dependências iniciais.
+- Em seguida, uv add faster-whisper recriou o ambiente .venv com CPython 3.10.22. Isso está dentro do intervalo aceito pelo projeto (>=3.10,<3.13); não é necessário reinstalar por causa disso.
+- faster-whisper instalado: 1.2.1.
+- O clone externo teve alterações próprias de dependências (pyproject.toml e uv.lock) por causa do uv add. Não enviar essas alterações ao repositório upstream Open-LLM-VTuber.
+
+4. CONFIGURAÇÃO ATUAL DO TESTE
+- conf.yaml criado na pasta externa.
+- Modelo Ollama: qwen3.5:9b, endpoint local http://127.0.0.1:11434/v1.
+- ASR: Faster-Whisper base, CPU int8, idioma pt.
+- TTS: Edge TTS, voz pt-BR-LeticiaNeural.
+- VAD: Silero VAD.
+- Personagem copiada para live2d-models/aurora-6xb.
+- Na cópia do arquivo 6xb.model3.json, o grupo LipSync foi configurado para ParamMouthOpenY. O modelo original da Aurora não foi alterado.
+- O cadastro aurora-6xb em model_dict.json recebeu manualmente emotionMap: {} após o primeiro erro. O configurador no Git agora também grava esse campo. O mapa vazio evita inventar índices de expressões que ainda não foram validados no modelo 6xb.
+- conf.yaml.backup pode ter sido criado automaticamente pelo primeiro início do servidor.
+
+5. ÚLTIMO RESULTADO OBSERVADO
+Primeira inicialização:
+- O Live2D falhou com KeyError 'emotionMap'.
+- Após adicionar emotionMap vazio ao cadastro, o Live2D foi carregado com sucesso: "Model Information Loaded."
+- ASR Faster-Whisper inicializou.
+- TTS Edge TTS inicializou.
+- O servidor parou ao iniciar VAD com:
+  ModuleNotFoundError: No module named 'silero_vad'
+- Portanto, o bloqueio atual é somente a dependência do Silero VAD ainda não instalada no ambiente de teste.
+- Avisos do Hugging Face sobre symlinks no Windows e requisições sem HF_TOKEN não foram a causa do erro. O download do modelo Whisper foi iniciado; confirmar seu estado na próxima inicialização.
+
+6. PRÓXIMA AÇÃO — RETOMAR EXATAMENTE DAQUI
+No PowerShell, dentro de:
+C:\Users\Alessandro Linhares\Desktop\AURORA\Open-LLM-VTuber-Test-v1.2.1
+
+Executar:
+  uv add silero-vad
+
+Validar:
+  uv run python -c "from silero_vad import load_silero_vad; print('SILERO VAD OK')"
+
+Depois iniciar:
+  uv run run_server.py
+
+Quando o servidor iniciar sem erro, abrir:
+  http://127.0.0.1:12393
+
+7. CRITÉRIOS DO PRIMEIRO TESTE
+- Verificar se o avatar 6xb aparece e permanece estável.
+- Verificar se o microfone capta português brasileiro.
+- Verificar se a transcrição é correta.
+- Verificar se o Qwen 3.5 9B responde usando o mesmo Ollama local.
+- Verificar se Edge TTS fala em pt-BR e se a boca acompanha o áudio.
+- Testar interrupção: falar por cima da resposta e verificar se a fala é interrompida.
+- Medir tempo até a primeira fala, tempo total e uso de CPU/RAM.
+- Não executar Aurora original e Open-LLM-VTuber ao mesmo tempo durante o benchmark.
+- Comparar com a Aurora original antes de decidir portar qualquer componente.
+- Não habilitar Letta/memória externa nesta primeira rodada; o objetivo inicial é medir latência e pipeline de voz.
+- A voz Edge TTS é apenas baseline grátis; não comparar diretamente sua qualidade com ElevenLabs.
+
+8. CUIDADOS
+- Não alterar a aparência/modelo Live2D original da Aurora.
+- Não apagar o stash do package-lock.json.
+- Não apagar a pasta externa de teste enquanto os resultados forem úteis.
+- Não fazer merge da branch experimental na branch principal ainda.
+- A instalação atual é um experimento de integração; carregamento inicial não significa que lipsync, áudio, microfone e interrupção já foram aprovados.
+
+Fim do checkpoint.
