@@ -901,6 +901,7 @@ export default function App() {
         return;
       }
       if (!result?.audioBase64) throw new Error('A voz neural nao retornou audio.');
+      console.info('[Aurora TTS] Áudio recebido para reprodução', { provider: result.provider || 'não informado', mimeType: result.audioMimeType || 'audio/mpeg', audioBytes: Math.floor(result.audioBase64.length * 0.75) });
       if (result.provider === 'kokoro-local' || result.provider === 'elevenlabs') setNotice('');
 
       const audio = new Audio('data:' + (result.audioMimeType || 'audio/mpeg') + ';base64,' + result.audioBase64);
@@ -954,7 +955,8 @@ export default function App() {
       audioRef.current = null;
       resetAudioAnalysis();
 
-      // Fallback local: mantém a Aurora falando mesmo quando o serviço neural falha.
+      // Fallback local: mantém a Aurora falando mesmo quando os provedores neurais falham.
+      console.warn('[Aurora TTS] Ativando a voz de emergência do Windows porque ElevenLabs/Kokoro não entregaram áudio.', error);
       try {
         if (!('speechSynthesis' in window)) throw error;
         const synth = window.speechSynthesis;
