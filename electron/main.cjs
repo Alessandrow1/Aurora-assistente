@@ -940,130 +940,69 @@ const chatMessages = [
 });
 
 // AURORA_ELEVENLABS_V7_FLUSH_NODE_PATH: força a geração mesmo em respostas curtas.
+function normalizeTextForSpeech(rawText) {
+  let text = typeof rawText === 'string' ? rawText : String(rawText || '');
+  text = text
+    .replace(/\x60{3}[\s\S]*?\x60{3}/g, ' ')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/https?:\/\/\S+/gi, ' ')
+    .replace(/[#*_>|~\x60]/g, ' ')
+    .replace(/\s+/g, ' ');
+
+  // Remove pictogramas, bandeiras, modificadores de pele e componentes de emoji
+  // antes do serviço de voz tentar verbalizar seus nomes.
+  text = text
+    .replace(/[#*0-9]\uFE0F?\u20E3/gu, ' ')
+    .replace(/[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\uFE0E\uFE0F\u200D\u20E3]/gu, ' ')
+    .replace(/\s+([,.;:!?])/g, '$1')
+    .replace(/([,.;:!?])(?=\S)/g, '$1 ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text;
+}
+
 async function synthesizeElevenLabsDialogue(text, apiKey) {
-  const cleanInput = typeof text === 'string' ? text.trim() : '';
-  if (!cleanInput) throw new Error('O texto para a ElevenLabs chegou vazio antes da requisicao.');
+  const cleanInput = normalizeTextForSpeech(text);
+  if (!cleanInput) throw new Error('O texto ficou vazio depois de remover emojis e formatação.');
 
-  let WebSocket;
-  try { WebSocket = require('ws'); }
-  catch { throw new Error('O pacote ws nao esta disponivel no processo principal do Electron.'); }
-  if (typeof WebSocket !== 'function') throw new Error('O pacote ws nao exportou um construtor WebSocket valido.');
-
-  const query = new URLSearchParams({
-    model_id: ELEVENLABS_MODEL_ID,
-    output_format: ELEVENLABS_OUTPUT_FORMAT,
+  const startedAt = Date.now();
+  const endpoint = 'https://api.elevenlabs.io/v1/text-to-dialogue?output_format=' +
+    encodeURIComponent(ELEVENLABS_OUTPUT_FORMAT);
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'xi-api-key': apiKey,
+      'Content-Type': 'application/json',
+      'Accept': 'audio/mpeg',
+    },
+    signal: AbortSignal.timeout(90000),
+    body: JSON.stringify({
+      model_id: ELEVENLABS_MODEL_ID,
+      language_code: 'pt',
+      apply_text_normalization: 'auto',
+      inputs: [{ text: cleanInput, voice_id: ELEVENLABS_VOICE_ID }],
+    }),
   });
-  const endpoint = `wss://api.elevenlabs.io/v1/text-to-dialogue/stream-input?${query.toString()}`;
 
-  return await new Promise((resolve, reject) => {
-    let socket;
-    let settled = false;
-    const audioChunks = [];
-    const timeout = setTimeout(() => fail(new Error('Tempo esgotado aguardando a ElevenLabs.')), 60000);
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error('ElevenLabs HTTP ' + response.status + ': ' + detail.slice(0, 280));
+  }
 
-    const closeSocket = () => {
-      try {
-        if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
-          socket.close();
-        }
-      } catch { /* conexao ja encerrada */ }
-    };
+  const audio = Buffer.from(await response.arrayBuffer());
+  const contentType = response.headers.get('content-type') || '';
+  if (audio.length < 100 || contentType.includes('application/json')) {
+    throw new Error('ElevenLabs não retornou um arquivo de áudio válido.');
+  }
 
-    const fail = (error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      closeSocket();
-      reject(error instanceof Error ? error : new Error(String(error)));
-    };
-
-    const complete = () => {
-      if (settled) return;
-      const audio = Buffer.concat(audioChunks);
-      if (audio.length < 100) {
-        fail(new Error('A ElevenLabs encerrou a sessao sem retornar audio suficiente.'));
-        return;
-      }
-      settled = true;
-      clearTimeout(timeout);
-      // O servidor normalmente ja esta fechando apos is_final; nao interromper antes.
-      resolve(audio);
-    };
-
-    const sendFrame = (payload) => new Promise((sendResolve, sendReject) => {
-      if (!socket || socket.readyState !== WebSocket.OPEN) {
-        sendReject(new Error('WebSocket nao esta aberto para enviar dados.'));
-        return;
-      }
-      socket.send(JSON.stringify(payload), (error) => {
-        if (error) sendReject(error);
-        else sendResolve();
-      });
-    });
-
-    try {
-      socket = new WebSocket(endpoint, {
-        headers: { 'xi-api-key': apiKey },
-        handshakeTimeout: 20000,
-        perMessageDeflate: false,
-      });
-    } catch (error) {
-      fail(error);
-      return;
-    }
-
-    socket.on('open', () => {
-      void (async () => {
-        // Primeiro frame obrigatório: registra a única voz permitida no eleven_v4_turbo.
-        await sendFrame({ voices: [ELEVENLABS_VOICE_ID] });
-        // flush:true é essencial para falas curtas, abaixo do buffer normal (~40 chars/8 palavras).
-        await sendFrame({
-          inputs: [{ text: cleanInput, voice_id: ELEVENLABS_VOICE_ID, new_turn: false }],
-        });
-        // close_socket realiza o flush final e só encerra após o servidor entregar os blocos de áudio.
-        await sendFrame({ close_socket: true });
-      })().catch(fail);
-    });
-
-    socket.on('message', (data) => {
-      if (settled) return;
-      try {
-        const raw = Buffer.isBuffer(data) ? data.toString('utf8') : String(data);
-        const message = JSON.parse(raw);
-        if (message.error) {
-          const detail = typeof message.error === 'string'
-            ? message.error
-            : (message.error.message || message.error.status || JSON.stringify(message.error));
-          if (/input_text_empty/i.test(String(detail))) {
-            throw new Error(`ElevenLabs informou input_text_empty; a Aurora enviou ${cleanInput.length} caracteres e ${cleanInput.split(/\s+/).filter(Boolean).length} palavras.`);
-          }
-          throw new Error(`ElevenLabs recusou a sintese: ${String(detail).slice(0, 260)}`);
-        }
-        if (typeof message.audio === 'string' && message.audio.length > 0) {
-          audioChunks.push(Buffer.from(message.audio, 'base64'));
-        }
-        // is_final_audio_for_turn marca o fim do áudio do turno; is_final encerra o socket.
-        if (message.is_final === true) complete();
-      } catch (error) {
-        fail(error);
-      }
-    });
-
-    socket.on('error', (error) => {
-      const detail = error instanceof Error ? error.message : String(error);
-      fail(new Error(`Falha no WebSocket da ElevenLabs: ${detail}`));
-    });
-
-    socket.on('close', (code, reason) => {
-      if (settled) return;
-      if (audioChunks.length >= 1 && code === 1000) {
-        complete();
-        return;
-      }
-      const explanation = reason && reason.length ? `: ${reason.toString('utf8').slice(0, 180)}` : '';
-      fail(new Error(`Conexao ElevenLabs encerrada antes da mensagem final (codigo ${code})${explanation}.`));
-    });
+  console.info('[Aurora Performance] ElevenLabs HTTP diálogo', {
+    synthesisMs: Date.now() - startedAt,
+    characters: cleanInput.length,
+    audioBytes: audio.length,
+    contentType: contentType || 'não informado',
+    transport: 'HTTP arquivo completo; sem concatenação WebSocket',
   });
+  return audio;
 }
 
 function pcm24KhzToWav(pcmBytes) {
@@ -1324,7 +1263,7 @@ ipcMain.handle('aurora:speak', async (_event, rawText) => {
   const text = typeof rawText === 'string' ? rawText.trim().slice(0, 4200) : '';
   if (!text) throw new Error('Não há texto para transformar em fala.');
 
-  const cleanText = text.replace(/[\\r\\n\\t]+/g, ' ').replace(/[#*_>|]/g, ' ').replace(/\\s+/g, ' ').trim();
+  const cleanText = normalizeTextForSpeech(text);
   if (!cleanText) throw new Error('O texto ficou vazio depois de remover a formatação.');
 
   const startedAt = Date.now();
