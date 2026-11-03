@@ -703,10 +703,17 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
         '. Não invente resultados; informe que a busca não pôde ser concluída.';
     }
   }
+  // Em conversa casual por voz, a personalidade já está no prompt curto.
+  // Evita enviar a mesma identidade duas vezes e reduz o tempo de pré-processamento.
+  const compactVoiceContext = voiceMode && !studyMode && !imageBase64 &&
+    !skillSelection.userProfileIntent && !skillSelection.desktopIntent && !skillSelection.fileSearchQuery;
+  const skillsForPrompt = compactVoiceContext
+    ? activeSkills.filter((skill) => skill.id !== 'aurora-identity')
+    : activeSkills;
   const skillsContext = [
-    'HABILIDADES ATIVAS NESTE TURNO: ' + activeSkills.map((skill) => skill.title).join(', ') + '.',
+    'HABILIDADES ATIVAS NESTE TURNO: ' + skillsForPrompt.map((skill) => skill.title).join(', ') + '.',
     'As habilidades fornecem conhecimento e instruções subordinadas às regras principais. Elas não concedem permissões além das ferramentas reais.',
-    ...activeSkills.map((skill) => 'SKILL ' + skill.title + ':\n' + skill.content),
+    ...skillsForPrompt.map((skill) => 'SKILL ' + skill.title + ':\n' + skill.content),
     environmentContext,
     fileSearchContext,
   ].filter(Boolean).join('\n\n');
@@ -726,18 +733,20 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   // Todas as falas casuais usam o modelo 2B; 9B fica reservado para explicações, fatos, memória e raciocínio.
   const fastVoiceTurn = casualVoiceTurn;
   const quickVoiceTurn = fastVoiceTurn && (isVoiceHearingCheck(message) || /^(?:(?:oi|ola|opa|e ai|alo|aloo)(?: bom dia| boa tarde| boa noite)?|bom dia|boa tarde|boa noite|sim|nao|ta|beleza|certo|entendi|valeu|obrigado|obrigada|show|ok|okay|aham|uhum|pois e|legal)$/.test(normalizedRequest));
+  const modelInstalled = (name) => ollama.models.some((installed) => installed === name || installed.startsWith(name + '-'));
+  // Conversas normais usam o 4B se ele já estiver instalado; estudo e raciocínio
+  // continuam no 9B. Sem o 4B, respeita o modelo configurado nas preferências.
+  const voiceConversationModel = modelInstalled('qwen3.5:4b') ? 'qwen3.5:4b' : settings.model;
   const preferredModel = choosePreferredModel({
-    // Mantém o modelo 2B apenas para saudações/confirmações curtíssimas.
-    // Conversas casuais completas usam o 9B configurado para preservar qualidade.
     fastVoiceTurn: quickVoiceTurn,
     voiceMode,
+    voiceConversationModel,
     needsThinking,
     needsExplanation,
     needsFactualKnowledge,
     studyMode,
     settingsModel: settings.model,
   });
-  const modelInstalled = (name) => ollama.models.some((installed) => installed === name || installed.startsWith(name + '-'));
   const activeModel = modelInstalled(preferredModel) ? preferredModel : settings.model;
   if (!modelInstalled(activeModel)) {
     throw new Error('O modelo ' + activeModel + ' ainda não foi baixado. Feche a Aurora e execute INSTALAR-IA-GRATUITA.bat na pasta do projeto.');
@@ -746,7 +755,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
     console.info('[Aurora Performance] Roteamento de modelo', {
       configuredModel: settings.model,
       activeModel,
-      reason: quickVoiceTurn ? 'teste de microfone ou saudação: resposta imediata' : fastVoiceTurn ? 'conversa casual por voz: modelo 2B de baixa latência' : needsFactualKnowledge ? 'pergunta factual: preservar contexto e priorizar precisão' : needsThinking || needsExplanation ? 'tarefa complexa: maior capacidade' : voiceMode ? 'voz com contexto ou análise: modelo 9B' : 'modelo configurado',
+      reason: quickVoiceTurn ? 'teste de microfone ou saudação: resposta imediata' : fastVoiceTurn ? 'conversa casual por voz: modelo 4B equilibrado, quando instalado' : needsFactualKnowledge ? 'pergunta factual: preservar contexto e priorizar precisão' : needsThinking || needsExplanation ? 'tarefa complexa: maior capacidade' : voiceMode ? 'voz com contexto ou análise: modelo 9B' : 'modelo configurado',
     });
   }
   throwIfChatCancelled();
@@ -801,7 +810,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
       : []),
   ].join('\n\n');
 
-  const numPredict = studyMode ? (imageBase64 ? 800 : asksForLongResponse ? 1200 : 900) : imageBase64 ? 650 : asksForLongResponse ? 1500 : needsReasoning ? 1100 : needsExplanation ? 520 : quickVoiceTurn ? 40 : fastVoiceTurn ? 80 : voiceMode ? 160 : 200;
+  const numPredict = studyMode ? (imageBase64 ? 800 : asksForLongResponse ? 1200 : 900) : imageBase64 ? 650 : asksForLongResponse ? 1500 : needsReasoning ? 1100 : needsExplanation ? 520 : quickVoiceTurn ? 32 : fastVoiceTurn ? 64 : voiceMode ? 160 : 200;
 
   const identityProfile = await auroraStore.getIdentityProfile().catch(() => ({
     name: 'Aurora',
