@@ -677,9 +677,6 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   const preferredModel = quickVoiceTurn
     ? 'qwen3.5:2b'
     : (needsThinking || needsExplanation || needsFactualKnowledge || studyMode ? 'qwen3.5:9b' : settings.model);
-  const preferredModel = quickVoiceTurn
-    ? 'qwen3.5:2b'
-    : (needsThinking || needsExplanation || studyMode ? 'qwen3.5:9b' : settings.model);
   const modelInstalled = (name) => ollama.models.some((installed) => installed === name || installed.startsWith(name + '-'));
   const activeModel = modelInstalled(preferredModel) ? preferredModel : settings.model;
   if (!modelInstalled(activeModel)) {
