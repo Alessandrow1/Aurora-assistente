@@ -44,6 +44,7 @@
       "dist/**/*",
       "electron/**/*",
       "skills/**/*",
+      "!skills/aurora-identity/USER-PROFILE.local.md",
       "package.json"
     ],
     "win": {
