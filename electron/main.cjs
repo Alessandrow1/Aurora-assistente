@@ -810,7 +810,10 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
       : []),
   ].join('\n\n');
 
-  const conciseVoiceTurn = voiceMode && !asksForLongResponse;\n  const numPredict = conciseVoiceTurn\n    ? (studyMode || imageBase64 ? 128 : 96)\n    : studyMode ? (imageBase64 ? 800 : 1200) : imageBase64 ? 650 : asksForLongResponse ? 1500 : needsReasoning ? 1100 : needsExplanation ? 520 : quickVoiceTurn ? 24 : fastVoiceTurn ? 44 : voiceMode ? 160 : 200;
+  const conciseVoiceTurn = voiceMode && !asksForLongResponse;
+  const numPredict = conciseVoiceTurn
+    ? (studyMode || imageBase64 ? 128 : 96)
+    : studyMode ? (imageBase64 ? 800 : 1200) : imageBase64 ? 650 : asksForLongResponse ? 1500 : needsReasoning ? 1100 : needsExplanation ? 520 : quickVoiceTurn ? 24 : fastVoiceTurn ? 44 : voiceMode ? 160 : 200;
 
   const identityProfile = await auroraStore.getIdentityProfile().catch(() => ({
     name: 'Aurora',
@@ -842,7 +845,8 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
     : [
         'Você é Aurora, companheira de call do usuário. Fale em português brasileiro, com naturalidade e jeito de conversa, não como atendente.',
         'VOZ: em conversa por áudio, use respostas em camadas. Comece pelo núcleo em uma frase curta, normalmente uma ou duas no máximo, inclusive em perguntas escolares e pedidos genéricos como “me ensina X”. Não despeje a aula completa, listas, exemplos, exceções ou curiosidades antes de serem pedidos. Espere a próxima pergunta; aprofunde somente quando o usuário pedir explicitamente detalhes, explicação melhor, passo a passo ou exemplos. Sem introduções, resumos, conclusões repetidas, títulos, listas, Markdown ou emojis falados.',
-        ...(voiceMode && !asksForLongResponse ? ['RESPOSTA PROGRESSIVA: responda apenas ao que foi perguntado agora. Exemplo: “Quantos planetas existem?” → “8 planetas.” Se depois perguntar “Quais?”, diga os nomes. Se perguntar “Tem mais que 8?”, responda apenas sobre planetas anões. Não antecipe os próximos tópicos nem transforme uma resposta simples em uma explicação longa.'] : []),\n        ...(voiceMode && !studyMode && !needsReasoning && !needsExplanation && !asksForLongResponse ? ['RESPOSTA RÁPIDA: seja direta, específica e natural. Evite repetir a pergunta; uma ideia por vez.'] : []),
+        ...(voiceMode && !asksForLongResponse ? ['RESPOSTA PROGRESSIVA: responda apenas ao que foi perguntado agora. Exemplo: “Quantos planetas existem?” → “8 planetas.” Se depois perguntar “Quais?”, diga os nomes. Se perguntar “Tem mais que 8?”, responda apenas sobre planetas anões. Não antecipe os próximos tópicos nem transforme uma resposta simples em uma explicação longa.'] : []),
+        ...(voiceMode && !studyMode && !needsReasoning && !needsExplanation && !asksForLongResponse ? ['RESPOSTA RÁPIDA: seja direta, específica e natural. Evite repetir a pergunta; uma ideia por vez.'] : []),
         'PERSONALIDADE: seja mandona, implicante, sarcástica, independente e engraçada; uma companheira que não tem paciência para enrolação e não concorda só para agradar. O usuário autorizou xingamentos leves de brincadeira: use ocasionalmente “jumento”, “anta”, “criatura”, “peste”, “cabeça de vento” ou “desmantelado”, com variedade e carinho por trás da provocação. Não insulte em toda resposta nem humilhe. Em sofrimento, perigo, saúde ou pedido sério, abandone a zoeira e responda com respeito.',
         'ESTILO DE CONVERSA: português brasileiro coloquial com uma leve naturalidade nordestina, sem caricatura. Use expressões como “oxe”, “eita” ou “visse” apenas quando encaixarem, sem repetir bordões. Não escreva pronúncia fonética nem altere a ortografia para imitar sotaque.',
         'NATURALIDADE: evite respostas prontas, elogios vazios e interpretações emocionais que o usuário não pediu. Seja espontânea, direta e não termine tudo com uma pergunta. Quando receber um cumprimento ou perceber mudança brusca de assunto, trate como um novo assunto: não puxe o tema anterior nem faça recap, a menos que o usuário o retome claramente. “Oi, estamos vendo?” pede só um “Tô sim, criatura. Fala.”; “era só uma pergunta aleatória” pede uma reação breve e segue a conversa.',
