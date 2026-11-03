@@ -10,6 +10,7 @@ const { pipeline } = require('node:stream/promises');
 const { createAuroraStore } = require('./aurora-store.cjs');
 const { createAuroraImageGenerator } = require('./aurora-image-generator.cjs');
 const { createAuroraLocalTts } = require('./aurora-local-tts.cjs');
+const { createAuroraCoquiTts } = require('./aurora-coqui-tts.cjs');
 const { createAuroraSkills } = require('./aurora-skills.cjs');
 const { createEdgeTtsSpeech } = require('./aurora-edge-tts.cjs');
 const { choosePreferredModel, isElevenLabsQuotaExceeded, isExplicitDeepDiveRequest, normalizeVoiceTranscript, isVoiceHearingCheck } = require('./aurora-voice.cjs');
@@ -45,6 +46,7 @@ let mainWindow;
 let activeElevenLabsStreamSession = null;
 let elevenLabsQuotaExhausted = false;
 let auroraLocalTts = null;
+let auroraCoquiTts = null;
 let auroraEdgeTts = null;
 const activeChatControllers = new Map();
 
@@ -62,6 +64,22 @@ function getAuroraLocalTts() {
     });
   }
   return auroraLocalTts;
+}
+
+function getAuroraCoquiTts() {
+  if (!auroraCoquiTts) {
+    const workerPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'app.asar.unpacked', 'tools', 'coqui-xtts', 'worker.py')
+      : path.join(app.getAppPath(), 'tools', 'coqui-xtts', 'worker.py');
+    auroraCoquiTts = createAuroraCoquiTts({
+      app,
+      workerPath,
+      onStatus: (status) => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('aurora:coqui-status-update', status);
+      },
+    });
+  }
+  return auroraCoquiTts;
 }
 const ollamaWarmupPromises = new Map();
 let tray = null;
@@ -1352,6 +1370,16 @@ ipcMain.handle('aurora:tts-install', async () => {
   return await engine.getStatus();
 });
 
+// Coqui XTTS é experimental e nunca entra no caminho padrão de fala.
+ipcMain.handle('aurora:coqui-status', async () => getAuroraCoquiTts().getStatus());
+ipcMain.handle('aurora:coqui-speak', async (_event, rawText) => {
+  const text = typeof rawText === 'string' ? rawText.trim().slice(0, 1800) : '';
+  if (!text) throw new Error('Digite uma frase para testar o Coqui XTTS.');
+  const result = await getAuroraCoquiTts().synthesize(normalizeTextForSpeech(text));
+  console.info('[Aurora Performance] Coqui XTTS CPU test', result.performance || {});
+  return result;
+});
+
 // ElevenLabs é opcional/premium; Edge Neural é a opção gratuita online e Kokoro é o fallback offline.
 ipcMain.handle('aurora:speak-session-start', async () => {
   // A fala é sintetizada por frase; o Edge TTS recebe cada frase pelo serviço online.
@@ -1378,6 +1406,13 @@ ipcMain.handle('aurora:speak', async (_event, rawText, options = {}) => {
 
   const startedAt = Date.now();
   const requestedProvider = options && options.provider === 'elevenlabs' ? 'elevenlabs' : 'free';
+
+  // Coqui XTTS é acessado exclusivamente pelo teste manual; não altera o provedor padrão.
+  if (options && options.provider === 'coqui') {
+    const coquiResult = await getAuroraCoquiTts().synthesize(cleanText);
+    console.info('[Aurora Performance] Coqui XTTS CPU test', coquiResult.performance || {});
+    return coquiResult;
+  }
 
   // ElevenLabs só é chamado quando o usuário escolhe explicitamente testar a voz premium.
   // A conversa normal nunca consome créditos automaticamente.
@@ -1559,7 +1594,10 @@ ipcMain.on('aurora:move-window-by', (event, payload = {}) => {
 ipcMain.on('aurora:minimize', () => mainWindow?.hide());
 ipcMain.on('aurora:close', () => mainWindow?.close());
 
-app.on('will-quit', () => globalShortcut.unregisterAll());
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+  if (auroraCoquiTts) void auroraCoquiTts.dispose();
+});
 
 app.on('before-quit', () => {
   isQuitting = true; // AURORA_TRAY_V3_BEFORE_QUIT
