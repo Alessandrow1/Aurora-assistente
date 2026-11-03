@@ -5,6 +5,7 @@ import MemoryHub from './components/MemoryHub';
 type Message = { role: 'user' | 'assistant'; content: string; imageId?: string; imageUrl?: string };
 type VoiceVadController = { start: () => void | Promise<void>; pause: () => void | Promise<void>; destroy: () => void | Promise<void> };
 type LocalTtsStatus = { installed: boolean; ready: boolean; modelDirectory: string; voice: string; language: string; provider: string };
+type CoquiTtsStatus = { installed: boolean; licenseAccepted: boolean; ready: boolean; modelLoaded: boolean; provider: 'coqui-xtts'; model: string; language: string; device: string; installDirectory: string; pythonPath: string; workerAvailable: boolean };
 type ElevenLabsStatus = { configured: boolean; storageAvailable: boolean; voiceId: string; modelId: string };
 type AudioInputOption = { deviceId: string; label: string };
 
@@ -252,6 +253,9 @@ export default function App() {
   const [localTtsStatus, setLocalTtsStatus] = useState<LocalTtsStatus | null>(null);
   const [localTtsProgress, setLocalTtsProgress] = useState('');
   const [localTtsInstalling, setLocalTtsInstalling] = useState(false);
+  const [coquiTtsStatus, setCoquiTtsStatus] = useState<CoquiTtsStatus | null>(null);
+  const [coquiTtsProgress, setCoquiTtsProgress] = useState('');
+  const [coquiTtsTesting, setCoquiTtsTesting] = useState(false);
   const [elevenLabsStatus, setElevenLabsStatus] = useState<ElevenLabsStatus | null>(null);
   const [elevenLabsKeyInput, setElevenLabsKeyInput] = useState('');
   const [elevenLabsKeySaving, setElevenLabsKeySaving] = useState(false);
@@ -269,6 +273,13 @@ export default function App() {
       setLocalTtsStatus(await window.aurora.getLocalTtsStatus());
     } catch (error) {
       console.warn('[Aurora TTS] Não consegui consultar o Kokoro local:', error);
+    }
+  };
+  const refreshCoquiTtsStatus = async () => {
+    try {
+      setCoquiTtsStatus(await window.aurora.getCoquiTtsStatus());
+    } catch (error) {
+      console.warn('[Aurora TTS] Não consegui consultar o ambiente experimental Coqui:', error);
     }
   };
   const refreshAudioInputs = async () => {
@@ -293,13 +304,24 @@ export default function App() {
 
   useEffect(() => {
     void refreshLocalTtsStatus();
+    void refreshCoquiTtsStatus();
     void refreshElevenLabsStatus();
-    return window.aurora.onTtsStatus((status) => {
+    const stopLocalStatus = window.aurora.onTtsStatus((status) => {
       setLocalTtsProgress(status.message || '');
       if (status.state === 'installed' || status.state === 'ready' || status.state === 'error') {
         void refreshLocalTtsStatus();
       }
     });
+    const stopCoquiStatus = window.aurora.onCoquiTtsStatus((status) => {
+      setCoquiTtsProgress(status.message || '');
+      if (status.state === 'ready' || status.state === 'model-loaded' || status.state === 'error') {
+        void refreshCoquiTtsStatus();
+      }
+    });
+    return () => {
+      stopLocalStatus();
+      stopCoquiStatus();
+    };
   }, []);
   thinkingRef.current = thinking;
 
@@ -910,7 +932,7 @@ export default function App() {
   startVoiceCaptureRef.current = startVoiceCapture;
   stopVoiceCaptureRef.current = stopVoiceCapture;
 
-  const speak = async (text: string, waitForPlayback = false, resumeAfterPlayback = true, provider: 'auto' | 'elevenlabs' = 'auto') => {
+  const speak = async (text: string, waitForPlayback = false, resumeAfterPlayback = true, provider: 'auto' | 'elevenlabs' | 'coqui' = 'auto') => {
     const speechTicket = voiceOutputTurnRef.current;
     const speechText = normalizeSpeechText(text);
     if (!hasSpeakableSpeechText(speechText)) {
@@ -935,7 +957,7 @@ export default function App() {
     });
 
     try {
-      const result = await window.aurora.speak(speechText, provider === 'elevenlabs' ? { provider } : undefined);
+      const result = await window.aurora.speak(speechText, provider !== 'auto' ? { provider } : undefined);
       if (speechTicket !== voiceOutputTurnRef.current) {
         finishPlayback();
         return;
@@ -995,8 +1017,19 @@ export default function App() {
       audioRef.current = null;
       resetAudioAnalysis();
 
+      // O teste Coqui é isolado: falhar não deve tocar outra voz e mascarar o resultado.
+      if (provider === 'coqui') {
+        setSpeaking(false);
+        setEmotion('neutral');
+        const detail = error instanceof Error ? error.message : String(error);
+        setNotice('Teste Coqui XTTS falhou: ' + detail.slice(0, 220));
+        if (resumeAfterPlayback) resumeVoiceRecognitionAfterSpeech();
+        finishPlayback();
+        return;
+      }
+
       // Fallback local: mantém a Aurora falando mesmo quando os provedores neurais falham.
-      console.warn('[Aurora TTS] Ativando a voz de emergência do Windows porque ElevenLabs/Kokoro não entregaram áudio.', error);
+      console.warn('[Aurora TTS] Ativando a voz de emergência do Windows porque os provedores neurais não entregaram áudio.', error);
       try {
         if (!('speechSynthesis' in window)) throw error;
         const synth = window.speechSynthesis;
@@ -1642,6 +1675,18 @@ export default function App() {
     }
   };
 
+  const testCoquiVoice = async () => {
+    setCoquiTtsTesting(true);
+    setCoquiTtsProgress('Iniciando teste do XTTS-v2 na CPU…');
+    setNotice('Teste experimental Coqui iniciado. Na primeira execução, o modelo será baixado e carregado.');
+    try {
+      await speak('Hã?! O que foi agora, idiota? Tch! Eu disse que ia dar certo.', false, true, 'coqui');
+      await refreshCoquiTtsStatus();
+    } finally {
+      setCoquiTtsTesting(false);
+    }
+  };
+
   const applyMicrophone = async () => {
     const wasVoiceModeActive = voiceModeRef.current;
     recognitionPausedRef.current = true;
@@ -1995,6 +2040,40 @@ export default function App() {
                     </button>
                   </div>
                   <p className="field-help">Voz: pf_dora · Idioma: português brasileiro · Execução: CPU local. O modelo permanece instalado no disco D:.</p>
+                </div>
+
+                <div className="modal-divider" />
+                <div className="elevenlabs-voice-settings">
+                  <strong>Experimento: Coqui XTTS-v2 (CPU)</strong>
+                  <p>Motor de voz alternativo para comparação. Ele usa uma voz de demonstração e não altera a fala normal da Aurora, que continua com Edge Neural e Kokoro.</p>
+                  <div className="secure-note">
+                    <span>{coquiTtsStatus?.installed && coquiTtsStatus.licenseAccepted ? '✓' : '!'}</span>
+                    <span>{coquiTtsStatus
+                      ? !coquiTtsStatus.installed
+                        ? 'Ambiente Python do Coqui ainda não instalado.'
+                        : !coquiTtsStatus.licenseAccepted
+                          ? 'Leia e aceite a licença CPML pelo instalador antes de usar o XTTS-v2.'
+                          : coquiTtsStatus.modelLoaded
+                            ? 'XTTS-v2 carregado e pronto para novos testes.'
+                            : 'Ambiente Coqui instalado; o modelo será baixado/carregado no primeiro teste.'
+                      : 'Verificando o ambiente Coqui…'}</span>
+                  </div>
+                  {coquiTtsStatus?.installDirectory && <p className="field-help">Ambiente isolado: {coquiTtsStatus.installDirectory}</p>}
+                  {coquiTtsProgress && <p className="field-help">{coquiTtsProgress}</p>}
+                  <div className="elevenlabs-key-actions">
+                    <button
+                      className="pet-voice-test"
+                      type="button"
+                      onClick={() => void testCoquiVoice()}
+                      disabled={!coquiTtsStatus?.installed || !coquiTtsStatus.licenseAccepted || !coquiTtsStatus.workerAvailable || coquiTtsTesting}
+                    >
+                      {coquiTtsTesting ? 'Gerando amostra…' : '▶ Testar voz Coqui XTTS'}
+                    </button>
+                    <button className="pet-voice-test" type="button" onClick={() => void refreshCoquiTtsStatus()}>
+                      Atualizar status
+                    </button>
+                  </div>
+                  <p className="field-help">Instalação: execute <code>powershell -ExecutionPolicy Bypass -File .\scripts\install-coqui-xtts.ps1</code> na pasta do projeto. Os pesos do XTTS-v2 só serão baixados ao iniciar o primeiro teste. Uso do modelo limitado a fins não comerciais pela licença CPML. Voz de demonstração: Ana Florence.</p>
                 </div>
 
                 <div className="modal-divider" />
