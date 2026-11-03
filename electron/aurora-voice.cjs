@@ -10,6 +10,11 @@ function foldPortuguese(text) {
     .replace(/\s+/g, ' ');
 }
 
+function isExplicitDeepDiveRequest(text) {
+  const folded = foldPortuguese(text);
+  return /\\b(?:detalhe|detalhes|detalhad[oa]s?|passo a passo|aprofund(?:ar|a|e|amento|ado|ada)|explica melhor|explique melhor|com mais calma|com exemplos?|me da exemplos?|mais completo|mais completa|destrincha|destrinche|desenvolve|desenvolva|elabora|elabore|quero entender melhor|quero saber mais|fala mais|fale mais|me conta mais|mais detalhes)\\b/.test(folded);
+}
+
 function extractHearingCheck(text) {
   const folded = foldPortuguese(text);
   if (!folded) return null;
@@ -78,4 +83,4 @@ function choosePreferredModel({
   return settingsModel;
 }
 
-module.exports = { choosePreferredModel, foldPortuguese, isElevenLabsQuotaExceeded, isVoiceHearingCheck, normalizeVoiceTranscript };
+module.exports = { choosePreferredModel, foldPortuguese, isElevenLabsQuotaExceeded, isExplicitDeepDiveRequest, isVoiceHearingCheck, normalizeVoiceTranscript };
