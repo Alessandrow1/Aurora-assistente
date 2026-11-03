@@ -886,7 +886,7 @@ const chatMessages = [
           think: thinkEnabled,
           keep_alive: '2h',
           messages,
-          options: { temperature: studyMode ? 0.12 : needsThinking ? 0.2 : needsExplanation ? 0.22 : 0.25, num_predict: tokenBudget, num_ctx: quickVoiceTurn ? 2048 : fastVoiceTurn ? 3072 : imageBase64 ? 6144 : 4096 },
+          options: { temperature: studyMode ? 0.12 : needsThinking ? 0.2 : needsExplanation ? 0.22 : 0.25, num_predict: tokenBudget, num_ctx: fastVoiceTurn ? 2048 : imageBase64 ? 6144 : 4096 },
         }),
       });
     } catch (error) {
