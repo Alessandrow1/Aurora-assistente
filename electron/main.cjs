@@ -57,8 +57,7 @@ function getAuroraLocalTts() {
   }
   return auroraLocalTts;
 }
-let ollamaWarmupPromise = null;
-let ollamaWarmupModel = '';
+const ollamaWarmupPromises = new Map();
 let tray = null;
 let isQuitting = false; // AURORA_TRAY_V3
 const settingsPath = () => path.join(app.getPath('userData'), 'aurora-settings.json');
@@ -188,7 +187,9 @@ async function getOllamaModels() {
 }
 
 async function warmupOllamaModel(model = readSettings().model) {
-  if (ollamaWarmupPromise && ollamaWarmupModel === model) return await ollamaWarmupPromise;
+  const existing = ollamaWarmupPromises.get(model);
+  if (existing) return await existing;
+
   const promise = (async () => {
     const ollama = await getOllamaModels();
     if (!ollama.available || !ollama.models.some((name) => name === model || name.startsWith(`${model}-`))) {
@@ -204,7 +205,7 @@ async function warmupOllamaModel(model = readSettings().model) {
         prompt: '',
         stream: false,
         keep_alive: '2h',
-        options: { num_predict: 0, num_ctx: 4096 },
+        options: { num_predict: 0, num_ctx: 2048 },
       }),
     });
     if (!response.ok) throw new Error(`Ollama warmup retornou HTTP ${response.status}.`);
@@ -216,15 +217,12 @@ async function warmupOllamaModel(model = readSettings().model) {
     });
     return true;
   })();
-  ollamaWarmupModel = model;
-  ollamaWarmupPromise = promise;
+
+  ollamaWarmupPromises.set(model, promise);
   try {
     return await promise;
   } catch (error) {
-    if (ollamaWarmupModel === model) {
-      ollamaWarmupModel = '';
-      ollamaWarmupPromise = null;
-    }
+    if (ollamaWarmupPromises.get(model) === promise) ollamaWarmupPromises.delete(model);
     throw error;
   }
 }
@@ -352,9 +350,18 @@ app.whenReady().then(() => {
   });
   createWindow();
   createTray();
-  void warmupOllamaModel().catch((error) => {
-    console.info('[Aurora Performance] Ollama warmup indisponivel; sera carregado na primeira conversa:', error instanceof Error ? error.message : String(error));
-  });
+  // Pré-carrega primeiro o modelo de conversa casual para evitar que a primeira fala espere o modelo entrar na memória.
+  void (async () => {
+    await warmupOllamaModel('qwen3.5:2b').catch((error) => {
+      console.info('[Aurora Performance] Warmup do modelo rápido indisponível; será carregado no primeiro uso:', error instanceof Error ? error.message : String(error));
+    });
+    const configuredModel = readSettings().model;
+    if (configuredModel !== 'qwen3.5:2b') {
+      await warmupOllamaModel(configuredModel).catch((error) => {
+        console.info('[Aurora Performance] Warmup do modelo principal indisponível; será carregado quando necessário:', error instanceof Error ? error.message : String(error));
+      });
+    }
+  })();
   // Atalho global: continua acessÃ­vel mesmo quando o mouse estÃ¡ passando para outro programa.
   globalShortcut.register('Control+Shift+Space', () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -733,7 +740,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
       : []),
   ].join('\n\n');
 
-  const numPredict = studyMode ? (imageBase64 ? 800 : asksForLongResponse ? 1200 : 900) : imageBase64 ? 650 : asksForLongResponse ? 1500 : needsReasoning ? 1100 : needsExplanation ? 520 : quickVoiceTurn ? 56 : voiceMode ? 80 : 200;
+  const numPredict = studyMode ? (imageBase64 ? 800 : asksForLongResponse ? 1200 : 900) : imageBase64 ? 650 : asksForLongResponse ? 1500 : needsReasoning ? 1100 : needsExplanation ? 520 : quickVoiceTurn ? 40 : voiceMode ? 80 : 200;
 
   const identityProfile = await auroraStore.getIdentityProfile().catch(() => ({
     name: 'Aurora',
@@ -811,7 +818,7 @@ const chatMessages = [
           think: thinkEnabled,
           keep_alive: '2h',
           messages,
-          options: { temperature: studyMode ? 0.12 : needsThinking ? 0.2 : needsExplanation ? 0.22 : 0.25, num_predict: tokenBudget, num_ctx: quickVoiceTurn ? 3072 : imageBase64 ? 6144 : 4096 },
+          options: { temperature: studyMode ? 0.12 : needsThinking ? 0.2 : needsExplanation ? 0.22 : 0.25, num_predict: tokenBudget, num_ctx: quickVoiceTurn ? 2048 : imageBase64 ? 6144 : 4096 },
         }),
       });
     } catch (error) {
