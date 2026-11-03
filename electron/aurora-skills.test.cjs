@@ -47,6 +47,7 @@ test('always activates identity and selects avatar, desktop and file skills when
   assert.ok(file.ids.includes('computer-environment'));
   assert.ok(file.ids.includes('file-finder'));
   assert.equal(file.fileSearchQuery, 'Aurora-Checkpoint.txt');
+  assert.equal(extractFileSearchQuery('Onde tá o arquivo relatorio.pdf?'), 'relatorio.pdf');
 
   const time = selectSkills({ message: 'Que horas são agora?' });
   assert.ok(time.ids.includes('computer-environment'));
