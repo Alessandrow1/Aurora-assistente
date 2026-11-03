@@ -8,6 +8,7 @@ test('configures a Brazilian Portuguese neural Edge voice without API credential
   assert.equal(DEFAULT_EDGE_TTS_CONFIG.voice, 'pt-BR-ThalitaMultilingualNeural');
   assert.equal(DEFAULT_EDGE_TTS_CONFIG.lang, 'pt-BR');
   assert.equal(DEFAULT_EDGE_TTS_CONFIG.outputFormat, 'audio-24khz-96kbitrate-mono-mp3');
+  assert.equal(DEFAULT_EDGE_TTS_CONFIG.pitch, '+12%');
   assert.ok(DEFAULT_EDGE_TTS_CONFIG.timeout >= 10000);
 });
 
