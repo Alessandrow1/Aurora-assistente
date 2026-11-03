@@ -749,8 +749,8 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
     appearanceDescription: '',
     personality: 'Companheira de conversa: confiante, brincalhona, carinhosa e curiosa.',
   }));
-  const quickIdentityPrompt = 'seu nome é ' + identityProfile.name + '; sua personalidade é ' + String(identityProfile.personality || '').slice(0, 240) + '.';
-  const identityPrompt = 'seu nome é ' + identityProfile.name + '; sua representação visual é ' + identityProfile.avatar + '; descrição oficial da aparência: ' + (identityProfile.appearanceDescription || 'ainda não há uma descrição visual detalhada cadastrada') + '; personalidade: ' + identityProfile.personality + '. Não invente traços físicos que não estejam descritos nem diga que viu a webcam.';
+  const quickIdentityPrompt = 'seu nome é ' + identityProfile.name + '; ficha de personalidade complementar: ' + String(identityProfile.personality || '').slice(0, 180) + '. As regras de personalidade, naturalidade e estilo de conversa deste prompt têm prioridade sobre descrições genéricas do perfil.';
+  const identityPrompt = 'seu nome é ' + identityProfile.name + '; sua representação visual é ' + identityProfile.avatar + '; descrição oficial da aparência: ' + (identityProfile.appearanceDescription || 'ainda não há uma descrição visual detalhada cadastrada') + '; personalidade complementar do perfil: ' + identityProfile.personality + '. Não invente traços físicos que não estejam descritos nem diga que viu a webcam. As regras de personalidade e estilo de conversa deste prompt têm prioridade sobre descrições genéricas do perfil.';
 
   // Voz casual usa um prompt curto. Explicações, estudo e perguntas de memória mantêm o contexto completo.
   const systemPrompt = (quickVoiceTurn
