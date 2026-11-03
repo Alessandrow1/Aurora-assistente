@@ -1283,7 +1283,7 @@ export default function App() {
             if (assistantPlaceholderAdded && last?.role === 'assistant') {
               updated[updated.length - 1] = {
                 ...last,
-                content: last.content.trim() ? last.content.trim() + '\\n\\n' + fallbackReply : fallbackReply,
+                content: last.content.trim() ? last.content.trim() + '\n\n' + fallbackReply : fallbackReply,
               };
             } else {
               updated.push({ role: 'assistant', content: fallbackReply });
