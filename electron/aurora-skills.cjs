@@ -58,7 +58,7 @@ function selectSkills({ message = '', avatarImageAttached = false } = {}) {
   const fileSearchQuery = extractFileSearchQuery(message);
   const desktopIntent = asksForClock || asksForComputerDetails || asksForScreenDetails || Boolean(fileSearchQuery);
   const asksSkills = /\b(quais skills|que skills|suas skills|quais habilidades|que habilidades|suas habilidades|o que voce sabe fazer|o que voce consegue fazer|suas capacidades|habilidades instaladas)\b/.test(normalized);
-  const userProfileIntent = /\b(sobre mim|o que (?:voce )?(?:sabe|lembra) de mim|me descreva|meu perfil|minhas informacoes|meu historico pessoal|meus objetivos|meu objetivo|minhas metas|meus projetos|meu carro|minha rotina|minha saude|minha alimentacao|minha dieta|minha altura|meu peso|meu trabalho|minha profissao|minhas financas|meus estudos|minha namorada|minha parceira|meu pc|meu computador|meu setup|meu emprego|meu salario|minha divida|meu treino|meu condicionamento)\b/.test(normalized);
+  const userProfileIntent = /\b(sobre mim|o que (?:voce )?(?:sabe|lembra) de mim|me descreva|meu perfil|minhas informacoes|meu historico pessoal|meus objetivos|meu objetivo|minhas metas|meus projetos|meu carro|qual carro eu tenho|que carro eu tenho|carro que eu tenho|meu veiculo|qual meu veiculo|minha rotina|minha saude|minha alimentacao|minha dieta|minha altura|meu peso|meu trabalho|minha profissao|minhas financas|meus estudos|minha namorada|minha parceira|meu pc|meu computador|meu setup|meu emprego|meu salario|minha divida|meu treino|meu condicionamento)\b/.test(normalized);
 
   if (ownAvatarIntent) ids.push('live2d-self-perception');
   if (desktopIntent) ids.push('computer-environment');
@@ -179,7 +179,7 @@ function createAuroraSkills({ app, screen, os, skillsDirectory = path.resolve(__
         loaded.push({
           id: 'user-profile',
           title: 'Dossiê pessoal do usuário',
-          content: 'DOSSIÊ PRIVADO INFORMADO PELO USUÁRIO. É contexto para responder perguntas pessoais, não uma fonte infalível. Respeite datas, incertezas e privacidade; não repita dados sensíveis sem necessidade. Não introduza dados pessoais que não tenham relação com a pergunta atual.\\n\\n' + profileContent.slice(0, 28000),
+          content: 'DOSSIÊ PRIVADO INFORMADO PELO USUÁRIO. É contexto para responder perguntas pessoais, não uma fonte infalível. Respeite datas, incertezas e privacidade; não repita dados sensíveis sem necessidade. Não introduza dados pessoais que não tenham relação com a pergunta atual.\n\n' + profileContent.slice(0, 28000),
         });
       }
     }
