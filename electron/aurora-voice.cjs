@@ -4,10 +4,10 @@ function foldPortuguese(text) {
   return String(text || '')
     .toLocaleLowerCase('pt-BR')
     .normalize('NFD')
-    .replace(/[\\u0300-\\u036f]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
-    .replace(/\\s+/g, ' ');
+    .replace(/\s+/g, ' ');
 }
 
 /**
@@ -16,7 +16,7 @@ function foldPortuguese(text) {
  * O restante da transcrição é preservado sem reescrita.
  */
 function normalizeVoiceTranscript(rawText) {
-  const original = typeof rawText === 'string' ? rawText.trim().replace(/\\s+/g, ' ') : '';
+  const original = typeof rawText === 'string' ? rawText.trim().replace(/\s+/g, ' ') : '';
   if (!original) return '';
 
   const folded = foldPortuguese(original);
