@@ -40,7 +40,7 @@ type AvatarEmotion = 'neutral' | 'happy' | 'sad' | 'surprised' | 'curious' | 'an
 function choosePortugueseSpeechVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
   const brazilianVoices = voices.filter((voice) => /^pt-BR$/i.test(voice.lang));
   const preferredBrazilianVoice = brazilianVoices.find((voice) =>
-    /francisca|antonio|maria|fernanda|luciana/i.test(voice.name)
+    /thalita|francisca|antonio|maria|fernanda|luciana/i.test(voice.name)
   );
   if (preferredBrazilianVoice) return preferredBrazilianVoice;
   if (brazilianVoices.length) return brazilianVoices[0];
@@ -1968,7 +1968,7 @@ export default function App() {
                         </button>
                       )}
                     </div>
-                    <p className="field-help">Sem créditos da ElevenLabs, a voz padrão gratuita é Microsoft Edge Neural (pt-BR-FranciscaNeural), sem chave ou créditos. Ela usa um serviço online e envia o texto falado para a Microsoft. Se a conexão falhar, a Aurora usa Kokoro local; a voz do Windows fica apenas como último recurso.</p>
+                    <p className="field-help">Sem créditos da ElevenLabs, a voz padrão gratuita é Microsoft Edge Neural (pt-BR-ThalitaMultilingualNeural), sem chave ou créditos. Ela usa um serviço online e envia o texto falado para a Microsoft. Se a conexão falhar, a Aurora usa Kokoro local; a voz do Windows fica apenas como último recurso.</p>
                 </div>
                 <div className="modal-divider" />
                 <div className="elevenlabs-voice-settings">
