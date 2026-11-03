@@ -50,6 +50,7 @@ test('keeps ordinary follow-up questions concise and expands only on explicit re
   assert.equal(isExplicitDeepDiveRequest('Tem mais que 8?'), false);
   assert.equal(isExplicitDeepDiveRequest('Me ensina mitose e meiose'), false);
   assert.equal(isExplicitDeepDiveRequest('Me explica melhor'), true);
+  assert.equal(isExplicitDeepDiveRequest('Explica detalhadamente'), true);
   assert.equal(isExplicitDeepDiveRequest('Quero entender melhor, passo a passo'), true);
   assert.equal(isExplicitDeepDiveRequest('Pode aprofundar com exemplos?'), true);
 });
