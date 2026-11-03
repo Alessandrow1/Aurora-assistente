@@ -1118,17 +1118,15 @@ export default function App() {
       const collectCompleteSpeech = (chunk: string) => {
         speechBuffer += chunk;
         // Uma cláusula longa terminada em vírgula já pode ir para a voz; não precisamos esperar o ponto final.
-        const boundary = /[.!?…]+\s+|[,;:]+\s+/g;
+        const boundary = /[.!?…]+\s+/g;
         let cursor = 0;
         let match: RegExpExecArray | null;
         while ((match = boundary.exec(speechBuffer)) !== null) {
           const end = match.index + match[0].length;
           const candidate = speechBuffer.slice(cursor, end).trim();
           const wordCount = candidate.split(/\s+/).filter(Boolean).length;
-          const sentenceBoundary = /[.!?…]/.test(match[0]);
-          const readyToSpeak = sentenceBoundary
-            ? candidate.length >= 18 || wordCount >= 5
-            : candidate.length >= 32 && wordCount >= 7;
+          // Só envia uma frase quando a pontuação forte fecha a ideia; vírgulas não reiniciam a prosódia.
+          const readyToSpeak = candidate.length >= 18 || wordCount >= 5;
           if (readyToSpeak) {
             enqueueSpeech(candidate);
             cursor = end;
