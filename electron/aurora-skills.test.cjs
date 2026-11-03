@@ -20,6 +20,7 @@ test.beforeEach(async () => {
     documents: path.join(tempRoot, 'Documents'),
     downloads: path.join(tempRoot, 'Downloads'),
     home: tempRoot,
+    userData: path.join(tempRoot, 'userData'),
     pictures: path.join(tempRoot, 'Pictures'),
     videos: path.join(tempRoot, 'Videos'),
     music: path.join(tempRoot, 'Music'),
@@ -61,6 +62,10 @@ test('always activates identity and selects avatar, desktop and file skills when
 
   const casualToday = selectSkills({ message: 'O que vamos fazer hoje?' });
   assert.equal(casualToday.ids.includes('computer-environment'), false);
+
+  const personalProfile = selectSkills({ message: 'O que você sabe sobre mim e meus objetivos?' });
+  assert.ok(personalProfile.ids.includes('user-profile'));
+  assert.equal(personalProfile.userProfileIntent, true);
 
   const idleAtPc = selectSkills({ message: 'Eu estou no computador sem fazer nada.' });
   assert.equal(idleAtPc.ids.includes('computer-environment'), false);
@@ -145,4 +150,22 @@ test('requires a meaningful query before scanning', async () => {
   const result = await skills.searchFiles('a');
   assert.match(result.error, /dois caracteres/);
   assert.equal(result.scannedEntries, 0);
+});
+
+test('loads a short private profile summary by default and the full dossier only on personal questions', async () => {
+  const profilePath = path.join(paths.userData, 'aurora-user-profile.md');
+  await fs.writeFile(
+    profilePath,
+    '# Resumo fixo\\nPreferência: conversa natural e direta.\\n\\n## Dossiê pessoal completo\\nDado detalhado: teste privado.',
+    'utf8',
+  );
+
+  const casual = await skills.loadSkills([]);
+  assert.equal(casual.some((item) => item.id === 'user-profile-summary'), true);
+  assert.equal(casual.some((item) => item.id === 'user-profile'), false);
+
+  const personal = await skills.loadSkills(['user-profile']);
+  const dossier = personal.find((item) => item.id === 'user-profile');
+  assert.ok(dossier);
+  assert.match(dossier.content, /Dado detalhado: teste privado/);
 });
