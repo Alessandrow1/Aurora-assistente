@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createEdgeTtsSpeech, DEFAULT_EDGE_TTS_CONFIG } = require('./aurora-edge-tts.cjs');
+const { createEdgeTtsSpeech, DEFAULT_EDGE_TTS_CONFIG, normalizeEdgeTtsPronunciation } = require('./aurora-edge-tts.cjs');
 
 test('configures a Brazilian Portuguese neural Edge voice without API credentials', () => {
   assert.equal(DEFAULT_EDGE_TTS_CONFIG.voice, 'pt-BR-ThalitaMultilingualNeural');
@@ -31,6 +31,27 @@ test('assembles streamed Edge audio buffers and ignores subtitle metadata', asyn
   assert.equal(capturedText, 'Olá, Aurora!');
   assert.equal(audio.length, 203);
   assert.equal(audio.subarray(0, 3).toString(), 'ID3');
+});
+
+
+test('normalizes tsundere interjections into forms the neural voice can pronounce', () => {
+  assert.equal(normalizeEdgeTtsPronunciation('Hã?!'), 'Hã?');
+  assert.equal(normalizeEdgeTtsPronunciation('Tch!'), 'Tchi!');
+  assert.equal(normalizeEdgeTtsPronunciation('Hã?! O que foi? Tch!'), 'Hã? O que foi? Tchi!');
+  assert.equal(normalizeEdgeTtsPronunciation('Isso é sério?'), 'Isso é sério?');
+});
+
+test('sends pronounceable interjections to the Edge neural engine', async () => {
+  let capturedText = '';
+  class FakeEdgeTTS {
+    async *streamAudio(text) {
+      capturedText = text;
+      yield Buffer.from('ID3' + 'a'.repeat(100));
+    }
+  }
+  const engine = createEdgeTtsSpeech({ EdgeTTS: FakeEdgeTTS });
+  await engine.synthesize('Hã?! Tch!');
+  assert.equal(capturedText, 'Hã? Tchi!');
 });
 
 test('rejects empty text and a stream without usable audio', async () => {
