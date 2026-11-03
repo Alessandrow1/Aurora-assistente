@@ -43,3 +43,6 @@ src/vendor/cubism-framework/
 
 # Runtime assets are copied from npm packages by scripts/copy-voice-assets.cjs
 /public/aurora-vad/
+
+# Perfil pessoal privado do usuário da Aurora (nunca versionar)
+skills/aurora-identity/USER-PROFILE.local.md
