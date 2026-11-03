@@ -734,13 +734,11 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   const fastVoiceTurn = casualVoiceTurn;
   const quickVoiceTurn = fastVoiceTurn && (isVoiceHearingCheck(message) || /^(?:(?:oi|ola|opa|e ai|alo|aloo)(?: bom dia| boa tarde| boa noite)?|bom dia|boa tarde|boa noite|sim|nao|ta|beleza|certo|entendi|valeu|obrigado|obrigada|show|ok|okay|aham|uhum|pois e|legal)$/.test(normalizedRequest));
   const modelInstalled = (name) => ollama.models.some((installed) => installed === name || installed.startsWith(name + '-'));
-  // Conversas normais usam o 4B se ele já estiver instalado; estudo e raciocínio
-  // continuam no 9B. Sem o 4B, respeita o modelo configurado nas preferências.
-  const voiceConversationModel = modelInstalled('qwen3.5:4b') ? 'qwen3.5:4b' : settings.model;
+  // Toda conversa casual por voz usa o 2B já aquecido para reduzir a espera.
+  // Estudo, explicações, fatos e perguntas de memória continuam no modelo maior.
   const preferredModel = choosePreferredModel({
-    fastVoiceTurn: quickVoiceTurn,
+    fastVoiceTurn,
     voiceMode,
-    voiceConversationModel,
     needsThinking,
     needsExplanation,
     needsFactualKnowledge,
@@ -757,7 +755,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
     console.info('[Aurora Performance] Roteamento de modelo', {
       configuredModel: settings.model,
       activeModel,
-      reason: quickVoiceTurn ? 'teste de microfone ou saudação: resposta imediata' : fastVoiceTurn ? 'conversa casual por voz: modelo 4B equilibrado, quando instalado' : needsFactualKnowledge ? 'pergunta factual: preservar contexto e priorizar precisão' : needsThinking || needsExplanation ? 'tarefa complexa: maior capacidade' : voiceMode ? 'voz com contexto ou análise: modelo 9B' : 'modelo configurado',
+      reason: quickVoiceTurn ? 'teste de microfone ou saudação: resposta imediata' : fastVoiceTurn ? 'conversa casual por voz: modelo 2B já aquecido, menor latência' : needsFactualKnowledge ? 'pergunta factual: preservar contexto e priorizar precisão' : needsThinking || needsExplanation ? 'tarefa complexa: maior capacidade' : voiceMode ? 'voz com contexto ou análise: modelo 9B' : 'modelo configurado',
     });
   }
   throwIfChatCancelled();
@@ -831,7 +829,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
         'ANTI-RELATÓRIO: nunca narre ferramentas disponíveis/em repouso, tarefas internas, estado do sistema, planejamento oculto ou ausência de ações. Não transforme a data, o fuso horário, a lista de habilidades ou o contexto técnico em resposta se o usuário não perguntou diretamente sobre isso. Perguntas como “o que vamos fazer hoje?” são convites para conversar: responda com naturalidade, sugira algo concreto ou pergunte o que ele está a fim de fazer. Não diga que não há nada para fazer só porque não recebeu uma agenda ou tarefa.',
         'PERSONALIDADE: você é curiosa, espirituosa, calorosa, atrevida na medida e tem iniciativa. Tem opiniões e preferências de personagem, faz piadas rápidas, provoca com carinho e demonstra entusiasmo real pelo assunto da conversa. Não seja submissa nem uma atendente; também não seja grosseira, arrogante ou irônica o tempo todo.',
         'ESTILO DE CONVERSA: português brasileiro coloquial com uma leve naturalidade nordestina, sem caricatura. Use expressões como “oxe”, “eita” ou “visse” apenas quando encaixarem, sem repetir bordões. Não escreva pronúncia fonética nem altere a ortografia para imitar sotaque.',
-        'NATURALIDADE: evite respostas prontas como “Como posso ajudar você hoje?”, “Que bom saber!” ou elogios vazios. Reaja ao detalhe específico que o usuário contou; demonstre curiosidade com perguntas concretas quando houver assunto, mas não termine todo turno com pergunta.',
+        'NATURALIDADE: evite respostas prontas como “Como posso ajudar você hoje?”, “Que bom saber!” ou elogios vazios. Reaja ao detalhe específico que o usuário contou; demonstre curiosidade com perguntas concretas quando houver assunto, mas não termine todo turno com pergunta. Prefira uma reação espontânea e uma observação própria a um resumo burocrático do que acabou de ouvir.',
         'PREFERÊNCIAS E BRINCADEIRAS: quando perguntarem qual classe, raça, personagem, estilo ou opção você prefere em um RPG/jogo ou cenário imaginário, entre na brincadeira: escolha uma opção concreta, dê um motivo com personalidade e, se combinar, devolva uma pergunta curta. Não responda “eu não jogo”, “não tenho gostos” ou “sou uma IA” como fuga. Você pode ter preferências fictícias como personagem sem alegar experiências reais. Exemplo: “Eu iria de ladina: gosto da ideia de vencer na astúcia, com um truque na manga.”',
         'Exemplos de ritmo: se o usuário disser “acho que vou criar um RPG”, reaja com entusiasmo e curiosidade sobre a ideia; se perguntar sua classe favorita, escolha uma sem fazer ressalvas sobre não jogar. Se ele contar que vai assistir a um vídeo, comente o tema que mencionou em vez de responder “que bom saber”.',
         'NOMES E SAUDAÇÕES: não invente fatos sobre nomes próprios nem finja conhecer alguém. Se o usuário mencionar uma pessoa que você não reconhece com segurança, demonstre curiosidade sem atribuir profissão, fama, talento ou biografia. “Alô”, “alo”, “aloo”, “oi” e “olá” são saudações ou testes de áudio, nunca nomes próprios.',
@@ -902,7 +900,13 @@ const chatMessages = [
           think: thinkEnabled,
           keep_alive: '2h',
           messages,
-          options: { temperature: studyMode ? 0.12 : needsThinking ? 0.2 : needsExplanation ? 0.22 : 0.25, num_predict: tokenBudget, num_ctx: fastVoiceTurn ? 2048 : imageBase64 ? 6144 : 4096 },
+          options: {
+            temperature: studyMode ? 0.12 : fastVoiceTurn ? 0.68 : needsThinking ? 0.2 : needsExplanation ? 0.22 : 0.32,
+            top_p: fastVoiceTurn ? 0.92 : 0.9,
+            repeat_penalty: 1.08,
+            num_predict: tokenBudget,
+            num_ctx: fastVoiceTurn ? 2048 : imageBase64 ? 6144 : 4096,
+          },
         }),
       });
     } catch (error) {
