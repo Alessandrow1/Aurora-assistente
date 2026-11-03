@@ -1063,6 +1063,8 @@ export default function App() {
       .slice(-6);
 
     let closeSpeechSession: (() => Promise<void>) | null = null;
+    let assistantPlaceholderAdded = false;
+    let assistantReplyDelivered = false;
     setMessages((current) => [...current, { role: 'user', content: text }]);
     if (conversationId) {
       const savedMessages = [...messages.filter((message) => message.content !== greeting.content && message.content.trim()), { role: 'user' as const, content: text }];
@@ -1126,6 +1128,7 @@ export default function App() {
         setEmotion(inferAvatarEmotion(text, quickReply));
         if (hasLaughingCue(text + " " + quickReply)) setLaughing(true);
         setMessages((current) => [...current, { role: 'assistant', content: quickReply }]);
+        assistantReplyDelivered = true;
         if (autoSpeak) {
           if (voiceModeRef.current) await speak(quickReply, true);
           else void speak(quickReply);
@@ -1226,6 +1229,7 @@ export default function App() {
       };
 
       setMessages((current) => [...current, { role: 'assistant', content: '' }]);
+      assistantPlaceholderAdded = true;
       const response = await window.aurora.chat({ message: computerPrompt, history, voiceMode: voiceModeRef.current, studyMode, requestId, ...(imageBase64 ? { imageBase64 } : {}) }, (chunk) => {
         setMessages((current) => {
           const updated = [...current];
@@ -1237,6 +1241,7 @@ export default function App() {
         if (canStreamSpeech && voiceOutputTurnRef.current === speechTurnId) collectCompleteSpeech(chunk);
       });
       let answer = response.text?.trim() || 'Não consegui responder agora.';
+      assistantReplyDelivered = true;
       setEmotion(inferAvatarEmotion(text, answer));
       if (hasLaughingCue(text + " " + answer)) setLaughing(true);
       setMessages((current) => {
@@ -1264,8 +1269,37 @@ export default function App() {
     } catch (error) {
       if (closeSpeechSession) await closeSpeechSession();
       if (!(error instanceof Error && error.name === 'AbortError')) {
-        setNotice(error instanceof Error ? error.message : 'Ocorreu um erro ao conversar com a IA.');
-        if (voiceModeRef.current && recognitionPausedRef.current) resumeVoiceRecognitionAfterSpeech(500);
+        const errorDetail = error instanceof Error ? error.message : 'Ocorreu um erro ao conversar com a IA.';
+        setNotice(errorDetail);
+        console.error('[Aurora Chat] O turno falhou antes de entregar uma resposta:', error);
+        if (!assistantReplyDelivered) {
+          const fallbackReply = voiceModeRef.current
+            ? 'Oxe, recebi sua fala, mas minha IA local falhou antes de me devolver uma resposta. Tenta falar comigo mais uma vez?'
+            : 'Não consegui gerar uma resposta agora. Confira se o Ollama está aberto e tente novamente.';
+          assistantReplyDelivered = true;
+          setMessages((current) => {
+            const updated = [...current];
+            const last = updated[updated.length - 1];
+            if (assistantPlaceholderAdded && last?.role === 'assistant') {
+              updated[updated.length - 1] = {
+                ...last,
+                content: last.content.trim() ? last.content.trim() + '\\n\\n' + fallbackReply : fallbackReply,
+              };
+            } else {
+              updated.push({ role: 'assistant', content: fallbackReply });
+            }
+            return updated;
+          });
+          if (autoSpeak) {
+            void speak(fallbackReply, voiceModeRef.current).catch((speechError) => {
+              console.warn('[Aurora Voice] Não consegui falar a mensagem de recuperação:', speechError);
+            });
+          } else if (voiceModeRef.current && recognitionPausedRef.current) {
+            resumeVoiceRecognitionAfterSpeech(500);
+          }
+        } else if (voiceModeRef.current && recognitionPausedRef.current && !autoSpeak) {
+          resumeVoiceRecognitionAfterSpeech(500);
+        }
       }
     } finally {
       if (closeSpeechSession) await closeSpeechSession();
