@@ -50,4 +50,21 @@ function normalizeVoiceTranscript(rawText) {
   return greeting[0].toUpperCase() + greeting.slice(1) + ', tá me ouvindo?';
 }
 
-module.exports = { foldPortuguese, isVoiceHearingCheck, normalizeVoiceTranscript };
+
+function choosePreferredModel({
+  fastVoiceTurn = false,
+  voiceMode = false,
+  needsThinking = false,
+  needsExplanation = false,
+  needsFactualKnowledge = false,
+  studyMode = false,
+  settingsModel = 'qwen3.5:9b',
+} = {}) {
+  if (fastVoiceTurn) return 'qwen3.5:2b';
+  if (voiceMode || needsThinking || needsExplanation || needsFactualKnowledge || studyMode) {
+    return 'qwen3.5:9b';
+  }
+  return settingsModel;
+}
+
+module.exports = { choosePreferredModel, foldPortuguese, isVoiceHearingCheck, normalizeVoiceTranscript };
