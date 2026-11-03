@@ -62,6 +62,18 @@ test('always activates identity and selects avatar, desktop and file skills when
   const casualToday = selectSkills({ message: 'O que vamos fazer hoje?' });
   assert.equal(casualToday.ids.includes('computer-environment'), false);
 
+  const idleAtPc = selectSkills({ message: 'Eu estou no computador sem fazer nada.' });
+  assert.equal(idleAtPc.ids.includes('computer-environment'), false);
+
+  const idleAtComputer = selectSkills({ message: 'Estou no computador.' });
+  assert.equal(idleAtComputer.ids.includes('computer-environment'), false);
+
+  const pcSpecs = selectSkills({ message: 'Qual é o sistema operacional do meu computador?' });
+  assert.ok(pcSpecs.ids.includes('computer-environment'));
+
+  const screenQuestion = selectSkills({ message: 'O que aparece na minha tela?' });
+  assert.ok(screenQuestion.ids.includes('computer-environment'));
+
   const explicitDate = selectSkills({ message: 'Que dia é hoje?' });
   assert.ok(explicitDate.ids.includes('computer-environment'));
 
