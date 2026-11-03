@@ -11,7 +11,7 @@ const { createAuroraStore } = require('./aurora-store.cjs');
 const { createAuroraImageGenerator } = require('./aurora-image-generator.cjs');
 const { createAuroraLocalTts } = require('./aurora-local-tts.cjs');
 const { createAuroraSkills } = require('./aurora-skills.cjs');
-const { normalizeVoiceTranscript } = require('./aurora-voice.cjs');
+const { normalizeVoiceTranscript, isVoiceHearingCheck } = require('./aurora-voice.cjs');
 
 const OLLAMA_URL = 'http://127.0.0.1:11434';
 const ELEVENLABS_VOICE_ID = '29BpZaywSObgMLvRvBhB';
@@ -722,7 +722,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   const needsStoredContext = /\b(lembra|lembre|lembranca|memoria|historico|conversamos|falamos|antes|retomar|continuar|documento|documentos|biblioteca|arquivo|pdf|material|anotado|guardado|salvo|salva|qual era|o que combinamos|o que conversamos|meu objetivo|minha meta|meu projeto|minha ideia|nosso projeto|nossa ideia)\b/i.test(normalizedRequest);
   const needsThinking = studyMode || needsReasoning || asksForLongResponse;
   const casualVoiceTurn = voiceMode && !studyMode && !imageBase64 && !needsThinking && !needsExplanation && !needsFactualKnowledge && !needsStoredContext;
-  const quickVoiceTurn = casualVoiceTurn && /^(?:(?:oi|ola|opa|e ai|alo|aloo)(?: bom dia| boa tarde| boa noite)?|bom dia|boa tarde|boa noite|sim|nao|ta|beleza|certo|entendi|valeu|obrigado|obrigada|show|ok|okay|aham|uhum|pois e|legal)$/.test(normalizedRequest);
+  const quickVoiceTurn = casualVoiceTurn && (isVoiceHearingCheck(message) || /^(?:(?:oi|ola|opa|e ai|alo|aloo)(?: bom dia| boa tarde| boa noite)?|bom dia|boa tarde|boa noite|sim|nao|ta|beleza|certo|entendi|valeu|obrigado|obrigada|show|ok|okay|aham|uhum|pois e|legal)$/.test(normalizedRequest));
   const preferredModel = quickVoiceTurn
     ? 'qwen3.5:2b'
     : (voiceMode || needsThinking || needsExplanation || needsFactualKnowledge || studyMode ? 'qwen3.5:9b' : settings.model);
