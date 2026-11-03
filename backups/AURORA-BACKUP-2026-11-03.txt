@@ -1,0 +1,79 @@
+BACKUP AURORA — 03/11/2026
+================================
+
+REPOSITORIO
+GitHub: https://github.com/Alessandrow1/Aurora-assistente
+Branch de desenvolvimento: fix/aurora-voice-identity-and-empty-speech-2026-11-03
+Branch de backup: backup/aurora-2026-11-03-tsundere-voice
+Commit do codigo preservado antes deste relatorio: 76b0dc8078c9495ea501ad3b18d3f9f770eb8772
+
+OBJETIVO DESTE BACKUP
+Preservar o estado atual do projeto Aurora em uma branch Git separada e registrar em texto o estado tecnico, as alteracoes recentes e os comandos de restauracao.
+
+ESTADO DO PROJETO
+- Aplicativo desktop para Windows.
+- Stack: Electron, React, TypeScript e Vite.
+- IA conversacional local usando Ollama.
+- Modelos previstos no projeto: qwen3.5:2b, qwen3.5:4b e qwen3.5:9b.
+- Avatar Live2D 6xb: preservar a aparencia atual; nao substituir nem redesenhar o personagem.
+- Objetivo de produto: companheira de voz natural, rapida, inteligente e utilizavel gratuitamente no fluxo normal.
+
+PERSONALIDADE E RESPOSTAS
+- Aurora usa uma personalidade original de arquétipo tsundere: mandona, orgulhosa, sarcastica, brincalhona e leal nas atitudes.
+- Pode usar provocacoes leves autorizadas pelo usuario, sem transformar cada resposta em ofensa.
+- Em situacoes serias, saude, sofrimento ou perigo, abandona a brincadeira.
+- Respostas de voz devem ser progressivas e curtas.
+- Em conversa casual ou pergunta direta, o prompt pede uma frase de ate 20 palavras; segunda frase somente quando necessaria, com limite total de 25 palavras.
+- Aprofundamento somente quando o usuario pedir explicitamente detalhes, passo a passo ou exemplos.
+- Conversas casuais por voz usam preferencialmente qwen3.5:2b; tarefas mais complexas, imagens e contexto podem usar modelo maior conforme o roteamento.
+
+VOZ E AUDIO
+- Provedor gratuito principal: Microsoft Edge Neural TTS pela biblioteca node-edge-tts.
+- Voz configurada: pt-BR-ThalitaMultilingualNeural, pitch +12%.
+- Kokoro local e fallback offline.
+- ElevenLabs permanece opcional e manual; nao deve ser acionada automaticamente no fluxo gratuito.
+- O reconhecimento de fala usa processamento local; o fluxo atual nao e full-duplex nem ASR parcial em tempo real.
+- O audio do Edge e sintetizado por trecho/frase; nao afirmar que a reproducao e streaming real de ponta a ponta.
+
+CORRECAO RECENTE DAS INTERJEICOES
+- O texto exibido continua usando formas como "Hã?!" e "Tch!".
+- Para a sintetizacao, a normalizacao prepara "Hã?!" como "Hã?" e "Tch!" como "Tchi!", para tentar facilitar a pronuncia do Edge Neural.
+- O coletor de fala foi ajustado para nao descartar interjeicoes curtas como "Hã?!" e "Tch!".
+- Foram adicionados testes automatizados para a normalizacao fonetica e para o texto enviado ao mecanismo Edge TTS.
+- IMPORTANTE: os testes e o build ainda precisam ser executados no computador local do usuario. Nao considerar aprovados ate executar npm.cmd test e npm.cmd run build.
+
+ULTIMOS ARQUIVOS ALTERADOS NESTA SEQUENCIA
+- src/App.tsx
+- electron/aurora-edge-tts.cjs
+- electron/aurora-edge-tts.test.cjs
+
+PRIVACIDADE E DADOS LOCAIS
+Este backup Git preserva os arquivos versionados do repositorio. Ele NAO inclui dados locais que ficam fora do Git, como:
+- skills/aurora-identity/USER-PROFILE.local.md (arquivo local ignorado pelo Git).
+- Memorias e historico armazenados no userData do Electron.
+- Chaves, configuracoes e dados protegidos pelo armazenamento seguro do Windows (DPAPI).
+Nao apagar nem sobrescrever esses dados locais ao restaurar o codigo.
+
+RESTAURAR A BRANCH DE BACKUP
+No PowerShell, dentro da pasta local do projeto:
+
+  cd "C:\Users\Alessandro Linhares\Desktop\AURORA\Aurora-assistente"
+  git fetch origin
+  git switch -c restore-aurora-2026-11-03 origin/backup/aurora-2026-11-03-tsundere-voice
+  npm.cmd install
+  npm.cmd test
+  npm.cmd run build
+  npm.cmd run dev
+
+ATUALIZAR A BRANCH DE DESENVOLVIMENTO
+Se a intencao for somente obter as alteracoes mais recentes, sem trocar para a branch de backup:
+
+  cd "C:\Users\Alessandro Linhares\Desktop\AURORA\Aurora-assistente"
+  git switch fix/aurora-voice-identity-and-empty-speech-2026-11-03
+  git pull origin fix/aurora-voice-identity-and-empty-speech-2026-11-03
+  npm.cmd test
+  npm.cmd run build
+  npm.cmd run dev
+
+OBSERVACAO
+A branch de backup e um ponto de restauracao do codigo versionado no GitHub. Ela nao substitui uma copia local separada dos dados pessoais/configuracoes que estao fora do repositorio.
