@@ -1367,10 +1367,7 @@ export default function App() {
       return 'Opa, cabeção. Tô aqui. Conta logo, o que foi?';
     }
     const hearingCheck = /\b(consegue me ouvir|me ouve|me escuta|ta ouvindo|esta ouvindo)\b/.test(text) ||
-      (/\b(?:ta|esta)\b/.test(text) &&
-        /\b(?:me|meu|mim)\b/.test(text) &&
-        /\b(?:ouvindo|ouvido|vindo|ouvir|ouve|escutando|escuta)\b/.test(text) &&
-        text.split(/\s+/).length <= 8);
+      /\b(?:voce )?(?:ta|esta) (?:me|meu|mim) (?:ouvindo|ouvido|vindo|ouvir|ouve|escutando|escuta)\b/.test(text);
     if (hearingCheck) {
       return 'Tô te ouvindo, sim. Pode falar, criatura.';
     }
