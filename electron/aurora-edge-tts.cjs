@@ -4,6 +4,7 @@ const DEFAULT_EDGE_TTS_CONFIG = Object.freeze({
   voice: 'pt-BR-ThalitaMultilingualNeural',
   lang: 'pt-BR',
   outputFormat: 'audio-24khz-96kbitrate-mono-mp3',
+  pitch: '+12%',
   timeout: 12000,
 });
 
