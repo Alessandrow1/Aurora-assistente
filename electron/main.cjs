@@ -725,7 +725,9 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   const fastVoiceTurn = casualVoiceTurn;
   const quickVoiceTurn = fastVoiceTurn && (isVoiceHearingCheck(message) || /^(?:(?:oi|ola|opa|e ai|alo|aloo)(?: bom dia| boa tarde| boa noite)?|bom dia|boa tarde|boa noite|sim|nao|ta|beleza|certo|entendi|valeu|obrigado|obrigada|show|ok|okay|aham|uhum|pois e|legal)$/.test(normalizedRequest));
   const preferredModel = choosePreferredModel({
-    fastVoiceTurn,
+    // Mantém o modelo 2B apenas para saudações/confirmações curtíssimas.
+    // Conversas casuais completas usam o 9B configurado para preservar qualidade.
+    fastVoiceTurn: quickVoiceTurn,
     voiceMode,
     needsThinking,
     needsExplanation,
@@ -797,7 +799,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
       : []),
   ].join('\n\n');
 
-  const numPredict = studyMode ? (imageBase64 ? 800 : asksForLongResponse ? 1200 : 900) : imageBase64 ? 650 : asksForLongResponse ? 1500 : needsReasoning ? 1100 : needsExplanation ? 520 : quickVoiceTurn ? 40 : fastVoiceTurn ? 112 : voiceMode ? 160 : 200;
+  const numPredict = studyMode ? (imageBase64 ? 800 : asksForLongResponse ? 1200 : 900) : imageBase64 ? 650 : asksForLongResponse ? 1500 : needsReasoning ? 1100 : needsExplanation ? 520 : quickVoiceTurn ? 40 : fastVoiceTurn ? 80 : voiceMode ? 160 : 200;
 
   const identityProfile = await auroraStore.getIdentityProfile().catch(() => ({
     name: 'Aurora',
