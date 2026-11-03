@@ -755,7 +755,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
     console.info('[Aurora Performance] Roteamento de modelo', {
       configuredModel: settings.model,
       activeModel,
-      reason: quickVoiceTurn ? 'teste de microfone ou saudação: resposta imediata' : fastVoiceTurn ? 'conversa casual por voz: modelo 2B já aquecido, menor latência' : needsFactualKnowledge ? 'pergunta factual: preservar contexto e priorizar precisão' : needsThinking || needsExplanation ? 'tarefa complexa: maior capacidade' : voiceMode ? 'voz com contexto ou análise: modelo 9B' : 'modelo configurado',
+      reason: quickVoiceTurn ? 'teste de microfone ou saudação: resposta imediata' : fastVoiceTurn ? 'conversa casual por voz: modelo 2B já aquecido, menor latência' : voiceMode && !needsThinking && !needsStoredContext && !hasImage && !studyMode ? 'pergunta direta por voz: resposta curta com modelo 2B' : needsFactualKnowledge ? 'pergunta factual com contexto: preservar precisão' : needsThinking || needsExplanation ? 'tarefa complexa: maior capacidade' : voiceMode ? 'voz com contexto ou análise: modelo 9B' : 'modelo configurado',
     });
   }
   throwIfChatCancelled();
