@@ -156,7 +156,7 @@ test('loads a short private profile summary by default and the full dossier only
   const profilePath = path.join(paths.userData, 'aurora-user-profile.md');
   await fs.writeFile(
     profilePath,
-    '# Resumo fixo\\nPreferência: conversa natural e direta.\\n\\n## Dossiê pessoal completo\\nDado detalhado: teste privado.',
+    '# Resumo fixo\nPreferência: conversa natural e direta.\n\n## Dossiê pessoal completo\nDado detalhado: teste privado.',
     'utf8',
   );
 
