@@ -1018,10 +1018,9 @@ async function synthesizeElevenLabsDialogue(text, apiKey) {
         await sendFrame({ voices: [ELEVENLABS_VOICE_ID] });
         // flush:true é essencial para falas curtas, abaixo do buffer normal (~40 chars/8 palavras).
         await sendFrame({
-          inputs: [{ text: cleanInput, voice_id: ELEVENLABS_VOICE_ID }],
-          flush: true,
+          inputs: [{ text: cleanInput, voice_id: ELEVENLABS_VOICE_ID, new_turn: false }],
         });
-        // Fecha após solicitar flush; o servidor envia is_final depois de entregar o áudio.
+        // close_socket realiza o flush final e só encerra após o servidor entregar os blocos de áudio.
         await sendFrame({ close_socket: true });
       })().catch(fail);
     });
@@ -1305,34 +1304,13 @@ ipcMain.handle('aurora:tts-install', async () => {
 
 // A voz neural principal usa ElevenLabs; o Kokoro fica como alternativa local.
 ipcMain.handle('aurora:speak-session-start', async () => {
+  // Diagnóstico de áudio: evita PCM_24000 + WAV montado manualmente.
+  // Usa a rota de diálogo por turno, com MP3 pronto para reprodução no Chromium.
   const previous = activeElevenLabsStreamSession;
   activeElevenLabsStreamSession = null;
   if (previous) await previous.close().catch(() => undefined);
-
-  let apiKey = null;
-  try {
-    apiKey = await readElevenLabsApiKey();
-  } catch (error) {
-    console.warn('[Aurora TTS] Não consegui ler a chave protegida da ElevenLabs:', error);
-  }
-  if (!apiKey) return { active: false, provider: 'kokoro-local' };
-
-  let session = null;
-  try {
-    session = createElevenLabsStreamSession(apiKey);
-    await session.ready;
-    activeElevenLabsStreamSession = session;
-    console.info('[Aurora TTS] Voz ElevenLabs pronta para streaming.', {
-      voiceId: ELEVENLABS_VOICE_ID,
-      modelId: ELEVENLABS_MODEL_ID,
-    });
-    return { active: true, provider: 'elevenlabs' };
-  } catch (error) {
-    if (session) await session.close().catch(() => undefined);
-    const detail = error instanceof Error ? error.message : String(error);
-    console.warn('[Aurora TTS] Não consegui preparar o streaming persistente; usarei uma conexão por trecho:', detail);
-    return { active: false, provider: 'elevenlabs', error: detail.slice(0, 220) };
-  }
+  console.info('[Aurora TTS] Modo de diagnóstico ativo: MP3 por turno (sem conversão PCM/WAV).');
+  return { active: false, provider: 'elevenlabs-mp3' };
 });
 
 ipcMain.handle('aurora:speak-session-end', async () => {
