@@ -50,6 +50,9 @@ contextBridge.exposeInMainWorld('aurora', {
   getElevenLabsStatus: () => ipcRenderer.invoke('aurora:elevenlabs-status'),
   saveElevenLabsKey: (apiKey) => ipcRenderer.invoke('aurora:save-elevenlabs-key', apiKey),
   clearElevenLabsKey: () => ipcRenderer.invoke('aurora:clear-elevenlabs-key'),
+  getVoxCpm2Status: () => ipcRenderer.invoke('aurora:voxcpm2-status'),
+  saveVoxCpm2Config: (payload) => ipcRenderer.invoke('aurora:voxcpm2-save', payload),
+  clearVoxCpm2Config: () => ipcRenderer.invoke('aurora:voxcpm2-clear'),
   chat: (payload, onChunk) => {
     const requestId = typeof payload?.requestId === 'string' && payload.requestId
       ? payload.requestId

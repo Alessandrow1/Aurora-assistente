@@ -174,6 +174,11 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
     return data.embeddings;
   }
 
+  async function createQueryEmbedding(query) {
+    const embeddings = await generateEmbeddings([query]);
+    return embeddings?.[0] || null;
+  }
+
   async function generateEmbeddingsInBatches(texts, batchSize = 24) {
     const embeddings = [];
     for (let offset = 0; offset < texts.length; offset += batchSize) {
@@ -375,11 +380,14 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
     // Conversas casuais por voz usam busca lexical local para não chamar outro endpoint do Ollama antes da resposta.
     const useSemanticSearch = options.semantic !== false;
     const data = useSemanticSearch ? await readKnowledge() : null;
-    let queryVector = null;
-    if (useSemanticSearch) {
+    const hasSharedEmbedding = Object.prototype.hasOwnProperty.call(options, 'queryEmbedding');
+    let queryVector = hasSharedEmbedding && Array.isArray(options.queryEmbedding)
+      ? options.queryEmbedding
+      : null;
+    if (useSemanticSearch && !hasSharedEmbedding) {
       try {
         [queryVector] = (await generateEmbeddings([query])) || [];
-      } catch { /* a busca por palavras continua disponível */ }
+      } catch { /* lexical fallback */ }
     }
     const results = memories.map((memory, index) => {
       const stored = data?.memoryEmbeddings?.[memory.id];
@@ -511,10 +519,15 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
       }));
   }
 
-  async function searchContext(query, limit = 5) {
+  async function searchContext(query, limit = 5, options = {}) {
     const [conversations, knowledge] = await Promise.all([readConversations(), readKnowledge()]);
-    let queryVector = null;
-    try { [queryVector] = (await generateEmbeddings([query])) || []; } catch { /* recuperação por termos fica como fallback */ }
+    const hasSharedEmbedding = Object.prototype.hasOwnProperty.call(options, 'queryEmbedding');
+    let queryVector = hasSharedEmbedding && Array.isArray(options.queryEmbedding)
+      ? options.queryEmbedding
+      : null;
+    if (!hasSharedEmbedding) {
+      try { [queryVector] = (await generateEmbeddings([query])) || []; } catch { /* fallback lexical */ }
+    }
     const candidates = [
       ...knowledge.chunks.map((chunk, index) => ({
         type: 'document',
@@ -649,6 +662,7 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
 
   return {
     getIdentityProfile,
+    createQueryEmbedding,
     saveIdentityProfile,
     createConversation,
     saveConversation,

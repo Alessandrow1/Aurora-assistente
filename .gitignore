@@ -46,3 +46,5 @@ src/vendor/cubism-framework/
 
 # Perfil pessoal privado do usuário da Aurora (nunca versionar)
 skills/aurora-identity/USER-PROFILE.local.md
+
+/local-assets/voice-reference/

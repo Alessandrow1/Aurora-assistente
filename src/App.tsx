@@ -7,6 +7,7 @@ type VoiceVadController = { start: () => void | Promise<void>; pause: () => void
 type LocalTtsStatus = { installed: boolean; ready: boolean; modelDirectory: string; voice: string; language: string; provider: string };
 type CoquiTtsStatus = { installed: boolean; licenseAccepted: boolean; ready: boolean; modelLoaded: boolean; provider: 'coqui-xtts'; model: string; language: string; device: string; installDirectory: string; pythonPath: string; workerAvailable: boolean };
 type ElevenLabsStatus = { configured: boolean; storageAvailable: boolean; voiceId: string; modelId: string };
+type VoxCpm2Status = { configured: boolean; endpoint: string; storageAvailable: boolean };
 type AudioInputOption = { deviceId: string; label: string };
 
 type VoiceCaptureSession = {
@@ -259,11 +260,25 @@ export default function App() {
   const [elevenLabsStatus, setElevenLabsStatus] = useState<ElevenLabsStatus | null>(null);
   const [elevenLabsKeyInput, setElevenLabsKeyInput] = useState('');
   const [elevenLabsKeySaving, setElevenLabsKeySaving] = useState(false);
+  const [voxCpm2Status, setVoxCpm2Status] = useState<VoxCpm2Status | null>(null);
+  const [voxCpm2EndpointInput, setVoxCpm2EndpointInput] = useState('');
+  const [voxCpm2TokenInput, setVoxCpm2TokenInput] = useState('');
+  const [voxCpm2Saving, setVoxCpm2Saving] = useState(false);
+  const [voxCpm2Testing, setVoxCpm2Testing] = useState(false);
   const refreshElevenLabsStatus = async () => {
     try {
       setElevenLabsStatus(await window.aurora.getElevenLabsStatus());
     } catch (error) {
       console.warn('[Aurora TTS] Não consegui consultar a configuração da ElevenLabs:', error);
+    }
+  };
+  const refreshVoxCpm2Status = async () => {
+    try {
+      const status = await window.aurora.getVoxCpm2Status();
+      setVoxCpm2Status(status);
+      setVoxCpm2EndpointInput((current) => current || status.endpoint);
+    } catch (error) {
+      console.warn('[Aurora TTS] Nao consegui consultar o VoxCPM2:', error);
     }
   };
   const [audioInputs, setAudioInputs] = useState<AudioInputOption[]>([]);
@@ -306,6 +321,7 @@ export default function App() {
     void refreshLocalTtsStatus();
     void refreshCoquiTtsStatus();
     void refreshElevenLabsStatus();
+    void refreshVoxCpm2Status();
     const stopLocalStatus = window.aurora.onTtsStatus((status) => {
       setLocalTtsProgress(status.message || '');
       if (status.state === 'installed' || status.state === 'ready' || status.state === 'error') {
@@ -933,7 +949,7 @@ export default function App() {
   startVoiceCaptureRef.current = startVoiceCapture;
   stopVoiceCaptureRef.current = stopVoiceCapture;
 
-  const speak = async (text: string, waitForPlayback = false, resumeAfterPlayback = true, provider: 'auto' | 'elevenlabs' | 'coqui' = 'auto') => {
+  const speak = async (text: string, waitForPlayback = false, resumeAfterPlayback = true, provider: 'auto' | 'elevenlabs' | 'coqui' | 'voxcpm2' | 'free' = 'auto') => {
     const speechTicket = voiceOutputTurnRef.current;
     const speechText = normalizeSpeechText(text);
     if (!hasSpeakableSpeechText(speechText)) {
@@ -965,7 +981,7 @@ export default function App() {
       }
       if (!result?.audioBase64) throw new Error('A voz neural nao retornou audio.');
       console.info('[Aurora TTS] Áudio recebido para reprodução', { provider: result.provider || 'não informado', mimeType: result.audioMimeType || 'audio/mpeg', audioBytes: Math.floor(result.audioBase64.length * 0.75) });
-      if (result.provider === 'kokoro-local' || result.provider === 'elevenlabs' || result.provider === 'edge-tts') setNotice('');
+      if (result.provider === 'kokoro-local' || result.provider === 'elevenlabs' || result.provider === 'edge-tts' || result.provider === 'voxcpm2') setNotice('');
       if (result.provider === 'coqui-xtts' && result.performance) {
         const metrics = result.performance;
         setCoquiTtsProgress(
@@ -1028,11 +1044,11 @@ export default function App() {
       resetAudioAnalysis();
 
       // O teste Coqui é isolado: falhar não deve tocar outra voz e mascarar o resultado.
-      if (provider === 'coqui') {
+      if (provider === 'coqui' || provider === 'voxcpm2') {
         setSpeaking(false);
         setEmotion('neutral');
         const detail = error instanceof Error ? error.message : String(error);
-        setNotice('Teste Coqui XTTS falhou: ' + detail.slice(0, 220));
+        setNotice((provider === 'voxcpm2' ? 'Teste VoxCPM2 falhou: ' : 'Teste Coqui XTTS falhou: ') + detail.slice(0, 220));
         if (resumeAfterPlayback) resumeVoiceRecognitionAfterSpeech();
         finishPlayback();
         return;
@@ -1255,7 +1271,7 @@ export default function App() {
           : selfVisualRequest
             ? text + '\n\nNão foi possível capturar seu avatar nesta ocasião. Responda somente com base na ficha de identidade cadastrada. Não diga que acabou de se observar nem invente características visuais.'
             : text;
-      const canStreamSpeech = autoSpeak && (studyMode || !capture);
+      const canStreamSpeech = autoSpeak && (studyMode || !capture) && voxCpm2Status?.configured === false;
       let speechSessionActive = false;
       let speechSessionClosed = false;
       const speechSessionPromise = canStreamSpeech
@@ -1667,6 +1683,54 @@ export default function App() {
     }
   };
 
+  const saveVoxCpm2Config = async () => {
+    const endpoint = voxCpm2EndpointInput.trim();
+    const token = voxCpm2TokenInput.trim();
+
+    if (!endpoint || !token) {
+      setNotice('Informe o endpoint completo e o token do servidor VoxCPM2.');
+      return;
+    }
+
+    setVoxCpm2Saving(true);
+    try {
+      await window.aurora.saveVoxCpm2Config({ endpoint, token });
+      setVoxCpm2TokenInput('');
+      await refreshVoxCpm2Status();
+      setNotice('Configuração VoxCPM2 salva com proteção do Windows.');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Não consegui salvar a configuração VoxCPM2.');
+    } finally {
+      setVoxCpm2Saving(false);
+    }
+  };
+
+  const clearVoxCpm2Config = async () => {
+    setVoxCpm2Saving(true);
+    try {
+      await window.aurora.clearVoxCpm2Config();
+      setVoxCpm2Status({ configured: false, endpoint: '', storageAvailable: voxCpm2Status?.storageAvailable ?? false });
+      setVoxCpm2EndpointInput('');
+      setVoxCpm2TokenInput('');
+      setNotice('Configuração e token VoxCPM2 removidos.');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Não consegui remover a configuração VoxCPM2.');
+    } finally {
+      setVoxCpm2Saving(false);
+    }
+  };
+
+  const testVoxCpm2Voice = async () => {
+    setVoxCpm2Testing(true);
+    setNotice('Teste remoto VoxCPM2 iniciado. A Aurora usará somente esse provedor neste teste.');
+    try {
+      await speak('Hã?! O que foi agora, idiota? Tch! Eu disse que ia dar certo.', false, true, 'voxcpm2');
+      await refreshVoxCpm2Status();
+    } finally {
+      setVoxCpm2Testing(false);
+    }
+  };
+
   const installLocalVoice = async () => {
     setLocalTtsInstalling(true);
     setLocalTtsProgress('Preparando a instalação do Kokoro pt-BR…');
@@ -2045,7 +2109,7 @@ export default function App() {
                     <button className="pet-voice-test" type="button" onClick={() => void installLocalVoice()} disabled={localTtsInstalling}>
                       {localTtsInstalling ? 'Instalando / preparando…' : localTtsStatus?.installed ? 'Preparar voz Kokoro' : 'Instalar Kokoro pt-BR (~329 MB)'}
                     </button>
-                    <button className="pet-voice-test" type="button" onClick={() => void speak('Oi! Eu sou a Aurora. Agora minha voz é processada localmente, sem depender de serviços pagos.')} disabled={!localTtsStatus?.installed || localTtsInstalling}>
+                    <button className="pet-voice-test" type="button" onClick={() => void speak('Oi! Eu sou a Aurora. Agora minha voz é processada localmente, sem depender de serviços pagos.', false, true, 'free')} disabled={!localTtsStatus?.installed || localTtsInstalling}>
                       ▶ Testar voz local
                     </button>
                   </div>
@@ -2086,6 +2150,66 @@ export default function App() {
                   <p className="field-help">Instalação: execute <code>powershell -ExecutionPolicy Bypass -File .\scripts\install-coqui-xtts.ps1</code> na pasta do projeto. Os pesos do XTTS-v2 só serão baixados ao iniciar o primeiro teste. Uso do modelo limitado a fins não comerciais pela licença CPML. Voz de demonstração: Ana Florence.</p>
                 </div>
 
+                <div className="modal-divider" />
+                <div className="elevenlabs-voice-settings">
+                  <strong>VoxCPM2 - voz padrao da conversa</strong>
+                  <p>Quando configurado, o VoxCPM2 sera usado nas respostas automaticas. Se o servidor estiver indisponivel, a Aurora tentara o Edge TTS e depois o Kokoro. O botao abaixo permite testar o VoxCPM2 manualmente.</p>
+
+                  <div className="secure-note">
+                    <span>{voxCpm2Status?.configured && voxCpm2Status.storageAvailable ? '?' : '!'}</span>
+                    <span>{voxCpm2Status
+                      ? !voxCpm2Status.storageAvailable
+                        ? 'O armazenamento seguro do Windows está indisponível.'
+                        : voxCpm2Status.configured
+                          ? 'Servidor configurado. Token protegido pela criptografia do Windows.'
+                          : 'Servidor VoxCPM2 ainda não configurado.'
+                      : 'Verificando a configuração VoxCPM2...'}</span>
+                  </div>
+
+                  <label className="field-label" htmlFor="aurora-voxcpm2-endpoint">Endpoint completo do servidor</label>
+                  <input
+                    id="aurora-voxcpm2-endpoint"
+                    className="settings-input"
+                    type="url"
+                    value={voxCpm2EndpointInput}
+                    onChange={(event) => setVoxCpm2EndpointInput(event.target.value)}
+                    placeholder="https://seu-servidor.com/tts"
+                    autoComplete="url"
+                    spellCheck={false}
+                  />
+
+                  <label className="field-label" htmlFor="aurora-voxcpm2-token">Token de acesso</label>
+                  <input
+                    id="aurora-voxcpm2-token"
+                    className="settings-input"
+                    type="password"
+                    value={voxCpm2TokenInput}
+                    onChange={(event) => setVoxCpm2TokenInput(event.target.value)}
+                    placeholder={voxCpm2Status?.configured ? 'Token já salvo; cole outro para substituí-lo' : 'Cole o token do servidor'}
+                    autoComplete="new-password"
+                    spellCheck={false}
+                  />
+
+                  <div className="elevenlabs-key-actions">
+                    <button className="pet-voice-test" type="button" onClick={() => void saveVoxCpm2Config()} disabled={voxCpm2Saving || !voxCpm2EndpointInput.trim() || !voxCpm2TokenInput.trim() || !voxCpm2Status?.storageAvailable}>
+                      {voxCpm2Saving ? 'Salvando...' : 'Salvar configuração'}
+                    </button>
+                    <button className="pet-voice-test" type="button" onClick={() => void testVoxCpm2Voice()} disabled={!voxCpm2Status?.configured || !voxCpm2Status.storageAvailable || voxCpm2Testing || voxCpm2Saving}>
+                      {voxCpm2Testing ? 'Gerando amostra...' : '▶ Testar voz VoxCPM2'}
+                    </button>
+                    <button className="pet-voice-test" type="button" onClick={() => void refreshVoxCpm2Status()} disabled={voxCpm2Saving}>
+                      Atualizar status
+                    </button>
+                    {voxCpm2Status?.configured && (
+                      <button className="pet-voice-test" type="button" onClick={() => void clearVoxCpm2Config()} disabled={voxCpm2Saving || voxCpm2Testing}>
+                        Remover configuração
+                      </button>
+                    )}
+                  </div>
+
+                  <p className="field-help">O endpoint recebe POST com JSON contendo o texto e o cabeçalho Authorization Bearer. Configure a voz Miki e sua referência diretamente no servidor.</p>
+                  <p className="field-help">Use HTTPS. HTTP só é aceito em localhost para desenvolvimento. Nenhum servidor será contratado ou conectado automaticamente.</p>
+                </div>
                 <div className="modal-divider" />
                 <div className="elevenlabs-voice-settings">
                   <strong>Microfone e captação</strong>

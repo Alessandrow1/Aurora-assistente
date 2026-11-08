@@ -102,7 +102,7 @@ function createAuroraCoquiTts({
       throw new Error('O ambiente Python do Coqui não está instalado. Execute scripts\\install-coqui-xtts.ps1.');
     }
     if (!status.licenseAccepted) {
-      throw new Error('Antes de usar XTTS-v2, leia a licença CPML e aceite-a pelo instalador do Coqui.');
+      throw new Error('Antes de usar XTTS-v2, aceite a licença CPML pelo instalador do Coqui.');
     }
     if (!status.workerAvailable) {
       throw new Error('O worker tools/coqui-xtts/worker.py não foi encontrado na instalação da Aurora.');

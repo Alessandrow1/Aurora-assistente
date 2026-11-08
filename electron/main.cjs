@@ -13,6 +13,8 @@ const { createAuroraLocalTts } = require('./aurora-local-tts.cjs');
 const { createAuroraCoquiTts } = require('./aurora-coqui-tts.cjs');
 const { createAuroraSkills } = require('./aurora-skills.cjs');
 const { createEdgeTtsSpeech } = require('./aurora-edge-tts.cjs');
+const { createVoxCpm2Tts, validateEndpoint } = require('./aurora-voxcpm2-tts.cjs');
+const auroraVoxCpm2Tts = createVoxCpm2Tts();
 const { choosePreferredModel, isElevenLabsQuotaExceeded, isExplicitDeepDiveRequest, normalizeVoiceTranscript, isVoiceHearingCheck } = require('./aurora-voice.cjs');
 
 const OLLAMA_URL = 'http://127.0.0.1:11434';
@@ -37,6 +39,184 @@ async function readElevenLabsApiKey() {
     await fsp.rename(temporaryPath, keyPath);
   }
   return decrypted.result;
+}
+
+const voxCpm2ConfigPath = () => path.join(app.getPath('userData'), 'voxcpm2-config.json');
+const voxCpm2TokenPath = () => path.join(app.getPath('userData'), 'voxcpm2-token.bin');
+
+async function readVoxCpm2Config() {
+  try {
+    const saved = JSON.parse(await fsp.readFile(voxCpm2ConfigPath(), 'utf8'));
+    return { endpoint: validateEndpoint(saved.endpoint) };
+  } catch {
+    return null;
+  }
+}
+
+async function readVoxCpm2Token() {
+  const tokenPath = voxCpm2TokenPath();
+  if (!fs.existsSync(tokenPath)) return null;
+
+  if (!(await safeStorage.isAsyncEncryptionAvailable())) {
+    throw new Error('O armazenamento seguro do Windows não está disponível.');
+  }
+
+  const encrypted = await fsp.readFile(tokenPath);
+  const decrypted = await safeStorage.decryptStringAsync(encrypted);
+  return decrypted.result;
+}
+
+const VOXCPM2_ROOT = process.env.AURORA_VOXCPM2_ROOT ||
+  'D:/AURORA/VoiceLab/AuroraVoice/02-VoxCPM2';
+const VOXCPM2_PYTHON = path.join(VOXCPM2_ROOT, 'venv-voxcpm', 'Scripts', 'python.exe');
+const VOXCPM2_SERVER = path.join(VOXCPM2_ROOT, 'aurora_voxcpm2_server.py');
+
+let voxCpm2ServerProcess = null;
+let voxCpm2ServerOwned = false;
+let voxCpm2ServerStartupPromise = null;
+
+function waitForVoxCpm2(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function isVoxCpm2Healthy(endpoint) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 1800);
+
+  try {
+    const response = await fetch(new URL('/health', endpoint).toString(), {
+      method: 'GET',
+      signal: controller.signal,
+    });
+    if (!response.ok) return false;
+
+    const payload = await response.json();
+    return payload && payload.status === 'online';
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function ensureVoxCpm2ServerStarted() {
+  if (voxCpm2ServerStartupPromise) return voxCpm2ServerStartupPromise;
+
+  const startup = (async () => {
+    const config = await readVoxCpm2Config();
+    if (!config) {
+      return { ready: false, reason: 'VoxCPM2 ainda nao esta configurado.' };
+    }
+
+    const token = await readVoxCpm2Token();
+    if (!token) {
+      return { ready: false, reason: 'Token VoxCPM2 nao encontrado no armazenamento seguro.' };
+    }
+
+    const endpointUrl = new URL(config.endpoint);
+    if (
+      endpointUrl.protocol !== 'http:' ||
+      endpointUrl.hostname !== '127.0.0.1' ||
+      endpointUrl.port !== '8000'
+    ) {
+      return {
+        ready: false,
+        reason: 'A inicializacao automatica requer http://127.0.0.1:8000.',
+      };
+    }
+
+    if (await isVoxCpm2Healthy(config.endpoint)) {
+      console.info('[Aurora VoxCPM2] Servidor ja estava ativo; reutilizando instancia existente.');
+      return { ready: true, managed: false };
+    }
+
+    if (!fs.existsSync(VOXCPM2_PYTHON)) {
+      return { ready: false, reason: 'Python nao encontrado: ' + VOXCPM2_PYTHON };
+    }
+    if (!fs.existsSync(VOXCPM2_SERVER)) {
+      return { ready: false, reason: 'Script nao encontrado: ' + VOXCPM2_SERVER };
+    }
+
+    const logPath = path.join(app.getPath('userData'), 'voxcpm2-server.log');
+    const serverLog = fs.createWriteStream(logPath, { flags: 'a' });
+    serverLog.on('error', (error) => {
+      console.warn('[Aurora VoxCPM2] Nao consegui gravar o log do servidor:', error.message);
+    });
+
+    console.info('[Aurora VoxCPM2] Iniciando servidor local...', {
+      root: VOXCPM2_ROOT,
+      model: 'base-model-fp32-TESTE',
+      log: logPath,
+    });
+
+    const child = spawn(VOXCPM2_PYTHON, [VOXCPM2_SERVER], {
+      cwd: VOXCPM2_ROOT,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, PYTHONUNBUFFERED: '1' },
+    });
+
+    voxCpm2ServerProcess = child;
+    voxCpm2ServerOwned = true;
+
+    child.stdout?.pipe(serverLog, { end: false });
+    child.stderr?.pipe(serverLog, { end: false });
+
+    let spawnError = null;
+
+    child.once('error', (error) => {
+      spawnError = error;
+      console.error('[Aurora VoxCPM2] Falha ao iniciar Python:', error.message);
+      serverLog.end();
+    });
+
+    child.once('exit', (code, signal) => {
+      console.info('[Aurora VoxCPM2] Processo encerrado.', { code, signal });
+
+      if (voxCpm2ServerProcess === child) {
+        voxCpm2ServerProcess = null;
+        voxCpm2ServerOwned = false;
+      }
+
+      serverLog.end();
+    });
+
+    const deadline = Date.now() + 180000;
+
+    while (Date.now() < deadline) {
+      if (spawnError) throw spawnError;
+
+      if (child.exitCode !== null || child.signalCode !== null) {
+        throw new Error('Python encerrou antes de o servidor ficar online. Consulte voxcpm2-server.log.');
+      }
+
+      if (await isVoxCpm2Healthy(config.endpoint)) {
+        console.info('[Aurora VoxCPM2] Servidor online e pronto.', {
+          pid: child.pid,
+          elapsedMs: 180000 - Math.max(0, deadline - Date.now()),
+        });
+        return { ready: true, managed: true };
+      }
+
+      await waitForVoxCpm2(Math.min(1000, Math.max(0, deadline - Date.now())));
+    }
+
+    if (voxCpm2ServerProcess === child && child.exitCode === null) {
+      child.kill();
+    }
+
+    throw new Error('VoxCPM2 nao respondeu em /health dentro de 180 segundos. Consulte voxcpm2-server.log.');
+  })();
+
+  voxCpm2ServerStartupPromise = startup;
+
+  try {
+    return await startup;
+  } finally {
+    if (voxCpm2ServerStartupPromise === startup) {
+      voxCpm2ServerStartupPromise = null;
+    }
+  }
 }
 
 const DEFAULT_MODEL = 'qwen3.5:9b';
@@ -353,7 +533,7 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
-    // AURORA_MOUSE_PASSTHROUGH: a janela comeÃ§a atravessÃ¡vel fora do hitbox.
+    // AURORA_MOUSE_PASSTHROUGH: a janela começa atravessável fora do hitbox.
     mainWindow.setIgnoreMouseEvents(true, { forward: true });
   });
   // AURORA_TRAY_WINDOW_EVENTS: manter a mascote visível quando o Windows pede minimizar.
@@ -382,13 +562,16 @@ app.whenReady().then(() => {
   });
   createWindow();
   createTray();
+  void ensureVoxCpm2ServerStarted().catch((error) => {
+    console.warn("[Aurora VoxCPM2] Inicializacao automatica falhou:", error instanceof Error ? error.message : String(error));
+  });
   // Mantém somente o modelo de voz casual aquecido. Carregar o 9B logo depois
   // expulsava o 2B da memória em algumas configurações e fazia a próxima fala
   // casual esperar um carregamento completo de mais de 25 segundos.
   void warmupOllamaModel('qwen3.5:2b').catch((error) => {
     console.info('[Aurora Performance] Warmup do modelo rápido indisponível; será carregado no primeiro uso:', error instanceof Error ? error.message : String(error));
   });
-  // Atalho global: continua acessÃ­vel mesmo quando o mouse estÃ¡ passando para outro programa.
+  // Atalho global: continua acessível mesmo quando o mouse está passando para outro programa.
   globalShortcut.register('Control+Shift+Space', () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     mainWindow.setIgnoreMouseEvents(false);
@@ -512,6 +695,63 @@ ipcMain.handle('aurora:clear-elevenlabs-key', async () => {
   return { configured: false };
 });
 
+ipcMain.handle('aurora:voxcpm2-status', async () => {
+  const config = await readVoxCpm2Config();
+  let storageAvailable = false;
+
+  try {
+    storageAvailable = await safeStorage.isAsyncEncryptionAvailable();
+  } catch {
+    storageAvailable = false;
+  }
+
+  const tokenConfigured = fs.existsSync(voxCpm2TokenPath());
+
+  return {
+    configured: Boolean(config && tokenConfigured),
+    endpoint: config?.endpoint || '',
+    storageAvailable,
+  };
+});
+
+ipcMain.handle('aurora:voxcpm2-save', async (_event, payload = {}) => {
+  const endpoint = validateEndpoint(payload.endpoint);
+  const token = typeof payload.token === 'string' ? payload.token.trim() : '';
+
+  if (token.length < 8 || token.length > 4096 || /\s/.test(token)) {
+    throw new Error('O token do servidor VoxCPM2 está ausente ou inválido.');
+  }
+
+  if (!(await safeStorage.isAsyncEncryptionAvailable())) {
+    throw new Error('Não foi possível ativar a criptografia protegida pelo Windows.');
+  }
+
+  const encrypted = await safeStorage.encryptStringAsync(token);
+  const tokenPath = voxCpm2TokenPath();
+  const configPath = voxCpm2ConfigPath();
+
+  await fsp.mkdir(path.dirname(tokenPath), { recursive: true });
+
+  const tokenTemp = `${tokenPath}.tmp`;
+  const configTemp = `${configPath}.tmp`;
+
+  await fsp.writeFile(tokenTemp, encrypted, { mode: 0o600 });
+  await fsp.rename(tokenTemp, tokenPath);
+
+  await fsp.writeFile(configTemp, JSON.stringify({ endpoint }, null, 2), 'utf8');
+  await fsp.rename(configTemp, configPath);
+
+  return { configured: true, endpoint };
+});
+
+ipcMain.handle('aurora:voxcpm2-clear', async () => {
+  await Promise.all([
+    fsp.rm(voxCpm2ConfigPath(), { force: true }),
+    fsp.rm(voxCpm2TokenPath(), { force: true }),
+  ]);
+
+  return { configured: false, endpoint: '' };
+});
 // AURORA_OFFLINE_ASR: Whisper Tiny/Base INT8 multilingue via sherpa-onnx; modelos não são armazenados no Git.
 const WHISPER_MODEL_SIZE = process.env.AURORA_WHISPER_MODEL === 'tiny' ? 'tiny' : 'base';
 const whisperModelBaseDirectory = () => {
@@ -794,32 +1034,52 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
         .slice(-historyLimit)
         .map((item) => ({ role: item.role, content: item.content.slice(0, historyCharacterLimit) }))
     : [];
-  const memoryLookupStartedAt = Date.now();
-  let relevantMemories = [];
-  try {
-    relevantMemories = await findRelevantAuroraMemories(
-      [history.slice(-3).filter((item) => item.role === 'user').map((item) => item.content).join(' '), message].join(' '),
-      fastVoiceTurn ? 2 : 5,
-      { semantic: !casualVoiceTurn || needsStoredContext || needsFactualKnowledge },
-    );
-  } catch (error) {
-    console.error('[Aurora Memory] Não consegui consultar a memória protegida:', error instanceof Error ? error.message : String(error));
-  }
-  const memoryLookupMs = Date.now() - memoryLookupStartedAt;
-  let retrievedContext = [];
-  const retrievalStartedAt = Date.now();
-  // A biblioteca semântica é útil em perguntas de estudo, arquivo ou lembrança, mas não deve atrasar um "oi" por voz.
-  if (!casualVoiceTurn || needsStoredContext || needsFactualKnowledge) {
+  const semanticSearchEnabled = !casualVoiceTurn || needsStoredContext || needsFactualKnowledge;
+  const memoryQuery = [
+    history.slice(-3).filter((item) => item.role === 'user').map((item) => item.content).join(' '),
+    message,
+  ].join(' ');
+  const contextQuery = [
+    history.slice(-4).map((item) => item.content).join(' '),
+    message,
+  ].join(' ');
+
+  let queryEmbedding = null;
+  if (semanticSearchEnabled) {
     try {
-      retrievedContext = await auroraStore.searchContext(
-        [history.slice(-4).map((item) => item.content).join(' '), message].join(' '),
-        3,
-      );
+      queryEmbedding = await auroraStore.createQueryEmbedding(memoryQuery);
     } catch (error) {
-      console.warn('[Aurora RAG] Não consegui recuperar conversas/documentos relevantes:', error instanceof Error ? error.message : String(error));
+      console.warn('[Aurora Memory] Falha ao gerar embedding compartilhado:', error instanceof Error ? error.message : String(error));
     }
   }
-  const retrievalMs = Date.now() - retrievalStartedAt;
+
+  let relevantMemories = [];
+  let retrievedContext = [];
+  const memoryLookupStartedAt = Date.now();
+  const retrievalStartedAt = Date.now();
+  const shouldRetrieveContext = !casualVoiceTurn || needsStoredContext || needsFactualKnowledge;
+
+  const [memoryResult, contextResult] = await Promise.all([
+    findRelevantAuroraMemories(
+      memoryQuery,
+      fastVoiceTurn ? 2 : 5,
+      { semantic: semanticSearchEnabled, queryEmbedding },
+    ).catch((error) => {
+      console.error('[Aurora Memory] N\u00e3o consegui consultar a mem\u00f3ria protegida:', error instanceof Error ? error.message : String(error));
+      return [];
+    }),
+    shouldRetrieveContext
+      ? auroraStore.searchContext(contextQuery, 3, { queryEmbedding }).catch((error) => {
+          console.warn('[Aurora RAG] N\u00e3o consegui recuperar conversas/documentos relevantes:', error instanceof Error ? error.message : String(error));
+          return [];
+        })
+      : Promise.resolve([]),
+  ]);
+
+  relevantMemories = memoryResult;
+  retrievedContext = contextResult;
+  const memoryLookupMs = Date.now() - memoryLookupStartedAt;
+  const retrievalMs = shouldRetrieveContext ? Date.now() - retrievalStartedAt : 0;
   const memoryContext = [
     ...(relevantMemories.length
       ? ['LEMBRANÇAS EXPLÍCITAS DO USUÁRIO (fatos guardados; use apenas quando relevantes):\n' + relevantMemories.map((item) => '- ' + item.content).join('\n')]
@@ -1416,6 +1676,50 @@ ipcMain.handle('aurora:speak', async (_event, rawText, options = {}) => {
 
   // ElevenLabs só é chamado quando o usuário escolhe explicitamente testar a voz premium.
   // A conversa normal nunca consome créditos automaticamente.
+  // Automatic speech prioritizes VoxCPM2; Edge and Kokoro remain available as fallbacks.
+  const explicitlyRequestedVoxCpm2 = Boolean(options && options.provider === 'voxcpm2');
+  const automaticSpeech = !options || !options.provider || options.provider === 'auto';
+
+  if (explicitlyRequestedVoxCpm2 || automaticSpeech) {
+    try {
+      const serverState = await ensureVoxCpm2ServerStarted();
+
+      if (!serverState.ready) {
+        if (explicitlyRequestedVoxCpm2) {
+          throw new Error(serverState.reason || 'Servidor VoxCPM2 indisponivel.');
+        }
+        console.warn('[Aurora TTS] VoxCPM2 nao esta pronto; usando provedor alternativo:', serverState.reason);
+      } else {
+        const config = await readVoxCpm2Config();
+        const token = await readVoxCpm2Token();
+
+        if (!config || !token) {
+          throw new Error('Configuracao ou token VoxCPM2 indisponivel.');
+        }
+
+        const result = await auroraVoxCpm2Tts.synthesize(cleanText, {
+          endpoint: config.endpoint,
+          token,
+        });
+
+        console.info('[Aurora Performance] VoxCPM2', {
+          synthesisMs: Date.now() - startedAt,
+          audioMimeType: result.audioMimeType,
+          mode: explicitlyRequestedVoxCpm2 ? 'manual-test' : 'automatic-default',
+        });
+
+        return result;
+      }
+    } catch (error) {
+      if (explicitlyRequestedVoxCpm2) throw error;
+
+      console.warn(
+        '[Aurora TTS] VoxCPM2 indisponivel; usando voz gratuita como alternativa:',
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+  }
+
   if (requestedProvider === 'elevenlabs') {
     let apiKey = null;
     try {
@@ -1560,7 +1864,7 @@ ipcMain.handle('aurora:open-url', async (_event, rawUrl) => {
   return { success: true };
 });
 
-// AURORA_MOUSE_PASSTHROUGH: sÃ³ a prÃ³pria janela Aurora pode alterar seu modo de mouse.
+// AURORA_MOUSE_PASSTHROUGH: só a própria janela Aurora pode alterar seu modo de mouse.
 // AURORA_GLOBAL_CURSOR_TRACKING_V1: acompanha o cursor do desktop mesmo com mouse pass-through.
 app.on('browser-window-created', (_event, createdWindow) => {
   const cursorTimer = setInterval(() => {
@@ -1596,6 +1900,10 @@ ipcMain.on('aurora:close', () => mainWindow?.close());
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  if (voxCpm2ServerOwned && voxCpm2ServerProcess && !voxCpm2ServerProcess.killed) {
+    console.info("[Aurora VoxCPM2] Encerrando servidor iniciado por esta Aurora.");
+    voxCpm2ServerProcess.kill();
+  }
   if (auroraCoquiTts) void auroraCoquiTts.dispose();
 });
 

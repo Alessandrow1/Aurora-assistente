@@ -39,13 +39,16 @@ declare global {
       getElevenLabsStatus: () => Promise<{ configured: boolean; storageAvailable: boolean; voiceId: string; modelId: string }>;
       saveElevenLabsKey: (apiKey: string) => Promise<{ configured: boolean }>;
       clearElevenLabsKey: () => Promise<{ configured: boolean }>;
+      getVoxCpm2Status: () => Promise<{ configured: boolean; endpoint: string; storageAvailable: boolean }>;
+      saveVoxCpm2Config: (payload: { endpoint: string; token: string }) => Promise<{ configured: boolean; endpoint: string }>;
+      clearVoxCpm2Config: () => Promise<{ configured: boolean; endpoint: string }>;
       chat: (payload: { message: string; history: AuroraMessage[]; voiceMode?: boolean; studyMode?: boolean; imageBase64?: string; requestId?: string }, onChunk?: (content: string) => void) => Promise<{ text: string }>;
       cancelChat: (requestId: string) => void;
       captureScreen: () => Promise<{ imageBase64: string; width: number; height: number; screenWidth: number; screenHeight: number }>;
       openApp: (appId: string) => Promise<{ success: boolean; label: string }>;
       openFolder: (folderId: string) => Promise<{ success: boolean; label: string }>;
       openUrl: (url: string) => Promise<{ success: boolean }>;
-      speak: (text: string, options?: { provider?: 'auto' | 'elevenlabs' | 'coqui' }) => Promise<{ audioBase64: string; audioMimeType?: string; voice: string; provider: 'elevenlabs' | 'kokoro-local' | 'edge-tts' | 'coqui-xtts'; fallbackReason?: string; performance?: { modelLoadMs: number | null; synthesisMs: number; audioSeconds: number; sampleRate: number; audioBytes: number; device: string } | null }>;
+      speak: (text: string, options?: { provider?: 'auto' | 'elevenlabs' | 'coqui' | 'voxcpm2' | 'free' }) => Promise<{ audioBase64: string; audioMimeType?: string; voice: string; provider: 'elevenlabs' | 'kokoro-local' | 'edge-tts' | 'coqui-xtts' | 'voxcpm2'; fallbackReason?: string; performance?: { modelLoadMs: number | null; synthesisMs: number; audioSeconds: number; sampleRate: number; audioBytes: number; device: string } | null }>;
       startSpeakSession: () => Promise<{ active: boolean; provider?: 'elevenlabs' | 'kokoro-local' | 'edge-tts' | 'coqui-xtts'; error?: string }>;
       endSpeakSession: () => Promise<{ closed: boolean }>;
       transcribeAudio: (samples: Float32Array) => Promise<{ text: string }>;

@@ -148,3 +148,85 @@ test('requires protected storage before writing encrypted records', async () => 
   });
   await assert.rejects(unavailableStore.createConversation(), /armazenamento seguro/);
 });
+
+
+test('reuses one shared query embedding across memory and context searches', async () => {
+  let embedRequests = 0;
+  let tagsRequests = 0;
+
+  global.fetch = async (url, options = {}) => {
+    if (String(url).endsWith('/api/tags')) {
+      tagsRequests += 1;
+      return new Response(JSON.stringify({
+        models: [{ name: 'nomic-embed-text:latest' }],
+      }), { status: 200 });
+    }
+
+    if (String(url).endsWith('/api/embed')) {
+      embedRequests += 1;
+      const body = JSON.parse(options.body);
+      assert.deepEqual(body.input, ['Aurora e memoria']);
+
+      return new Response(JSON.stringify({
+        embeddings: [[1, 0, 0]],
+      }), { status: 200 });
+    }
+
+    throw new Error('Unexpected Ollama request: ' + url);
+  };
+
+  const vector = await store.createQueryEmbedding('Aurora e memoria');
+  assert.deepEqual(vector, [1, 0, 0]);
+
+  await store.searchMemories(
+    'Aurora e memoria',
+    [{ id: 'aurora', content: 'Aurora e memoria inteligente.' }],
+    3,
+    { queryEmbedding: vector },
+  );
+
+  await store.searchContext(
+    'Aurora e memoria',
+    3,
+    { queryEmbedding: vector },
+  );
+
+  assert.equal(tagsRequests, 1);
+  assert.equal(embedRequests, 1);
+});
+
+test('uses lexical fallback when the shared query embedding is unavailable', async () => {
+  let requestCount = 0;
+
+  global.fetch = async () => {
+    requestCount += 1;
+    return new Response(JSON.stringify({ models: [] }), {
+      status: 200,
+    });
+  };
+
+  const vector = await store.createQueryEmbedding('projeto Aurora');
+  assert.equal(vector, null);
+
+  const memories = [
+    { id: 'aurora', content: 'Projeto Aurora assistente local.' },
+    { id: 'other', content: 'Outro assunto sem relacao.' },
+  ];
+
+  const results = await store.searchMemories(
+    'projeto Aurora',
+    memories,
+    2,
+    { queryEmbedding: vector },
+  );
+
+  await store.searchContext(
+    'projeto Aurora',
+    3,
+    { queryEmbedding: vector },
+  );
+
+  assert.equal(results.length, 1);
+  assert.equal(results[0].id, 'aurora');
+  assert.equal(requestCount, 1);
+});
