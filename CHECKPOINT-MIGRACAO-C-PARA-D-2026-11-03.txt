@@ -1,0 +1,112 @@
+CHECKPOINT — MIGRACAO DA AURORA DO C: PARA O D:
+Data: 03/11/2026
+Repositorio: Alessandrow1/Aurora-assistente
+Branch: fix/aurora-voice-identity-and-empty-speech-2026-11-03
+
+1. OBJETIVO
+Transferir o ambiente de desenvolvimento e os dados locais da Aurora do disco C: para o D:, liberando espaco no disco do sistema sem perder conversas, memorias, configuracoes, modelos ou recursos locais.
+
+2. PROJETO
+Origem preservada:
+C:\Users\Alessandro Linhares\Desktop\AURORA\Aurora-assistente
+
+Copia no D: (caminho real confirmado):
+D:\AURORA\Projects\AURORA\Aurora-assistente
+
+Observacao: a pasta ficou com um nivel extra "AURORA" no caminho por causa da primeira tentativa de copia. O caminho acima e o correto e foi usado nos testes. Nao renomear/mover essa pasta sem atualizar os comandos e atalhos.
+
+Resultado da copia:
+- Robocopy: 4.183 diretorios e 41.144 arquivos copiados.
+- Tamanho reportado: 2,937 GB.
+- Comparacao posterior: 41.144 arquivos na origem e no destino; 2,938 GB em ambos (arredondamento do PowerShell).
+- Robocopy sem falhas.
+- A origem no C: foi preservada.
+
+3. MODELOS OLLAMA
+Os modelos foram copiados para:
+D:\AURORA\Models\Ollama
+
+Variavel de ambiente de usuario configurada:
+OLLAMA_MODELS=D:\AURORA\Models\Ollama
+
+Validacao feita:
+- Ollama reiniciado e reconheceu os modelos no D:.
+- 'ollama list' mostrou qwen3.5:2b, qwen3.5:4b e qwen3.5:9b.
+- A pasta de backup antiga dos modelos no perfil do usuario foi removida somente depois dessa verificacao.
+- A variavel da sessao atual tambem foi definida durante a migracao. Confirmar a variavel persistente em um novo terminal/reinicio.
+
+4. DADOS LOCAIS DO ELECTRON
+Origem:
+C:\Users\Alessandro Linhares\AppData\Roaming\aurora-assistente
+
+Destino fisico:
+D:\AURORA\AppData\aurora-assistente
+
+Resultado da copia:
+- 32 diretorios.
+- 539 arquivos.
+- 425,26 MB na origem e no destino.
+- Robocopy sem falhas; contagem e tamanho conferidos.
+
+Foi criada uma Junction no caminho antigo:
+C:\Users\Alessandro Linhares\AppData\Roaming\aurora-assistente
+-> D:\AURORA\AppData\aurora-assistente
+
+Verificacao do Windows confirmou:
+- Attributes: Directory, ReparsePoint
+- LinkType: Junction
+- Target: D:\AURORA\AppData\aurora-assistente
+- 539 arquivos continuam acessiveis pelo caminho antigo.
+
+Backup original preservado:
+C:\Users\Alessandro Linhares\AppData\Roaming\aurora-assistente_backup_C_20261103_152656
+
+A Junction permite que o Electron continue usando app.getPath('userData') pelo caminho antigo, enquanto os dados sao armazenados no D:.
+
+5. VALIDACAO DO PROJETO NO D:
+A partir de:
+D:\AURORA\Projects\AURORA\Aurora-assistente
+
+Git:
+Branch ativa: fix/aurora-voice-identity-and-empty-speech-2026-11-03
+
+Build:
+npm.cmd run build
+Resultado: sucesso (exit code 0).
+Aviso nao bloqueante do Vite: o script ./live2d/Core/live2dcubismcore.js nao pode ser agrupado sem type="module". O build terminou normalmente.
+
+Testes:
+npm.cmd test
+Resultado: 42 passaram; 1 falhou, de 43.
+Falha isolada:
+electron/aurora-coqui-tts.test.cjs — "refuses to start XTTS until the user has explicitly accepted CPML".
+O teste espera a regex /aceite.*CPML/i, mas o codigo retorna:
+"Antes de usar XTTS-v2, leia a licença CPML e aceite-a pelo instalador do Coqui."
+A divergencia esta na expectativa da regex do teste versus a ordem das palavras na mensagem. Investigar e corrigir o teste sem remover a protecao de aceite da licenca CPML.
+
+6. ESTADO DO GIT NA MAQUINA LOCAL ANTES DESTE CHECKPOINT
+Ultimo 'git status --short --branch' informado:
+## fix/aurora-voice-identity-and-empty-speech-2026-11-03...origin/fix/aurora-voice-identity-and-empty-speech-2026-11-03
+ M .gitignore
+?? AURORA-BACKUP-2026-11-03.txt
+?? "voice_preview_miki - bright, natural, expressive.mp3"
+
+Importante:
+- As alteracoes locais de .gitignore ainda precisavam ser revisadas e commitadas.
+- O TXT AURORA-BACKUP-2026-11-03.txt estava apenas local e nao rastreado no momento do status.
+- Nao adicionar arquivos de audio de referencia/voz ao repositorio. Manter amostras de voz e arquivos privados apenas no computador; verificar regras do .gitignore.
+- Este checkpoint documenta a migracao; ele nao substitui o commit das alteracoes locais pendentes.
+
+7. PENDENCIAS PARA A PROXIMA SESSAO
+1) Executar a Aurora a partir do D: com 'npm.cmd run dev'.
+2) Confirmar que as conversas antigas aparecem e que novas conversas continuam salvas apos fechar e reabrir o app.
+3) Confirmar memorias, configuracoes, voz/TTS e conexao com Ollama.
+4) Abrir um novo PowerShell e confirmar que 'ollama list' continua encontrando os modelos no D: e que OLLAMA_MODELS esta persistente.
+5) Revisar 'git diff -- .gitignore'; garantir que referencias de voz e arquivos locais/privados estejam ignorados.
+6) Sincronizar este checkpoint remoto com a copia local e commitar as alteracoes locais relevantes, sem incluir MP3s de referencia.
+7) Somente depois de validar tudo, avaliar a limpeza das copias antigas no C:. Nao apagar o backup de AppData nem a copia original do projeto antes da validacao final.
+
+8. ESPACO
+Na ultima verificacao informada, o D: tinha aproximadamente 97,70 GB livres. O C: comecou com aproximadamente 0,17 GB livres; a remocao da copia antiga dos modelos liberou cerca de 11,7 GB. O espaco atual deve ser medido novamente antes de outras migracoes/limpezas.
+
+FIM DO CHECKPOINT
