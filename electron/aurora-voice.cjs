@@ -74,13 +74,9 @@ function choosePreferredModel({
   studyMode = false,
   settingsModel = 'qwen3.5:9b',
 } = {}) {
-  if (fastVoiceTurn || conciseVoiceTurn) return 'qwen3.5:2b';
-  if (voiceMode && !needsThinking && !needsStoredContext && !hasImage && !studyMode) {
-    return 'qwen3.5:2b';
-  }
-  if (voiceMode || needsThinking || needsExplanation || needsFactualKnowledge || studyMode) {
-    return 'qwen3.5:9b';
-  }
+  const voice = voiceMode || fastVoiceTurn || conciseVoiceTurn;
+  if (voice) return hasImage || studyMode ? 'qwen3.5:9b' : settingsModel;
+  if (needsThinking || needsExplanation || needsFactualKnowledge || studyMode) return 'qwen3.5:9b';
   return settingsModel;
 }
 

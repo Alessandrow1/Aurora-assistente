@@ -230,3 +230,25 @@ test('uses lexical fallback when the shared query embedding is unavailable', asy
   assert.equal(results[0].id, 'aurora');
   assert.equal(requestCount, 1);
 });
+
+test('lê o arquivo protegido uma vez só enquanto ele não muda, e relê depois de salvar', async () => {
+  let decryptCalls = 0;
+  const safeStorage = makeSafeStorage();
+  const countingStore = createAuroraStore({
+    app: { getPath: () => root },
+    safeStorage: { ...safeStorage, decryptStringAsync: async (buffer) => { decryptCalls += 1; return safeStorage.decryptStringAsync(buffer); } },
+    ollamaUrl: 'http://127.0.0.1:11434',
+  });
+  await countingStore.saveIdentityProfile({ name: 'Aurora', personality: 'teste de cache' });
+  decryptCalls = 0;
+  const first = await countingStore.getIdentityProfile();
+  const second = await countingStore.getIdentityProfile();
+  assert.equal(decryptCalls, 1, 'a segunda leitura deve vir do cache');
+  assert.equal(second.personality, 'teste de cache');
+
+  first.personality = 'alterado só na cópia';
+  assert.equal((await countingStore.getIdentityProfile()).personality, 'teste de cache');
+
+  await countingStore.saveIdentityProfile({ name: 'Aurora', personality: 'valor novo' });
+  assert.equal((await countingStore.getIdentityProfile()).personality, 'valor novo');
+});

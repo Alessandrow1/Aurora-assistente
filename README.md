@@ -56,6 +56,19 @@ npm run dist
 
 O instalador é gerado na pasta `release`.
 
+## Modo de voz (escolha na linha de comando)
+
+| Modo | Como abrir | Como funciona |
+|---|---|---|
+| VAD (padrão) | `INICIAR-AURORA.bat` ou `npm run dev` | O detector de fala (Silero VAD) percebe sozinho quando você termina de falar (1,4 s de silêncio). |
+| Botão | `INICIAR-AURORA.bat botao` ou `npm run dev:botao` | Apertar para falar: tecla `C` na janela da Aurora ou o botão "Gravar / Enviar" da página de acompanhamento. Um aperto começa a gravar e o outro envia. |
+
+Também funcionam `electron . --modo-voz=vad|botao` e a variável `AURORA_MODO_VOZ`. No modo VAD, `--vad-pausa-ms=2000` (ou `AURORA_VAD_PAUSA_MS`) muda o silêncio que encerra a fala (de 500 a 4000 ms).
+
+## Página de acompanhamento
+
+Com o app aberto, http://127.0.0.1:17070/ mostra a etapa atual (gravando, transcrevendo, pensando, falando), o que foi transcrito, o que a Aurora respondeu e os avisos, cada um com uma cor. No modo botão, ela tem o botão "Gravar / Enviar", útil porque a janela transparente da Aurora não recebe clique fora da área do avatar. A página só aceita acesso do próprio computador. A porta pode ser trocada com `AURORA_FEED_PORT`.
+
 ## Avatar e licença
 
 O avatar `anime_girl.vrm` é baixado durante a atualização do repositório público [GY19A/jev-stage](https://github.com/GY19A/jev-stage), que declara o arquivo sob CC0 1.0. Consulte também `AVATAR-LICENSE.txt`.

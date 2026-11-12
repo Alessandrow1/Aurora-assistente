@@ -15,7 +15,25 @@ const { createAuroraSkills } = require('./aurora-skills.cjs');
 const { createEdgeTtsSpeech } = require('./aurora-edge-tts.cjs');
 const { createVoxCpm2Tts, validateEndpoint } = require('./aurora-voxcpm2-tts.cjs');
 const auroraVoxCpm2Tts = createVoxCpm2Tts();
-const { choosePreferredModel, isElevenLabsQuotaExceeded, isExplicitDeepDiveRequest, normalizeVoiceTranscript, isVoiceHearingCheck } = require('./aurora-voice.cjs');
+const { choosePreferredModel, foldPortuguese, isElevenLabsQuotaExceeded, isExplicitDeepDiveRequest, normalizeVoiceTranscript, isVoiceHearingCheck } = require('./aurora-voice.cjs');
+const { createVoxCpm2Gate } = require('./aurora-voxcpm2-gate.cjs');
+const { createFeedServer } = require('./aurora-feed-server.cjs');
+
+const FEED_PORT = Number(process.env.AURORA_FEED_PORT) || 17070;
+
+const { parseVoiceOptions } = require('./aurora-cli.cjs');
+const VOICE_OPTIONS = parseVoiceOptions(process.argv, process.env);
+for (const warning of VOICE_OPTIONS.warnings) console.warn('[Aurora Voice] ' + warning);
+console.info('[Aurora Voice] Modo de voz: ' + (VOICE_OPTIONS.mode === 'botao'
+  ? 'apertar para falar (tecla C ou botão da página web)'
+  : 'VAD automático, pausa de ' + VOICE_OPTIONS.vadPauseMs + ' ms'));
+const feedServer = createFeedServer({
+  port: FEED_PORT,
+  mode: VOICE_OPTIONS.mode,
+  onCommand: (command) => {
+    if (command === 'ptt' && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('aurora:ptt-toggle');
+  },
+});
 
 const OLLAMA_URL = 'http://127.0.0.1:11434';
 const ELEVENLABS_VOICE_ID = '29BpZaywSObgMLvRvBhB';
@@ -219,6 +237,68 @@ async function ensureVoxCpm2ServerStarted() {
   }
 }
 
+const VOXCPM2_AUTO_TIMEOUT_MS = Number(process.env.AURORA_VOXCPM2_TIMEOUT_MS) > 0
+  ? Number(process.env.AURORA_VOXCPM2_TIMEOUT_MS)
+  : 25000;
+const voxCpm2Gate = createVoxCpm2Gate();
+let voxCpm2RuntimeCache = null;
+
+async function getVoxCpm2Runtime() {
+  if (voxCpm2RuntimeCache) return voxCpm2RuntimeCache;
+  const config = await readVoxCpm2Config();
+  if (!config) return null;
+  const token = await readVoxCpm2Token();
+  if (!token) return null;
+  voxCpm2RuntimeCache = { endpoint: config.endpoint, token };
+  return voxCpm2RuntimeCache;
+}
+
+function invalidateVoxCpm2Runtime() {
+  voxCpm2RuntimeCache = null;
+  voxCpm2Gate.reset();
+}
+
+function isLocalAutoStartEndpoint(endpoint) {
+  try {
+    const url = new URL(endpoint);
+    return url.protocol === 'http:' && url.hostname === '127.0.0.1' && url.port === '8000';
+  } catch {
+    return false;
+  }
+}
+
+async function resolveAutomaticVoxCpm2() {
+  let runtime;
+  try {
+    runtime = await getVoxCpm2Runtime();
+  } catch (error) {
+    return { use: false, configured: true, reason: 'não consegui ler a configuração protegida do VoxCPM2' };
+  }
+  if (!runtime) return { use: false, configured: false };
+  if (!isLocalAutoStartEndpoint(runtime.endpoint)) {
+    return { use: false, configured: true, reason: 'a fala automática só usa o VoxCPM2 em http://127.0.0.1:8000' };
+  }
+
+  const gate = voxCpm2Gate.check();
+  if (gate.state === 'blocked') return { use: false, configured: true, reason: gate.reason };
+  if (gate.state === 'ready') return { use: true, runtime };
+  if (voxCpm2ServerStartupPromise) {
+    return { use: false, configured: true, reason: 'o VoxCPM2 ainda está iniciando' };
+  }
+  if (await isVoxCpm2Healthy(runtime.endpoint)) {
+    voxCpm2Gate.markReady();
+    return { use: true, runtime };
+  }
+
+  voxCpm2Gate.markFailure('o servidor VoxCPM2 não está respondendo');
+  void ensureVoxCpm2ServerStarted()
+    .then((state) => { if (state.ready) voxCpm2Gate.markReady(); })
+    .catch((error) => {
+      console.warn('[Aurora VoxCPM2] Inicialização em segundo plano falhou:', error instanceof Error ? error.message : String(error));
+    });
+  return { use: false, configured: true, reason: 'o servidor VoxCPM2 não está respondendo; tentando iniciar em segundo plano' };
+}
+
 const DEFAULT_MODEL = 'qwen3.5:9b';
 const ALLOWED_MODELS = new Set(['qwen3.5:2b', 'qwen3.5:4b', 'qwen3.5:9b']);
 
@@ -305,12 +385,7 @@ const memoryStorePath = () => path.join(app.getPath('userData'), 'aurora-memory.
 const MAX_AURORA_MEMORIES = 150;
 
 function normalizeMemoryText(value) {
-  return String(value || '')
-    .toLocaleLowerCase('pt-BR')
-    .normalize('NFD')
-    .replace(/[\\u0300-\\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
+  return foldPortuguese(value);
 }
 
 async function readAuroraMemories() {
@@ -350,7 +425,7 @@ async function writeAuroraMemories(memories) {
 }
 
 async function saveAuroraMemory(rawContent) {
-  const content = typeof rawContent === 'string' ? rawContent.replace(/\\s+/g, ' ').trim().slice(0, 500) : '';
+  const content = typeof rawContent === 'string' ? rawContent.replace(/\s+/g, ' ').trim().slice(0, 500) : '';
   if (content.length < 4) throw new Error('A lembrança precisa ter pelo menos quatro caracteres.');
   const memories = await readAuroraMemories();
   const normalized = normalizeMemoryText(content);
@@ -396,7 +471,10 @@ async function getOllamaModels() {
   }
 }
 
-async function warmupOllamaModel(model = readSettings().model) {
+const OLLAMA_NUM_CTX = 4096;
+const OLLAMA_NUM_CTX_IMAGE = 6144;
+
+async function warmupOllamaModel(model = readSettings().model, numCtx = OLLAMA_NUM_CTX) {
   const existing = ollamaWarmupPromises.get(model);
   if (existing) return await existing;
 
@@ -415,7 +493,7 @@ async function warmupOllamaModel(model = readSettings().model) {
         prompt: '',
         stream: false,
         keep_alive: '2h',
-        options: { num_predict: 0, num_ctx: 2048 },
+        options: { num_predict: 0, num_ctx: numCtx },
       }),
     });
     if (!response.ok) throw new Error(`Ollama warmup retornou HTTP ${response.status}.`);
@@ -562,13 +640,18 @@ app.whenReady().then(() => {
   });
   createWindow();
   createTray();
-  void ensureVoxCpm2ServerStarted().catch((error) => {
+  feedServer.start()
+    .then((port) => console.info('[Aurora Feed] Painel web em http://127.0.0.1:' + port + '/'))
+    .catch((error) => console.warn('[Aurora Feed] Não consegui abrir o painel web na porta ' + FEED_PORT + ':', error instanceof Error ? error.message : String(error)));
+  void ensureVoxCpm2ServerStarted().then((state) => {
+    if (state && state.ready) voxCpm2Gate.markReady();
+  }).catch((error) => {
     console.warn("[Aurora VoxCPM2] Inicializacao automatica falhou:", error instanceof Error ? error.message : String(error));
   });
   // Mantém somente o modelo de voz casual aquecido. Carregar o 9B logo depois
   // expulsava o 2B da memória em algumas configurações e fazia a próxima fala
   // casual esperar um carregamento completo de mais de 25 segundos.
-  void warmupOllamaModel('qwen3.5:2b').catch((error) => {
+  void warmupOllamaModel(readSettings().model).catch((error) => {
     console.info('[Aurora Performance] Warmup do modelo rápido indisponível; será carregado no primeiro uso:', error instanceof Error ? error.message : String(error));
   });
   // Atalho global: continua acessível mesmo quando o mouse está passando para outro programa.
@@ -583,6 +666,9 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {});
 ipcMain.handle('aurora:version', () => app.getVersion());
+ipcMain.on('aurora:voice-settings', (event) => {
+  event.returnValue = { mode: VOICE_OPTIONS.mode, vadPauseMs: VOICE_OPTIONS.vadPauseMs };
+});
 
 ipcMain.handle('aurora:get-config', async () => {
   const settings = readSettings();
@@ -740,6 +826,7 @@ ipcMain.handle('aurora:voxcpm2-save', async (_event, payload = {}) => {
 
   await fsp.writeFile(configTemp, JSON.stringify({ endpoint }, null, 2), 'utf8');
   await fsp.rename(configTemp, configPath);
+  invalidateVoxCpm2Runtime();
 
   return { configured: true, endpoint };
 });
@@ -749,6 +836,7 @@ ipcMain.handle('aurora:voxcpm2-clear', async () => {
     fsp.rm(voxCpm2ConfigPath(), { force: true }),
     fsp.rm(voxCpm2TokenPath(), { force: true }),
   ]);
+  invalidateVoxCpm2Runtime();
 
   return { configured: false, endpoint: '' };
 });
@@ -988,6 +1076,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
   const needsStoredContext = skillSelection.userProfileIntent || /\b(lembra|lembre|lembranca|memoria|historico|conversamos|falamos|antes|retomar|continuar|documento|documentos|biblioteca|arquivo|pdf|material|anotado|guardado|salvo|salva|qual era|o que combinamos|o que conversamos|meu objetivo|minha meta|meu projeto|minha ideia|nosso projeto|nossa ideia)\b/i.test(normalizedRequest);
   const conciseVoiceTurn = voiceMode && !asksForLongResponse && !needsStoredContext && !imageBase64;
   const needsThinking = studyMode || needsReasoning || asksForLongResponse;
+  const thinkEnabled = needsThinking && !conciseVoiceTurn;
   const casualVoiceTurn = voiceMode && !studyMode && !imageBase64 && !needsThinking && !needsExplanation && !needsFactualKnowledge && !needsStoredContext;
   // O prompt compacto é usado em conversa casual; o 4B é o modelo de conversa preferido.
   const fastVoiceTurn = casualVoiceTurn;
@@ -1015,11 +1104,17 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
     console.info('[Aurora Performance] Roteamento de modelo', {
       configuredModel: settings.model,
       activeModel,
-      reason: quickVoiceTurn ? 'teste de microfone ou saudação: resposta imediata' : fastVoiceTurn ? 'conversa casual por voz: modelo 2B já aquecido, menor latência' : voiceMode && !needsThinking && !needsStoredContext && !hasImage && !studyMode ? 'pergunta direta por voz: resposta curta com modelo 2B' : needsFactualKnowledge ? 'pergunta factual com contexto: preservar precisão' : needsThinking || needsExplanation ? 'tarefa complexa: maior capacidade' : voiceMode ? 'voz com contexto ou análise: modelo 9B' : 'modelo configurado',
+      reason: quickVoiceTurn ? 'teste de microfone ou saudação: resposta imediata'
+        : fastVoiceTurn ? 'conversa casual por voz: modelo 2B já aquecido, menor latência'
+        : voiceMode && !imageBase64 && !studyMode ? 'voz: modelo único (o das Configurações), sem trocar de modelo entre turnos'
+        : imageBase64 || studyMode ? 'imagem ou modo estudo: maior capacidade'
+        : needsFactualKnowledge ? 'pergunta factual com contexto: preservar precisão'
+        : needsThinking || needsExplanation ? 'tarefa complexa: maior capacidade'
+        : 'modelo configurado',
     });
   }
   throwIfChatCancelled();
-  await warmupOllamaModel(activeModel).catch((error) => {
+  await warmupOllamaModel(activeModel, imageBase64 ? OLLAMA_NUM_CTX_IMAGE : OLLAMA_NUM_CTX).catch((error) => {
     console.warn('[Aurora Performance] Nao consegui aquecer o Ollama antes da conversa:', error instanceof Error ? error.message : String(error));
   });
   throwIfChatCancelled();
@@ -1044,6 +1139,12 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
     message,
   ].join(' ');
 
+  const identityProfilePromise = auroraStore.getIdentityProfile().catch(() => ({
+    name: 'Aurora',
+    avatar: 'Live2D 6xb',
+    appearanceDescription: '',
+    personality: 'Companheira de conversa: confiante, brincalhona, carinhosa e curiosa.',
+  }));
   let queryEmbedding = null;
   if (semanticSearchEnabled) {
     try {
@@ -1094,12 +1195,7 @@ ipcMain.handle('aurora:chat', async (_event, payload = {}) => {
     ? (studyMode ? 72 : 56)
     : studyMode ? (imageBase64 ? 800 : 1200) : imageBase64 ? 650 : asksForLongResponse ? 1500 : needsReasoning ? 1100 : needsExplanation ? 520 : quickVoiceTurn ? 24 : fastVoiceTurn ? 44 : voiceMode ? 160 : 200;
 
-  const identityProfile = await auroraStore.getIdentityProfile().catch(() => ({
-    name: 'Aurora',
-    avatar: 'Live2D 6xb',
-    appearanceDescription: '',
-    personality: 'Companheira de conversa: confiante, brincalhona, carinhosa e curiosa.',
-  }));
+  const identityProfile = await identityProfilePromise;
   const quickIdentityPrompt = 'seu nome é ' + identityProfile.name + '; ficha de personalidade complementar: ' + String(identityProfile.personality || '').slice(0, 180) + '. As regras de personalidade, naturalidade e estilo de conversa deste prompt têm prioridade sobre descrições genéricas do perfil.';
   const identityPrompt = 'seu nome é ' + identityProfile.name + '; sua representação visual é ' + identityProfile.avatar + '; descrição oficial da aparência: ' + (identityProfile.appearanceDescription || 'ainda não há uma descrição visual detalhada cadastrada') + '; personalidade complementar do perfil: ' + identityProfile.personality + '. Não invente traços físicos que não estejam descritos nem diga que viu a webcam. As regras de personalidade e estilo de conversa deste prompt têm prioridade sobre descrições genéricas do perfil.';
 
@@ -1188,7 +1284,7 @@ const chatMessages = [
             top_p: fastVoiceTurn ? 0.92 : 0.9,
             repeat_penalty: 1.08,
             num_predict: tokenBudget,
-            num_ctx: fastVoiceTurn ? 2048 : imageBase64 ? 6144 : 4096,
+            num_ctx: imageBase64 ? OLLAMA_NUM_CTX_IMAGE : OLLAMA_NUM_CTX,
           },
         }),
       });
@@ -1287,11 +1383,11 @@ const chatMessages = [
     return { text: answer.trim(), doneReason, usageStats };
   };
 
-  let result = await readChatStream(await sendChatRequest(needsThinking, numPredict));
+  let result = await readChatStream(await sendChatRequest(thinkEnabled, numPredict));
   if (!result.text) {
     console.warn('[Aurora Ollama] O fluxo terminou sem texto final. Tentando novamente sem think.', {
       model: activeModel,
-      reasoningWasEnabled: needsReasoning,
+      reasoningWasEnabled: thinkEnabled,
       doneReason: result.doneReason || 'não informado',
     });
     const retryBudget = Math.max(900, Math.min(1800, numPredict));
@@ -1307,6 +1403,13 @@ const chatMessages = [
     return { text: 'Não consegui gerar uma resposta final. Tente novamente; se persistir, confira se o modelo selecionado está funcionando no Ollama.' };
   }
   if (requestId && activeChatControllers.get(requestId) === chatAbortController) activeChatControllers.delete(requestId);
+  if (result.doneReason === 'length') {
+    const complete = result.text.match(/^[\s\S]*[.!?…](?=\s|$)/);
+    if (complete && complete[0].length >= 12 && complete[0].length < result.text.length) {
+      console.info('[Aurora Performance] Resposta cortada pelo limite de tokens; mantida até a última frase completa.');
+      return { text: complete[0].trim(), truncated: true };
+    }
+  }
   return { text: result.text };
 });
 
@@ -1680,43 +1783,47 @@ ipcMain.handle('aurora:speak', async (_event, rawText, options = {}) => {
   const explicitlyRequestedVoxCpm2 = Boolean(options && options.provider === 'voxcpm2');
   const automaticSpeech = !options || !options.provider || options.provider === 'auto';
 
-  if (explicitlyRequestedVoxCpm2 || automaticSpeech) {
-    try {
-      const serverState = await ensureVoxCpm2ServerStarted();
+  let voxFallbackReason = '';
 
-      if (!serverState.ready) {
-        if (explicitlyRequestedVoxCpm2) {
-          throw new Error(serverState.reason || 'Servidor VoxCPM2 indisponivel.');
-        }
-        console.warn('[Aurora TTS] VoxCPM2 nao esta pronto; usando provedor alternativo:', serverState.reason);
-      } else {
-        const config = await readVoxCpm2Config();
-        const token = await readVoxCpm2Token();
+  if (explicitlyRequestedVoxCpm2) {
+    const serverState = await ensureVoxCpm2ServerStarted();
+    if (!serverState.ready) throw new Error(serverState.reason || 'Servidor VoxCPM2 indisponivel.');
+    const runtime = await getVoxCpm2Runtime();
+    if (!runtime) throw new Error('Configuracao ou token VoxCPM2 indisponivel.');
 
-        if (!config || !token) {
-          throw new Error('Configuracao ou token VoxCPM2 indisponivel.');
-        }
+    const result = await auroraVoxCpm2Tts.synthesize(cleanText, runtime);
+    voxCpm2Gate.markReady();
+    console.info('[Aurora Performance] VoxCPM2', {
+      synthesisMs: Date.now() - startedAt,
+      audioMimeType: result.audioMimeType,
+      mode: 'manual-test',
+    });
+    return result;
+  }
 
+  if (automaticSpeech) {
+    const decision = await resolveAutomaticVoxCpm2();
+    if (decision.use) {
+      try {
         const result = await auroraVoxCpm2Tts.synthesize(cleanText, {
-          endpoint: config.endpoint,
-          token,
+          ...decision.runtime,
+          timeoutMs: VOXCPM2_AUTO_TIMEOUT_MS,
         });
-
+        voxCpm2Gate.markReady();
         console.info('[Aurora Performance] VoxCPM2', {
           synthesisMs: Date.now() - startedAt,
           audioMimeType: result.audioMimeType,
-          mode: explicitlyRequestedVoxCpm2 ? 'manual-test' : 'automatic-default',
+          mode: 'automatic-default',
         });
-
         return result;
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        voxCpm2Gate.markFailure(detail);
+        voxFallbackReason = 'VoxCPM2 falhou (' + detail.slice(0, 120) + '). Usando a voz gratuita por alguns segundos.';
+        console.warn('[Aurora TTS] VoxCPM2 falhou; voz gratuita assume e o VoxCPM2 fica em pausa:', detail);
       }
-    } catch (error) {
-      if (explicitlyRequestedVoxCpm2) throw error;
-
-      console.warn(
-        '[Aurora TTS] VoxCPM2 indisponivel; usando voz gratuita como alternativa:',
-        error instanceof Error ? error.message : String(error)
-      );
+    } else if (decision.configured) {
+      voxFallbackReason = 'VoxCPM2 indisponível agora: ' + decision.reason + '. Usando a voz gratuita.';
     }
   }
 
@@ -1761,6 +1868,7 @@ ipcMain.handle('aurora:speak', async (_event, rawText, options = {}) => {
       audioMimeType: 'audio/mpeg',
       voice: 'pt-BR-ThalitaMultilingualNeural',
       provider: 'edge-tts',
+      ...(voxFallbackReason ? { fallbackReason: voxFallbackReason } : {}),
     };
   } catch (edgeError) {
     console.warn('[Aurora TTS] Edge TTS gratuito indisponível; tentando Kokoro offline:', edgeError instanceof Error ? edgeError.message : String(edgeError));
@@ -1779,6 +1887,7 @@ ipcMain.handle('aurora:speak', async (_event, rawText, options = {}) => {
       audioMimeType: 'audio/wav',
       voice: 'pf_dora',
       provider: 'kokoro-local',
+      ...(voxFallbackReason ? { fallbackReason: voxFallbackReason } : {}),
     };
   } catch (localError) {
     const detail = localError instanceof Error ? localError.message : String(localError);
@@ -1895,11 +2004,17 @@ ipcMain.on('aurora:move-window-by', (event, payload = {}) => {
   const [x, y] = mainWindow.getPosition();
   mainWindow.setPosition(x + Math.round(dx), y + Math.round(dy), false);
 });
+ipcMain.on('aurora:feed', (event, payload) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return;
+  if (payload && payload.type === 'stage') feedServer.setStage(payload);
+  else feedServer.push(payload);
+});
 ipcMain.on('aurora:minimize', () => mainWindow?.hide());
 ipcMain.on('aurora:close', () => mainWindow?.close());
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  void feedServer.close();
   if (voxCpm2ServerOwned && voxCpm2ServerProcess && !voxCpm2ServerProcess.killed) {
     console.info("[Aurora VoxCPM2] Encerrando servidor iniciado por esta Aurora.");
     voxCpm2ServerProcess.kill();

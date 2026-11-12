@@ -6,6 +6,7 @@
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "node scripts/copy-voice-assets.cjs && concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "dev:botao": "node scripts/copy-voice-assets.cjs && concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron . --modo-voz=botao\"",
     "build": "node scripts/copy-voice-assets.cjs && node --check electron/main.cjs && node --check electron/preload.cjs && tsc --noEmit && vite build",
     "start": "electron .",
     "test": "node --test electron/*.test.cjs scripts/*.test.cjs",

@@ -42,7 +42,7 @@ declare global {
       getVoxCpm2Status: () => Promise<{ configured: boolean; endpoint: string; storageAvailable: boolean }>;
       saveVoxCpm2Config: (payload: { endpoint: string; token: string }) => Promise<{ configured: boolean; endpoint: string }>;
       clearVoxCpm2Config: () => Promise<{ configured: boolean; endpoint: string }>;
-      chat: (payload: { message: string; history: AuroraMessage[]; voiceMode?: boolean; studyMode?: boolean; imageBase64?: string; requestId?: string }, onChunk?: (content: string) => void) => Promise<{ text: string }>;
+      chat: (payload: { message: string; history: AuroraMessage[]; voiceMode?: boolean; studyMode?: boolean; imageBase64?: string; requestId?: string }, onChunk?: (content: string) => void) => Promise<{ text: string; truncated?: boolean }>;
       cancelChat: (requestId: string) => void;
       captureScreen: () => Promise<{ imageBase64: string; width: number; height: number; screenWidth: number; screenHeight: number }>;
       openApp: (appId: string) => Promise<{ success: boolean; label: string }>;
@@ -57,7 +57,11 @@ declare global {
       setMousePassthrough: (ignore: boolean) => void;
       onCursorPosition: (callback: (position: { x: number; y: number }) => void) => () => void;
       moveWindowBy: (deltaX: number, deltaY: number) => void;
-      onToggleCleanUi: (callback: () => void) => () => void;      minimize: () => void;
+      onToggleCleanUi: (callback: () => void) => () => void;
+      sendFeed: (payload: { id: number; at: number; kind: 'voce' | 'aurora' | 'aviso' | 'erro'; text: string; meta?: string } | { type: 'stage'; tone: 'rec' | 'work' | 'aurora' | 'idle' | 'off'; text: string }) => void;
+      onPushToTalk: (callback: () => void) => () => void;
+      voiceSettings: { mode: 'vad' | 'botao'; vadPauseMs: number };
+      minimize: () => void;
       close: () => void;
       version: () => Promise<string>;
     };

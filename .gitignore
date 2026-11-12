@@ -48,3 +48,5 @@ src/vendor/cubism-framework/
 skills/aurora-identity/USER-PROFILE.local.md
 
 /local-assets/voice-reference/
+
+tools/coqui-xtts/.venv/

@@ -89,7 +89,17 @@ contextBridge.exposeInMainWorld('aurora', {
     const listener = () => callback();
     ipcRenderer.on('aurora:toggle-clean-ui', listener);
     return () => ipcRenderer.removeListener('aurora:toggle-clean-ui', listener);
-  },  minimize: () => ipcRenderer.send('aurora:minimize'),
+  },
+  voiceSettings: (() => {
+    try { return ipcRenderer.sendSync('aurora:voice-settings'); } catch { return { mode: 'vad', vadPauseMs: 1400 }; }
+  })(),
+  sendFeed: (payload) => ipcRenderer.send('aurora:feed', payload),
+  onPushToTalk: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('aurora:ptt-toggle', listener);
+    return () => ipcRenderer.removeListener('aurora:ptt-toggle', listener);
+  },
+  minimize: () => ipcRenderer.send('aurora:minimize'),
   close: () => ipcRenderer.send('aurora:close'),
   version: () => ipcRenderer.invoke('aurora:version'),
 });
