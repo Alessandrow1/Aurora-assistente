@@ -116,3 +116,21 @@ test('rejects unsupported audio formats', async () => {
   );
 });
 
+
+test('respeita o limite de tempo informado na própria chamada', async () => {
+  const engine = createVoxCpm2Tts({
+    fetch: (_url, requestOptions) => new Promise((_resolve, reject) => {
+      requestOptions.signal.addEventListener('abort', () => {
+        const error = new Error('aborted');
+        error.name = 'AbortError';
+        reject(error);
+      });
+    }),
+  });
+  const started = Date.now();
+  await assert.rejects(
+    engine.synthesize('olá', { ...CONFIG, timeoutMs: 60 }),
+    /demorou mais de/,
+  );
+  assert.ok(Date.now() - started < 2000, 'deve abortar rápido, sem esperar os 90 s padrão');
+});

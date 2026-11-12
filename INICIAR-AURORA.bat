@@ -51,5 +51,9 @@ if not exist public\models\aurora-anime.vrm (
     echo Nao foi possivel baixar o modelo. A Aurora abrira com o avatar alternativo.
   )
 )
+set "AURORA_MODO_VOZ=%~1"
+if "%AURORA_MODO_VOZ%"=="" set "AURORA_MODO_VOZ=vad"
+echo Modo de voz: %AURORA_MODO_VOZ%   (para trocar: INICIAR-AURORA.bat vad  ou  INICIAR-AURORA.bat botao)
+echo Acompanhe a conversa em http://127.0.0.1:17070/
 call npm run dev
 if errorlevel 1 pause

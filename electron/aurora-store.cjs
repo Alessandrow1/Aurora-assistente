@@ -87,16 +87,22 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
   const emptyConversations = () => ({ version: 1, conversations: [], index: [] });
   const emptyKnowledge = () => ({ version: 1, documents: [], chunks: [], memoryEmbeddings: {}, identityProfile: { name: 'Aurora', avatar: 'Live2D 6xb', appearanceDescription: '', personality: 'Companheira de conversa: confiante, brincalhona, carinhosa e curiosa.' } });
 
+  const decryptedCache = new Map();
+
   async function readEncrypted(filePath, fallback) {
     if (!fs.existsSync(filePath)) return fallback();
     if (!(await safeStorage.isAsyncEncryptionAvailable())) {
       throw new Error('O armazenamento seguro do Windows está indisponível. Não consegui abrir os dados protegidos da Aurora.');
     }
+    const stat = await fsp.stat(filePath);
+    const cached = decryptedCache.get(filePath);
+    if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return structuredClone(cached.parsed);
     const encrypted = await fsp.readFile(filePath);
     const decrypted = await safeStorage.decryptStringAsync(encrypted);
     const parsed = JSON.parse(decrypted.result);
     if (!parsed || typeof parsed !== 'object') return fallback();
-    return parsed;
+    decryptedCache.set(filePath, { mtimeMs: stat.mtimeMs, size: stat.size, parsed });
+    return structuredClone(parsed);
   }
 
   async function writeEncrypted(filePath, value, queueName) {
@@ -111,6 +117,7 @@ function createAuroraStore({ app, safeStorage, ollamaUrl, onEmbeddingStatus = ()
       const temporary = filePath + '.tmp';
       await fsp.writeFile(temporary, encrypted, { mode: 0o600 });
       await fsp.rename(temporary, filePath);
+      decryptedCache.delete(filePath);
     });
     if (queueName === 'conversations') conversationWrite = nextWrite;
     else knowledgeWrite = nextWrite;

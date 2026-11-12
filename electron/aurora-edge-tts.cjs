@@ -19,7 +19,12 @@ function normalizeEdgeTtsPronunciation(rawText) {
     .replace(/\bTch(?=\s*[!?…])/giu, 'Tchi');
 }
 
-function createEdgeTtsSpeech({ EdgeTTS = null, config = DEFAULT_EDGE_TTS_CONFIG } = {}) {
+function isTransientEdgeError(error) {
+  const message = error instanceof Error ? error.message : String(error || '');
+  return /\b(429|500|502|503|504)\b|ECONNRESET|ETIMEDOUT|socket hang up|timed? ?out|WebSocket/i.test(message);
+}
+
+function createEdgeTtsSpeech({ EdgeTTS = null, config = DEFAULT_EDGE_TTS_CONFIG, maxAttempts = 3, retryDelayMs = 700 } = {}) {
   let client = null;
 
   function getClient() {
@@ -42,11 +47,21 @@ function createEdgeTtsSpeech({ EdgeTTS = null, config = DEFAULT_EDGE_TTS_CONFIG 
     // Mantemos a forma original na conversa e fornecemos uma grafia pronunciável ao TTS.
     const text = normalizeEdgeTtsPronunciation(sourceText);
 
-    const chunks = [];
-    for await (const item of getClient().streamAudio(text)) {
-      // Com saveSubtitles=false, normalmente chegam apenas buffers de áudio.
-      // Ignorar metadados torna o módulo compatível com ambas as respostas.
-      if (Buffer.isBuffer(item) && item.length > 0) chunks.push(item);
+    let chunks = [];
+    for (let attempt = 1; ; attempt += 1) {
+      chunks = [];
+      try {
+        for await (const item of getClient().streamAudio(text)) {
+          // Com saveSubtitles=false, normalmente chegam apenas buffers de áudio.
+          // Ignorar metadados torna o módulo compatível com ambas as respostas.
+          if (Buffer.isBuffer(item) && item.length > 0) chunks.push(item);
+        }
+        break;
+      } catch (error) {
+        if (attempt >= maxAttempts || !isTransientEdgeError(error)) throw error;
+        console.warn('[Aurora TTS] Edge TTS recusou temporariamente (' + (error instanceof Error ? error.message : String(error)) + '); tentando de novo (' + attempt + '/' + (maxAttempts - 1) + ').');
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs * attempt));
+      }
     }
 
     const audio = Buffer.concat(chunks);

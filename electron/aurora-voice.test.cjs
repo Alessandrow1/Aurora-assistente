@@ -34,18 +34,16 @@ test('preserva transcrições que não correspondem ao erro conhecido', () => {
   assert.equal(normalizeVoiceTranscript(''), '');
 });
 
-test('uses 2b for concise voice answers and 9b for deep reasoning or context', () => {
-  assert.equal(choosePreferredModel({ fastVoiceTurn: true, voiceMode: true }), 'qwen3.5:2b');
-  assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true }), 'qwen3.5:2b');
-  assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true, needsExplanation: true }), 'qwen3.5:2b');
-  assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true, needsFactualKnowledge: true }), 'qwen3.5:2b');
-  assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true, needsStoredContext: true }), 'qwen3.5:9b');
-  assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true, hasImage: true }), 'qwen3.5:9b');
-  assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: true, studyMode: true }), 'qwen3.5:9b');
-  assert.equal(choosePreferredModel({ conciseVoiceTurn: true, voiceMode: true, studyMode: true }), 'qwen3.5:2b');
-  assert.equal(choosePreferredModel({ conciseVoiceTurn: true, voiceMode: true, needsThinking: true }), 'qwen3.5:2b');
-  assert.equal(choosePreferredModel({ fastVoiceTurn: false, needsThinking: true }), 'qwen3.5:9b');
-  assert.equal(choosePreferredModel({ fastVoiceTurn: false, voiceMode: false, settingsModel: 'qwen3.5:4b' }), 'qwen3.5:4b');
+test('voz usa sempre o modelo das Configurações; imagem e estudo usam o 9B', () => {
+  assert.equal(choosePreferredModel({ fastVoiceTurn: true, voiceMode: true }), 'qwen3.5:9b');
+  assert.equal(choosePreferredModel({ conciseVoiceTurn: true, voiceMode: true, needsThinking: true }), 'qwen3.5:9b');
+  assert.equal(choosePreferredModel({ voiceMode: true, needsStoredContext: true }), 'qwen3.5:9b');
+  assert.equal(choosePreferredModel({ fastVoiceTurn: true, voiceMode: true, settingsModel: 'qwen3.5:2b' }), 'qwen3.5:2b');
+  assert.equal(choosePreferredModel({ voiceMode: true, needsFactualKnowledge: true, settingsModel: 'qwen3.5:2b' }), 'qwen3.5:2b');
+  assert.equal(choosePreferredModel({ voiceMode: true, hasImage: true, settingsModel: 'qwen3.5:2b' }), 'qwen3.5:9b');
+  assert.equal(choosePreferredModel({ voiceMode: true, studyMode: true, settingsModel: 'qwen3.5:2b' }), 'qwen3.5:9b');
+  assert.equal(choosePreferredModel({ needsThinking: true, settingsModel: 'qwen3.5:2b' }), 'qwen3.5:9b');
+  assert.equal(choosePreferredModel({ voiceMode: false, settingsModel: 'qwen3.5:4b' }), 'qwen3.5:4b');
 });
 
 test('keeps ordinary follow-up questions concise and expands only on explicit request', () => {
@@ -64,4 +62,12 @@ test('detects exhausted ElevenLabs quota without treating other errors as quota 
   assert.equal(isElevenLabsQuotaExceeded(new Error('This request exceeds your quota; 7 credits remaining')), true);
   assert.equal(isElevenLabsQuotaExceeded('invalid_api_key'), false);
   assert.equal(isElevenLabsQuotaExceeded('network timeout'), false);
+});
+
+test('foldPortuguese preserva letras e dígitos ao remover acentos (regressão do escape duplo)', () => {
+  const { foldPortuguese } = require('./aurora-voice.cjs');
+  assert.equal(foldPortuguese('Quem foi Santos Dumont?'), 'quem foi santos dumont');
+  assert.equal(foldPortuguese('Como funciona o futebol?'), 'como funciona o futebol');
+  assert.equal(foldPortuguese('Calcule 15 vezes 4'), 'calcule 15 vezes 4');
+  assert.equal(foldPortuguese('Por que o céu é azul?'), 'por que o ceu e azul');
 });

@@ -62,3 +62,31 @@ test('rejects empty text and a stream without usable audio', async () => {
   await assert.rejects(() => engine.synthesize('   '), /Não há texto/);
   await assert.rejects(() => engine.synthesize('Olá'), /não retornou áudio/);
 });
+
+test('tenta de novo quando o serviço responde 429 e entrega o áudio', async () => {
+  let calls = 0;
+  class ThrottledEdgeTTS {
+    async *streamAudio() {
+      calls += 1;
+      if (calls < 3) throw new Error('Unexpected server response: 429');
+      yield Buffer.from('ID3' + 'a'.repeat(100));
+    }
+  }
+  const engine = createEdgeTtsSpeech({ EdgeTTS: ThrottledEdgeTTS, retryDelayMs: 1 });
+  const audio = await engine.synthesize('Olá');
+  assert.equal(calls, 3);
+  assert.ok(audio.length > 100);
+});
+
+test('desiste depois das tentativas e não repete erros que não são temporários', async () => {
+  let calls = 0;
+  class AlwaysThrottled { async *streamAudio() { calls += 1; throw new Error('Unexpected server response: 429'); } }
+  const engine = createEdgeTtsSpeech({ EdgeTTS: AlwaysThrottled, retryDelayMs: 1 });
+  await assert.rejects(() => engine.synthesize('Olá'), /429/);
+  assert.equal(calls, 3);
+
+  let invalidCalls = 0;
+  class InvalidVoice { async *streamAudio() { invalidCalls += 1; throw new Error('voz inexistente'); } }
+  await assert.rejects(() => createEdgeTtsSpeech({ EdgeTTS: InvalidVoice, retryDelayMs: 1 }).synthesize('Olá'), /voz inexistente/);
+  assert.equal(invalidCalls, 1);
+});

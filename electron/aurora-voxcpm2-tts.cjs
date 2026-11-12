@@ -86,10 +86,11 @@ function createVoxCpm2Tts(options = {}) {
       throw new Error('O token do servidor VoxCPM2 está ausente ou inválido.');
     }
 
+    const timeoutMs = Number(config.timeoutMs) > 0 ? Number(config.timeoutMs) : (options.timeoutMs || DEFAULT_TIMEOUT_MS);
     const controller = new AbortController();
     const timeout = setTimeout(
       () => controller.abort(),
-      options.timeoutMs || DEFAULT_TIMEOUT_MS
+      timeoutMs
     );
 
     try {
@@ -172,7 +173,7 @@ function createVoxCpm2Tts(options = {}) {
     } catch (error) {
       if (error && error.name === 'AbortError') {
         throw new Error('O servidor VoxCPM2 demorou mais de ' +
-          Math.round((options.timeoutMs || DEFAULT_TIMEOUT_MS) / 1000) +
+          Math.round(timeoutMs / 1000) +
           ' segundos para responder.');
       }
 

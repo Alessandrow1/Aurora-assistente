@@ -2,6 +2,9 @@ import { FormEvent, useEffect, useRef, useState } from 'react';
 import Avatar3D from './components/Avatar3D';
 import MemoryHub from './components/MemoryHub';
 
+type FeedKind = 'voce' | 'aurora' | 'aviso' | 'erro';
+type PanelStage = { tone: 'rec' | 'work' | 'aurora' | 'idle' | 'off'; text: string };
+
 type Message = { role: 'user' | 'assistant'; content: string; imageId?: string; imageUrl?: string };
 type VoiceVadController = { start: () => void | Promise<void>; pause: () => void | Promise<void>; destroy: () => void | Promise<void> };
 type LocalTtsStatus = { installed: boolean; ready: boolean; modelDirectory: string; voice: string; language: string; provider: string };
@@ -82,8 +85,20 @@ async function waitForPortugueseSpeechVoice(
 // Pausa curta para encerrar a fala sem acrescentar espera desnecessária antes do Whisper.
 const VOICE_END_SILENCE_MS = 550;
 
+const VOICE_SETTINGS = window.aurora?.voiceSettings ?? { mode: 'vad', vadPauseMs: 1400 };
+const PUSH_TO_TALK = VOICE_SETTINGS.mode === 'botao';
+
+const VAD_OPTIONS = {
+  positiveSpeechThreshold: 0.5,
+  negativeSpeechThreshold: 0.35,
+  redemptionMs: VOICE_SETTINGS.vadPauseMs,
+  preSpeechPadMs: 500,
+  minSpeechMs: 400,
+};
+const PTT_MAX_SECONDS = 44;
+
 function detectMemorySuggestion(text: string): string | null {
-  if (/^\\s*(?:aurora[, ]+)?(?:lembre-se de que|lembre que|guarde que|anote que|aprenda que)\\s+/i.test(text)) return null;
+  if (/^\s*(?:aurora[, ]+)?(?:lembre-se de que|lembre que|guarde que|anote que|aprenda que)\s+/i.test(text)) return null;
   const normalized = text.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const sensitive = /\b(saude|doenca|medicamento|remedio|diagnostico|terapia|depressao|ansiedade|medico|sintoma|emagrecer|peso|dieta|treino|religiao|igreja|politica|partido|eleicao|orientacao sexual|sexualidade|gravidez|salario|senha|documento|cpf)\b/i;
   const durable = /\b(meu objetivo e|minha meta e|meu projeto e|estou desenvolvendo|estou construindo|prefiro|nao gosto de|gosto de|quero que voce sempre|minha preferencia e|estou estudando para|decidi que)\b/i;
@@ -228,7 +243,25 @@ export default function App() {
   const [voiceMode, setVoiceMode] = useState(false);
   const [transcribingVoice, setTranscribingVoice] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(true);
-  const [notice, setNotice] = useState('');
+  const [noticeText, setNoticeText] = useState('');
+  const notice = noticeText;
+
+  const feedIdRef = useRef(0);
+  const lastFeedRef = useRef<{ kind: FeedKind; text: string; at: number } | null>(null);
+  const feedVoiceTextRef = useRef('');
+  const pushFeed = (kind: FeedKind, text: string, meta?: string) => {
+    const clean = String(text || '').trim();
+    if (!clean) return;
+    const last = lastFeedRef.current;
+    if (last && last.kind === kind && last.text === clean && Date.now() - last.at < 2500) return;
+    lastFeedRef.current = { kind, text: clean, at: Date.now() };
+    feedIdRef.current += 1;
+    window.aurora.sendFeed({ id: feedIdRef.current, at: Date.now(), kind, text: clean.slice(0, 700), ...(meta ? { meta } : {}) });
+  };
+  const setNotice = (text: string) => {
+    setNoticeText(text);
+    if (text) pushFeed(/falh|erro|não consegui|nao consegui|indispon|bloquead|recusou|não encontr/i.test(text) ? 'erro' : 'aviso', text);
+  };
   const [version, setVersion] = useState('0.4.0');
   const listRef = useRef<HTMLDivElement>(null);
   const voiceCaptureRef = useRef<VoiceCaptureSession | null>(null);
@@ -250,6 +283,14 @@ export default function App() {
   const sendMessageRef = useRef<(rawText: string) => Promise<void>>(async () => undefined);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const analysisNodesRef = useRef<AudioNode[] | null>(null);
+  const pendingVoiceSamplesRef = useRef<Float32Array[]>([]);
+  const pendingMessagesRef = useRef<string[]>([]);
+  const lastTtsFallbackNoticeRef = useRef(0);
+  const pttActiveRef = useRef(false);
+  const pttFramesRef = useRef<Float32Array[]>([]);
+  const pttSamplesRef = useRef(0);
+  const togglePttRef = useRef<(() => Promise<void>) | null>(null);
   const activeSpeechFinishRef = useRef<(() => void) | null>(null);
   const [localTtsStatus, setLocalTtsStatus] = useState<LocalTtsStatus | null>(null);
   const [localTtsProgress, setLocalTtsProgress] = useState('');
@@ -343,6 +384,7 @@ export default function App() {
 
   const pauseVoiceRecognitionForSpeech = () => {
     if (!voiceModeRef.current) return;
+    if (pttActiveRef.current) return;
     recognitionPausedRef.current = true;
     if (voiceResumeRef.current !== null) {
       window.clearTimeout(voiceResumeRef.current);
@@ -362,6 +404,8 @@ export default function App() {
     const requestId = activeChatRequestIdRef.current;
     if (requestId) window.aurora.cancelChat(requestId);
     activeChatRequestIdRef.current = '';
+    pendingMessagesRef.current = [];
+    pendingVoiceSamplesRef.current = [];
     chatTurnRef.current += 1;
     voiceOutputTurnRef.current += 1;
     voiceResponseActiveRef.current = false;
@@ -388,17 +432,22 @@ export default function App() {
       voiceResumeRef.current = null;
       if (!voiceModeRef.current) return;
       recognitionPausedRef.current = false;
+      const queuedSamples = pendingVoiceSamplesRef.current.shift();
+      if (queuedSamples) {
+        transcribeVoiceSamples(queuedSamples);
+        return;
+      }
       void startVoiceCaptureRef.current?.();
     }, delay);
   };
 
   const resetAudioAnalysis = () => {
     setAudioAnalyser(null);
-    const context = audioContextRef.current;
-    audioContextRef.current = null;
-    if (context && context.state !== 'closed') {
-      void context.close().catch(() => undefined);
-    }
+    const nodes = analysisNodesRef.current;
+    analysisNodesRef.current = null;
+    nodes?.forEach((node) => {
+      try { node.disconnect(); } catch { }
+    });
   };
 
   useEffect(() => {
@@ -537,7 +586,13 @@ export default function App() {
   }, [laughing]);
 
   const transcribeVoiceSamples = (samples: Float32Array) => {
-    if (!voiceModeRef.current || recognitionPausedRef.current) return;
+    if (!voiceModeRef.current) return;
+    if (recognitionPausedRef.current) {
+      pendingVoiceSamplesRef.current.push(samples);
+      if (pendingVoiceSamplesRef.current.length > 2) pendingVoiceSamplesRef.current.shift();
+      setNotice('Guardei o que você disse; respondo assim que terminar a fala atual.');
+      return;
+    }
     recognitionPausedRef.current = true;
     if (voiceVadRef.current && voiceVadActiveRef.current) {
       void Promise.resolve(voiceVadRef.current.pause()).catch((error) => console.warn('[Aurora VAD] Não consegui pausar após a fala:', error));
@@ -559,15 +614,23 @@ export default function App() {
       try {
         if (samples.length < 4000) throw new Error('A fala ficou muito curta. Tente falar um pouco mais.');
         if (samples.length > 16000 * 45) throw new Error('A fala passou de 45 segundos. Divida a mensagem.');
+        const transcribeStartedAt = performance.now();
         const result = await window.aurora.transcribeAudio(preparedAudio.samples);
+        const transcribeMs = Math.round(performance.now() - transcribeStartedAt);
+        const audioSeconds = (samples.length / 16000).toFixed(1).replace('.', ',');
         const transcript = result?.text?.trim() || '';
         if (!voiceModeRef.current) return;
         if (!transcript) {
-          setNotice('Não consegui entender essa fala. Confira o microfone ou fale um pouco mais perto dele.');
+          setNotice('Não consegui entender essa fala (áudio de ' + audioSeconds + ' s, o reconhecimento voltou vazio). Fale mais perto do microfone.');
           resumeVoiceRecognitionAfterSpeech(650);
           return;
         }
-        setNotice('');
+        if (/^[\s[(*♪]*(m[uú]sica|music|aplausos|risos|ru[ií]do|inaud[ií]vel|sil[eê]ncio|som)[\s\])*♪.]*$/i.test(transcript)) {
+          pushFeed('aviso', 'O Whisper só ouviu “' + transcript + '” (ruído ou música), não ouviu fala. Fale mais perto do microfone ou use fone de ouvido.');
+        }
+        pushFeed('voce', transcript, 'áudio de ' + audioSeconds + ' s · transcrito em ' + transcribeMs + ' ms');
+        feedVoiceTextRef.current = transcript;
+        setNoticeText('');
         void sendMessageRef.current(transcript);
       } catch (error) {
         setNotice(error instanceof Error ? error.message : 'Não consegui transcrever o áudio localmente.');
@@ -577,6 +640,64 @@ export default function App() {
       }
     })();
   };
+
+  const togglePushToTalk = async () => {
+    if (!PUSH_TO_TALK) return;
+
+    if (pttActiveRef.current) {
+      pttActiveRef.current = false;
+      const frames = pttFramesRef.current;
+      pttFramesRef.current = [];
+      pttSamplesRef.current = 0;
+      const total = frames.reduce((sum, frame) => sum + frame.length, 0);
+      setListening(false);
+      if (total < 4800) {
+        setNotice('Fala muito curta. Aperte C, fale e aperte C de novo.');
+        return;
+      }
+      const samples = new Float32Array(total);
+      let offset = 0;
+      for (const frame of frames) { samples.set(frame, offset); offset += frame.length; }
+      console.info('[Aurora Voice] Apertar-para-falar: áudio gravado', { seconds: Number((total / 16000).toFixed(2)) });
+      transcribeVoiceSamples(samples);
+      return;
+    }
+
+    if (!voiceModeRef.current) startListening();
+    if (voiceResponseActiveRef.current) interruptVoiceResponse();
+    if (voiceResumeRef.current !== null) {
+      window.clearTimeout(voiceResumeRef.current);
+      voiceResumeRef.current = null;
+    }
+    recognitionPausedRef.current = false;
+    pttFramesRef.current = [];
+    pttSamplesRef.current = 0;
+    pttActiveRef.current = true;
+    setListening(true);
+    setNotice('Gravando… aperte C de novo para enviar.');
+    if (!voiceVadRef.current || !voiceVadActiveRef.current) await startVoiceCaptureRef.current?.();
+    if (!voiceVadRef.current && pttActiveRef.current) {
+      pttActiveRef.current = false;
+      setListening(false);
+      setNotice('O detector de fala não está disponível; não consigo gravar com a tecla C.');
+    }
+  };
+  togglePttRef.current = togglePushToTalk;
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat || event.ctrlKey || event.altKey || event.metaKey) return;
+      if (event.key.toLowerCase() !== 'c' || !PUSH_TO_TALK) return;
+      const target = event.target as HTMLElement | null;
+      if (target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable)) return;
+      event.preventDefault();
+      void togglePttRef.current?.();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  useEffect(() => window.aurora.onPushToTalk(() => { void togglePttRef.current?.(); }), []);
 
   const stopVoiceCapture = (transcribe: boolean) => {
     const session = voiceCaptureRef.current;
@@ -620,7 +741,7 @@ export default function App() {
         await Promise.resolve(voiceVadRef.current.start());
         voiceVadActiveRef.current = true;
       }
-      setListening(true);
+      setListening(!PUSH_TO_TALK || pttActiveRef.current);
       return;
     }
     if (voiceVadInitializingRef.current) return;
@@ -661,23 +782,30 @@ export default function App() {
           processorType: 'AudioWorklet',
           baseAssetPath: assetBasePath,
           onnxWASMBasePath: assetBasePath,
-          positiveSpeechThreshold: 0.34,
-          negativeSpeechThreshold: 0.22,
-          redemptionMs: 750,
-          preSpeechPadMs: 700,
-          minSpeechMs: 280,
+          ...VAD_OPTIONS,
           getStream: getVoiceStream,
           resumeStream: getVoiceStream,
+          onFrameProcessed: (_probabilities: unknown, frame: Float32Array) => {
+            if (!pttActiveRef.current) return;
+            pttFramesRef.current.push(frame.slice());
+            pttSamplesRef.current += frame.length;
+            if (pttSamplesRef.current >= 16000 * PTT_MAX_SECONDS) void togglePttRef.current?.();
+          },
           onSpeechStart: () => {
+            if (PUSH_TO_TALK) return;
             if (voiceModeRef.current && !recognitionPausedRef.current) setListening(true);
           },
           onSpeechRealStart: () => {
+            if (PUSH_TO_TALK) return;
             if (!voiceModeRef.current || recognitionPausedRef.current) return;
             setListening(true);
             if (voiceResponseActiveRef.current) interruptVoiceResponse();
           },
-          onVADMisfire: () => setListening(false),
-          onSpeechEnd: (audio: Float32Array) => transcribeVoiceSamples(audio),
+          onVADMisfire: () => { if (!PUSH_TO_TALK) setListening(false); },
+          onSpeechEnd: (audio: Float32Array) => {
+            if (PUSH_TO_TALK) return;
+            transcribeVoiceSamples(audio);
+          },
         });
         voiceVadRef.current = vad;
         if (!voiceModeRef.current || recognitionPausedRef.current) {
@@ -686,8 +814,10 @@ export default function App() {
         }
         await Promise.resolve(vad.start());
         voiceVadActiveRef.current = true;
-        setListening(true);
-        setNotice('');
+        setListening(!PUSH_TO_TALK || pttActiveRef.current);
+        setNotice(PUSH_TO_TALK
+          ? 'Modo botão: aperte C (ou o botão da página web) para falar e de novo para enviar.'
+          : 'Modo VAD: pode falar; a fala termina depois de ' + (VOICE_SETTINGS.vadPauseMs / 1000).toFixed(1).replace('.', ',') + ' s de silêncio.');
         void refreshAudioInputs();
         console.info('[Aurora Voice] Silero VAD v5 pronto; Whisper recebe áudio 16 kHz diretamente.');
         return;
@@ -949,14 +1079,16 @@ export default function App() {
   startVoiceCaptureRef.current = startVoiceCapture;
   stopVoiceCaptureRef.current = stopVoiceCapture;
 
-  const speak = async (text: string, waitForPlayback = false, resumeAfterPlayback = true, provider: 'auto' | 'elevenlabs' | 'coqui' | 'voxcpm2' | 'free' = 'auto') => {
+  const speak = async (text: string, waitForPlayback = false, resumeAfterPlayback = true, provider: 'auto' | 'elevenlabs' | 'coqui' | 'voxcpm2' | 'free' = 'auto', prefetchedSpeech?: ReturnType<typeof window.aurora.speak>) => {
     const speechTicket = voiceOutputTurnRef.current;
     const speechText = normalizeSpeechText(text);
     if (!hasSpeakableSpeechText(speechText)) {
       console.info('[Aurora TTS] Trecho ignorado: nenhum texto falável após remover emojis e símbolos.');
+      if (resumeAfterPlayback) resumeVoiceRecognitionAfterSpeech();
       return;
     }
-    pauseVoiceRecognitionForSpeech();
+    const keepListening = voiceResponseActiveRef.current && voiceVadActiveRef.current && !recognitionPausedRef.current;
+    if (!keepListening) pauseVoiceRecognitionForSpeech();
     if (hasLaughingCue(text)) setLaughing(true);
     audioRef.current?.pause();
     audioRef.current = null;
@@ -974,14 +1106,20 @@ export default function App() {
     });
 
     try {
-      const result = await window.aurora.speak(speechText, provider !== 'auto' ? { provider } : undefined);
+      const result = await (prefetchedSpeech ?? window.aurora.speak(speechText, provider !== 'auto' ? { provider } : undefined));
       if (speechTicket !== voiceOutputTurnRef.current) {
         finishPlayback();
         return;
       }
       if (!result?.audioBase64) throw new Error('A voz neural nao retornou audio.');
       console.info('[Aurora TTS] Áudio recebido para reprodução', { provider: result.provider || 'não informado', mimeType: result.audioMimeType || 'audio/mpeg', audioBytes: Math.floor(result.audioBase64.length * 0.75) });
-      if (result.provider === 'kokoro-local' || result.provider === 'elevenlabs' || result.provider === 'edge-tts' || result.provider === 'voxcpm2') setNotice('');
+      if (result.fallbackReason && Date.now() - lastTtsFallbackNoticeRef.current > 60000) {
+        lastTtsFallbackNoticeRef.current = Date.now();
+        setNotice(result.fallbackReason);
+      } else if (Date.now() - lastTtsFallbackNoticeRef.current > 8000 &&
+          (result.provider === 'kokoro-local' || result.provider === 'elevenlabs' || result.provider === 'edge-tts' || result.provider === 'voxcpm2')) {
+        setNotice('');
+      }
       if (result.provider === 'coqui-xtts' && result.performance) {
         const metrics = result.performance;
         setCoquiTtsProgress(
@@ -998,7 +1136,11 @@ export default function App() {
       // Liga o áudio ao Web Audio para medir seu volume e animar a boca em tempo real.
       let context: AudioContext | null = null;
       try {
-        context = new AudioContext();
+        context = audioContextRef.current;
+        if (!context || context.state === 'closed') {
+          context = new AudioContext();
+          audioContextRef.current = context;
+        }
         if (context.state === 'suspended') await context.resume();
         if (context.state === 'running') {
           const source = context.createMediaElementSource(audio);
@@ -1007,13 +1149,15 @@ export default function App() {
           analyser.smoothingTimeConstant = 0.68;
           source.connect(analyser);
           analyser.connect(context.destination);
-          audioContextRef.current = context;
+          analysisNodesRef.current = [source, analyser];
           setAudioAnalyser(analyser);
         } else {
           await context.close();
+          audioContextRef.current = null;
         }
       } catch (analysisError) {
         if (context && context.state !== 'closed') void context.close().catch(() => undefined);
+        audioContextRef.current = null;
         console.warn('[Aurora lip-sync] Não foi possível analisar o áudio; usando movimento de boca de reserva.', analysisError);
       }
 
@@ -1146,7 +1290,16 @@ export default function App() {
 
   const sendMessage = async (rawText: string) => {
     const text = rawText.trim();
-    if (!text || thinkingRef.current) return;
+    if (!text) return;
+    if (thinkingRef.current) {
+      pendingMessagesRef.current.push(text);
+      if (pendingMessagesRef.current.length > 3) pendingMessagesRef.current.shift();
+      setNotice('Recebi sua mensagem; respondo assim que terminar a resposta atual.');
+      return;
+    }
+    if (feedVoiceTextRef.current === text) feedVoiceTextRef.current = '';
+    else pushFeed('voce', text, 'digitado');
+    const turnStartedAt = Date.now();
     const turnId = ++chatTurnRef.current;
     const requestId = 'aurora-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
     const speechTurnId = ++voiceOutputTurnRef.current;
@@ -1235,6 +1388,7 @@ export default function App() {
         setEmotion(inferAvatarEmotion(text, quickReply));
         if (hasLaughingCue(text + " " + quickReply)) setLaughing(true);
         setMessages((current) => [...current, { role: 'assistant', content: quickReply }]);
+        pushFeed('aurora', quickReply, 'resposta pronta do app (sem passar pela IA)');
         assistantReplyDelivered = true;
         if (autoSpeak) {
           if (voiceModeRef.current) await speak(quickReply, true);
@@ -1271,7 +1425,7 @@ export default function App() {
           : selfVisualRequest
             ? text + '\n\nNão foi possível capturar seu avatar nesta ocasião. Responda somente com base na ficha de identidade cadastrada. Não diga que acabou de se observar nem invente características visuais.'
             : text;
-      const canStreamSpeech = autoSpeak && (studyMode || !capture) && voxCpm2Status?.configured === false;
+      const canStreamSpeech = autoSpeak && (studyMode || !capture);
       let speechSessionActive = false;
       let speechSessionClosed = false;
       const speechSessionPromise = canStreamSpeech
@@ -1300,16 +1454,22 @@ export default function App() {
       let speechBuffer = '';
       let speechStarted = false;
       let speechQueue = Promise.resolve();
+      let synthesisChain: Promise<unknown> = Promise.resolve();
       const enqueueSpeech = (segment: string) => {
         const cleanSegment = normalizeSpeechText(segment);
         if (!hasSpeakableSpeechText(cleanSegment)) return;
         speechStarted = true;
+        const synthesis = synthesisChain.then(async () => {
+          if (voiceOutputTurnRef.current !== speechTurnId) throw new Error('Turno de fala cancelado.');
+          await speechSessionPromise;
+          return window.aurora.speak(cleanSegment);
+        });
+        synthesis.catch(() => undefined);
+        synthesisChain = synthesis.catch(() => undefined);
         speechQueue = speechQueue
           .then(async () => {
             if (voiceOutputTurnRef.current !== speechTurnId) return;
-            await speechSessionPromise;
-            if (voiceOutputTurnRef.current !== speechTurnId) return;
-            await speak(cleanSegment, true, false);
+            await speak(cleanSegment, true, false, 'auto', synthesis);
           })
           .catch((error) => {
             setNotice(error instanceof Error ? error.message : 'Não consegui reproduzir um trecho da resposta.');
@@ -1354,6 +1514,7 @@ export default function App() {
         if (canStreamSpeech && voiceOutputTurnRef.current === speechTurnId) collectCompleteSpeech(chunk);
       });
       let answer = response.text?.trim() || 'Não consegui responder agora.';
+      pushFeed('aurora', answer, 'respondeu em ' + ((Date.now() - turnStartedAt) / 1000).toFixed(1).replace('.', ',') + ' s' + (response.truncated ? ' · cortada na última frase completa' : ''));
       assistantReplyDelivered = true;
       setEmotion(inferAvatarEmotion(text, answer));
       if (hasLaughingCue(text + " " + answer)) setLaughing(true);
@@ -1366,7 +1527,10 @@ export default function App() {
       });
       if (autoSpeak) {
         if (canStreamSpeech) {
-          if (speechBuffer.trim()) enqueueSpeech(speechBuffer);
+          const speakableTail = response.truncated
+            ? (speechBuffer.match(/^[\s\S]*[.!?…](?=\s|$)/)?.[0] ?? '')
+            : speechBuffer;
+          if (speakableTail.trim()) enqueueSpeech(speakableTail);
           if (speechStarted) {
             await speechQueue;
           } else {
@@ -1390,6 +1554,7 @@ export default function App() {
             ? 'Oxe, recebi sua fala, mas minha IA local falhou antes de me devolver uma resposta. Tenta falar comigo mais uma vez?'
             : 'Não consegui gerar uma resposta agora. Confira se o Ollama está aberto e tente novamente.';
           assistantReplyDelivered = true;
+          pushFeed('aurora', fallbackReply, 'resposta de emergência: a IA local falhou');
           setMessages((current) => {
             const updated = [...current];
             const last = updated[updated.length - 1];
@@ -1424,6 +1589,8 @@ export default function App() {
         if (!autoSpeak && voiceModeRef.current && recognitionPausedRef.current) {
           resumeVoiceRecognitionAfterSpeech(500);
         }
+        const queuedMessage = pendingMessagesRef.current.shift();
+        if (queuedMessage) window.setTimeout(() => { void sendMessageRef.current(queuedMessage); }, 0);
       }
     }
   };
@@ -1822,6 +1989,24 @@ export default function App() {
   };
 
   const connected = config.ollamaAvailable && config.modelInstalled;
+
+  const panelStage: PanelStage = listening
+    ? (PUSH_TO_TALK
+      ? { tone: 'rec', text: 'GRAVANDO. Fale, e aperte C de novo para enviar' }
+      : { tone: 'idle', text: 'ESCUTANDO. Pode falar; a fala termina depois de ' + (VOICE_SETTINGS.vadPauseMs / 1000).toFixed(1).replace('.', ',') + ' s de silêncio' })
+    : transcribingVoice
+      ? { tone: 'work', text: 'TRANSCREVENDO o que você disse…' }
+      : speaking
+        ? { tone: 'aurora', text: 'A AURORA ESTÁ FALANDO (aperte C para interromper)' }
+        : thinking
+          ? { tone: 'work', text: 'A AURORA ESTÁ PENSANDO…' }
+          : voiceMode
+            ? { tone: 'idle', text: PUSH_TO_TALK ? 'AGUARDANDO VOCÊ. Aperte C e fale' : 'ESCUTANDO. Pode falar' }
+            : { tone: 'off', text: 'MICROFONE DESLIGADO. Clique em 🎙 para ligar' };
+
+  useEffect(() => {
+    window.aurora.sendFeed({ type: 'stage', tone: panelStage.tone, text: panelStage.text });
+  }, [panelStage.tone, panelStage.text]);
 
   const lastAssistantMessage = [...messages].reverse().find((message) => message.role === 'assistant')?.content || 'Oi! Clique em conversar para falar comigo.';
 
